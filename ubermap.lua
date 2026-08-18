@@ -59,6 +59,13 @@ local COL_SELECT   = 0xFF00FFFF;  -- yellow: ring around the point being edited
 local LABEL_SCALE = 1;
 local LABEL_GAP   = 1;  -- screen pixels between the label and the icon
 
+-- Detail tiers.  A group is drawn only once the zoom reaches its threshold, so
+-- the world view stays readable and the clutter appears as you zoom in.  Groups
+-- that name no threshold (the per-region zone points) use ZOOM_DEFAULT.
+local ZOOM_ALWAYS  = 0;
+local ZOOM_REGIONS = 0.6;
+local ZOOM_DEFAULT = 1.0;
+
 -- Search box, pinned in from the viewport corner by SEARCH_MARGIN screen pixels.
 local SEARCH_MARGIN = 50;
 local SEARCH_W      = 300;
@@ -68,14 +75,14 @@ local EDIT_ROW      = 28;  -- editor panel row pitch, screen pixels
 -- Icons are declared per group, in draw order: later groups land on top of
 -- earlier ones where they overlap.
 local ICON_GROUPS = T{
-    { name = 'Nations', icons = T{
+    { name = 'Nations', min_zoom = ZOOM_ALWAYS, icons = T{
         { file = 'SandOria.jpg',  x = 1075, y =  971, label = "San d'Oria" },
         { file = 'Bastok.jpg',    x = 1340, y = 1886, label = 'Bastok'     },
         { file = 'Jeuno.jpg',     x = 1737, y = 1207, label = 'Jeuno'      },
         { file = 'Windurst.jpg',  x = 2115, y = 1986, label = 'Windurst'   },
         { file = 'AhtUrhgan.jpg', x = 5009, y = 1796, label = 'Aht Urhgan' },
     } },
-    { name = 'Regions', icons = T{
+    { name = 'Regions', min_zoom = ZOOM_REGIONS, icons = T{
         { file = 'Point_0.png',  x = 1000, y =  695, label = 'Valdeaunia', border = false, size = POINT_SIZE },
         { file = 'Point_0.png',  x = 1538, y =  837, label = 'Fauregandi',  border = false, size = POINT_SIZE },
         { file = 'Point_0.png',  x = 1473, y =  941, label = 'Norvallen',   border = false, size = POINT_SIZE },
@@ -103,9 +110,13 @@ local ICON_GROUPS = T{
     } },
 };
 
--- One flat list for drawing, each entry tagged with its group name.
+-- One flat list for drawing, each entry tagged with its group name, plus the
+-- zoom each group appears at.  Keyed by name so points loaded from points.lua
+-- and points added in the editor pick their threshold up from their group too.
 local ICONS = T{};
+local GROUP_MIN_ZOOM = T{};
 for _, g in ipairs(ICON_GROUPS) do
+    GROUP_MIN_ZOOM[g.name] = g.min_zoom or ZOOM_DEFAULT;
     for _, ic in ipairs(g.icons) do
         ic.group = g.name;
         table.insert(ICONS, ic);
@@ -185,7 +196,8 @@ load_points();
 local function point_at(mx, my)
     for _, ic in ipairs(ICONS) do
         local half = (ic.size or ICON_SIZE) / 2;
-        if (ic.user and mx >= ic.x - half and mx <= ic.x + half
+        if (ic.user and ui.zoom >= (GROUP_MIN_ZOOM[ic.group] or ZOOM_DEFAULT)
+            and mx >= ic.x - half and mx <= ic.x + half
             and my >= ic.y - half and my <= ic.y + half) then
             return ic;
         end
@@ -293,6 +305,7 @@ local function draw_icons(origin_x, origin_y, view_w, view_h, over_map)
     local mouse_x, mouse_y = imgui.GetMousePos();
 
     for _, ic in ipairs(ICONS) do
+      if (ui.zoom >= (GROUP_MIN_ZOOM[ic.group] or ZOOM_DEFAULT)) then
         local half = (ic.size or ICON_SIZE) * ui.zoom / 2;
         local cx = mm.to_screen(ic.x, ui.pan_x, ui.zoom, origin_x);
         local cy = mm.to_screen(ic.y, ui.pan_y, ui.zoom, origin_y);
@@ -330,6 +343,7 @@ local function draw_icons(origin_x, origin_y, view_w, view_h, over_map)
                 end
             end
         end
+      end
     end
 end
 
