@@ -8,11 +8,12 @@
 local M = { };
 
 --[[
-* Returns the zoom at which the whole map fits inside the viewport.  This is
-* also the minimum zoom, so the map can never shrink away from the frame.
+* Returns the zoom at which the map covers the whole viewport.  This is also
+* the minimum zoom, so the frame is never letterboxed: the short side is what
+* runs out of room first, and the long side overflows and pans.
 --]]
-function M.fit_zoom(map_w, map_h, view_w, view_h)
-    return math.min(view_w / map_w, view_h / map_h);
+function M.cover_zoom(map_w, map_h, view_w, view_h)
+    return math.max(view_w / map_w, view_h / map_h);
 end
 
 function M.clamp(v, lo, hi)

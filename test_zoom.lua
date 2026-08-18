@@ -9,10 +9,17 @@ local function near(a, b)
     return math.abs(a - b) < 1e-6;
 end
 
--- fit_zoom picks whichever axis runs out of room first.  The map is wider
--- than 16:9, so a 1920x1080 window is width-limited.
-assert(near(m.fit_zoom(5504, 3072, 1920, 1080), 1920 / 5504));
-assert(near(m.fit_zoom(5504, 3072, 4000, 1080), 1080 / 3072));
+-- cover_zoom picks whichever axis needs the most magnification, so the map
+-- always fills the viewport.  The map is wider than 16:9, so a 1920x1080
+-- window is height-limited and the extra width pans.
+assert(near(m.cover_zoom(5504, 3072, 1920, 1080), 1080 / 3072));
+assert(near(m.cover_zoom(5504, 3072, 4000, 1080), 4000 / 5504));
+
+-- At cover zoom neither axis is shorter than the viewport.
+for _, view in ipairs({ { 1920, 1080 }, { 4000, 1080 }, { 800, 1200 } }) do
+    local z = m.cover_zoom(5504, 3072, view[1], view[2]);
+    assert(5504 * z >= view[1] - 1e-6 and 3072 * z >= view[2] - 1e-6);
+end
 
 -- The pan stays inside the image..
 assert(near(m.clamp_pan(-50, 4000, 1920), 0));

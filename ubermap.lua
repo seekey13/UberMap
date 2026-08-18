@@ -166,7 +166,7 @@ end
 
 --[[
 * Opens the map.  If it is already open the current zoom and pan are left
-* alone, so repeated Home Point visits do not yank the view back to fit.
+* alone, so repeated Home Point visits do not yank the view back to the default.
 --]]
 local function show()
     ui.is_open[1] = true;
@@ -179,10 +179,10 @@ local function draw_map(view_w, view_h)
         view_h = avail_h;
     end
 
-    local fit = mm.fit_zoom(MAP_W, MAP_H, view_w, view_h);
-    if (ui.zoom == nil) then
-        ui.zoom = fit;
-    end
+    -- The minimum zoom covers the viewport, so the map never letterboxes.
+    -- Re-applied every frame because growing the window raises the floor.
+    local cover = mm.cover_zoom(MAP_W, MAP_H, view_w, view_h);
+    ui.zoom = mm.clamp(ui.zoom or cover, cover, MAX_ZOOM);
 
     -- The viewport's top-left, captured before the child is opened.
     local origin_x, origin_y = imgui.GetCursorScreenPos();
@@ -206,7 +206,7 @@ local function draw_map(view_w, view_h)
     local wheel = imgui.GetIO().MouseWheel;
     if (over_map and wheel ~= 0) then
         local old = ui.zoom;
-        local new = mm.clamp(old * (ZOOM_STEP ^ wheel), fit, MAX_ZOOM);
+        local new = mm.clamp(old * (ZOOM_STEP ^ wheel), cover, MAX_ZOOM);
         if (new ~= old) then
             ui.pan_x = mm.zoom_anchor(ui.pan_x, mouse_x - origin_x, old, new);
             ui.pan_y = mm.zoom_anchor(ui.pan_y, mouse_y - origin_y, old, new);
@@ -256,10 +256,10 @@ local function draw_map(view_w, view_h)
     imgui.EndChild();
 
     if (ui.debug) then
-        ui.dbg = ('hovered=%s over_map=%s shift=%s wheel=%.2f drag=%s | mouse %.0f,%.0f origin %.0f,%.0f view %.0fx%.0f | zoom %.4f (fit %.4f) pan %.0f,%.0f'):fmt(
+        ui.dbg = ('hovered=%s over_map=%s shift=%s wheel=%.2f drag=%s | mouse %.0f,%.0f origin %.0f,%.0f view %.0fx%.0f | zoom %.4f (cover %.4f) pan %.0f,%.0f'):fmt(
             tostring(hovered), tostring(over_map), tostring(shift), wheel, tostring(ui.dragging),
             mouse_x, mouse_y, origin_x, origin_y, view_w, view_h,
-            ui.zoom, fit, ui.pan_x, ui.pan_y);
+            ui.zoom, cover, ui.pan_x, ui.pan_y);
     end
 end
 
