@@ -59,7 +59,7 @@ local LABEL_GAP   = 2;  -- screen pixels between the label and the icon
 
 -- Search box, pinned in from the viewport corner by SEARCH_MARGIN screen pixels.
 local SEARCH_MARGIN = 50;
-local SEARCH_W      = 200;
+local SEARCH_W      = 300;
 local SEARCH_MAX    = 256;
 
 local ICONS = T{
@@ -160,11 +160,25 @@ local function load_texture()
 end
 
 --[[
-* Draws every icon centred on its map coordinate, with a rounded black border
-* unless the entry sets border = false.
+* One texture per asset file, shared by every icon that names it.  The entry is
+* a box so a failed load caches its nil instead of retrying it every frame.
 --]]
-local function draw_icons(origin_x, origin_y, view_w, view_h)
+local icon_tex = T{};
+local function icon_texture(file)
+    if (icon_tex[file] == nil) then
+        icon_tex[file] = { tex = load_asset(file, C.D3DX_DEFAULT, C.D3DX_DEFAULT) };
+    end
+    return icon_tex[file].tex;
+end
+
+--[[
+* Draws every icon centred on its map coordinate, with a rounded black border
+* unless the entry sets border = false.  A hovered icon swaps to its _1 art
+* (Point_0.png -> Point_1.png); entries without one keep the art they have.
+--]]
+local function draw_icons(origin_x, origin_y, view_w, view_h, over_map)
     local dl = imgui.GetWindowDrawList();
+    local mouse_x, mouse_y = imgui.GetMousePos();
 
     for _, ic in ipairs(ICONS) do
         local half = (ic.size or ICON_SIZE) * ui.zoom / 2;
@@ -172,12 +186,16 @@ local function draw_icons(origin_x, origin_y, view_w, view_h)
         local cy = mm.to_screen(ic.y, ui.pan_y, ui.zoom, origin_y);
         if (cx + half >= origin_x and cx - half <= origin_x + view_w
             and cy + half >= origin_y and cy - half <= origin_y + view_h) then
-            if (ic.tex == nil and not ic.failed) then
-                ic.tex    = load_asset(ic.file, C.D3DX_DEFAULT, C.D3DX_DEFAULT);
-                ic.failed = (ic.tex == nil);
+            local hot = over_map
+                and mouse_x >= cx - half and mouse_x <= cx + half
+                and mouse_y >= cy - half and mouse_y <= cy + half;
+            local tex = nil;
+            if (hot) then
+                tex = icon_texture((ic.file:gsub('_0%.png$', '_1.png')));
             end
-            if (ic.tex ~= nil) then
-                local id    = tonumber(ffi.cast('uint32_t', ic.tex));
+            tex = tex or icon_texture(ic.file);
+            if (tex ~= nil) then
+                local id    = tonumber(ffi.cast('uint32_t', tex));
                 local p0    = { cx - half, cy - half };
                 local p1    = { cx + half, cy + half };
                 local round = half * 2 * ICON_ROUND;
@@ -274,7 +292,7 @@ local function draw_map(view_w, view_h)
             bit.bor(ImGuiWindowFlags_NoScrollbar, ImGuiWindowFlags_NoScrollWithMouse))) then
         imgui.SetCursorPos({ -ui.pan_x, -ui.pan_y });
         imgui.Image(tonumber(ffi.cast('uint32_t', ui.texture)), { content_w, content_h });
-        draw_icons(origin_x, origin_y, view_w, view_h);
+        draw_icons(origin_x, origin_y, view_w, view_h, over_map);
 
         imgui.SetCursorPos({ SEARCH_MARGIN, SEARCH_MARGIN });
         imgui.SetNextItemWidth(SEARCH_W);
@@ -389,7 +407,5 @@ end);
 
 ashita.events.register('unload', 'ubermap_unload', function ()
     ui.texture = nil;
-    for _, ic in ipairs(ICONS) do
-        ic.tex = nil;
-    end
+    icon_tex = T{};
 end);
