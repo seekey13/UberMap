@@ -1,6 +1,6 @@
 -- UberMap points, written by /um edit.  Paste the rows into ICON_GROUPS
 -- in ubermap.lua, then delete this file.
-local POINT_SIZE = 40;
+local POINT_SIZE = 30;
 
 return {
     { file = 'Point_0.png',  x =  967, y = 1763, label = "North Gustaberg", border = false, size = POINT_SIZE, group = "Gustaberg" },
@@ -137,10 +137,10 @@ return {
     { file = 'Point_0.png',  x = 1311, y = 1893, label = "Bastok Market", border = false, size = POINT_SIZE, group = "Bastok" },
     { file = 'Point_0.png',  x = 1345, y = 1877, label = "Metalworks", border = false, size = POINT_SIZE, group = "Bastok" },
     { file = 'Point_0.png',  x = 1345, y = 1844, label = "Port Bastok", border = false, size = POINT_SIZE, group = "Bastok" },
-    { file = 'Point_0.png',  x = 1072, y = 1001, label = "Southern San'dOria", border = false, size = POINT_SIZE, group = "San'dOria" },
-    { file = 'Point_0.png',  x = 1072, y =  952, label = "Northern San'dOria", border = false, size = POINT_SIZE, group = "San'dOria" },
-    { file = 'Point_0.png',  x = 1050, y =  913, label = "Port San'dOria", border = false, size = POINT_SIZE, group = "San'dOria" },
-    { file = 'Point_0.png',  x = 1094, y =  913, label = "Chateau d'Oraguille", border = false, size = POINT_SIZE, group = "San'dOria" },
+    { file = 'Point_0.png',  x = 1072, y = 1001, label = "Southern San d'Oria", border = false, size = POINT_SIZE, group = "San d'Oria" },
+    { file = 'Point_0.png',  x = 1073, y =  948, label = "Northern San d'Oria", border = false, size = POINT_SIZE, group = "San d'Oria" },
+    { file = 'Point_0.png',  x = 1048, y =  912, label = "Port San d'Oria", border = false, size = POINT_SIZE, group = "San d'Oria" },
+    { file = 'Point_0.png',  x = 1096, y =  912, label = "Chateau d'Oraguille", border = false, size = POINT_SIZE, group = "San d'Oria" },
     { file = 'Point_0.png',  x = 2093, y = 2008, label = "Port Windurst", border = false, size = POINT_SIZE, group = "Windurst" },
     { file = 'Point_0.png',  x = 2134, y = 1966, label = "Windurst Walls", border = false, size = POINT_SIZE, group = "Windurst" },
     { file = 'Point_0.png',  x = 2134, y = 2008, label = "Windurst Woods", border = false, size = POINT_SIZE, group = "Windurst" },

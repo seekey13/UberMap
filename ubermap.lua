@@ -44,10 +44,11 @@ local COL_TEXT_OUTLINE = 0x80FFFFFF;
 
 local READOUT_SCALE = 2.0;
 
--- Icons are anchored by their centre, in source-image pixels, and drawn at
--- ICON_SIZE map pixels so they stay pinned to the map as it zooms.
-local ICON_SIZE    = 100;   -- the source art is square, 214x214
-local POINT_SIZE   = 40;    -- map pixels for point markers (entries with size = POINT_SIZE)
+-- Icons are anchored by their centre, in source-image pixels, but drawn at a
+-- fixed screen size: the position tracks the map as it zooms, the marker does
+-- not grow with it.
+local ICON_SIZE    = 50;    -- screen pixels; the source art is square, 214x214
+local POINT_SIZE   = 30;    -- screen pixels for point markers (entries with size = POINT_SIZE)
 local ICON_ROUND   = 0.0625;  -- corner radius, as a fraction of the drawn size
 local ICON_BORDER  = 2.0;   -- screen pixels
 local COL_ICON     = 0xFFFFFFFF;  -- white: tint that leaves the art untouched
@@ -229,7 +230,9 @@ load_points();
 
 local function point_at(mx, my)
     for _, ic in ipairs(ICONS) do
-        local half = (ic.size or ICON_SIZE) / 2;
+        -- The drawn size is in screen pixels, so it shrinks in map space as
+        -- the view zooms in.
+        local half = (ic.size or ICON_SIZE) / 2 / ui.zoom;
         if (ic.user and icon_visible(ic)
             and mx >= ic.x - half and mx <= ic.x + half
             and my >= ic.y - half and my <= ic.y + half) then
@@ -352,7 +355,7 @@ local function draw_icons(origin_x, origin_y, view_w, view_h, over_map)
 
     for _, ic in ipairs(ICONS) do
       if (icon_visible(ic)) then
-        local half = (ic.size or ICON_SIZE) * ui.zoom / 2;
+        local half = (ic.size or ICON_SIZE) / 2;
         local cx = mm.to_screen(ic.x, ui.pan_x, ui.zoom, origin_x);
         local cy = mm.to_screen(ic.y, ui.pan_y, ui.zoom, origin_y);
         if (cx + half >= origin_x and cx - half <= origin_x + view_w
@@ -407,7 +410,7 @@ end
 * which those points are not drawn at all.  Returns false when nothing carries
 * the group, which leaves the view alone.
 --]]
-local ZOOM_PAD = ICON_SIZE;  -- map pixels of margin around the framed group
+local ZOOM_PAD = 100;  -- map pixels of margin around the framed group
 
 local function zoom_to_group(name, view_w, view_h)
     local x0, y0, x1, y1;
