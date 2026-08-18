@@ -72,6 +72,12 @@ local SEARCH_W      = 300;
 local SEARCH_MAX    = 256;
 local EDIT_ROW      = 28;  -- editor panel row pitch, screen pixels
 
+-- Layer toggles, drawn on the search box's line.  Clicking one dims its icon;
+-- the state is kept per file name in ui.toggle (nil = lit).
+local TOGGLES      = T{ 'Crystal.png', 'Guide.png', 'Maw.png', 'Unity.png' };
+local TOGGLE_GAP   = 6;   -- screen pixels between toggles
+local COL_ICON_OFF = 0x40FFFFFF;  -- 25% opacity, i.e. 75% transparent
+
 -- Icons are declared per group, in draw order: later groups land on top of
 -- earlier ones where they overlap.
 local ICON_GROUPS = T{
@@ -132,6 +138,7 @@ local ui = T{
     pan_y       = 0,
     search      = { '', },
     search_hot  = false,
+    toggle      = T{},   -- toggle file name -> true when dimmed off
     dragging    = false,
     drag_x      = 0,
     drag_y      = 0,
@@ -253,11 +260,15 @@ end
 * are reported once; a nil result on a later call means the file already failed.
 --]]
 local function load_asset(file, w, h)
-    local ptr = ffi.new('IDirect3DTexture8*[1]');
+    local ptr  = ffi.new('IDirect3DTexture8*[1]');
+    -- D3DX rounds the texture up to a power of two, so the surface size says
+    -- nothing about the art's shape.  The info struct reports the file's own
+    -- dimensions, which is what callers need to draw it undistorted.
+    local info = ffi.new('D3DXIMAGE_INFO[1]');
     local res = C.D3DXCreateTextureFromFileExA(d3d8dev,
         ('%s/assets/%s'):fmt(addon.path, file),
         w, h, 1, 0, C.D3DFMT_A8R8G8B8, C.D3DPOOL_MANAGED,
-        C.D3DX_DEFAULT, C.D3DX_DEFAULT, 0, nil, nil, ptr);
+        C.D3DX_DEFAULT, C.D3DX_DEFAULT, 0, info, nil, ptr);
 
     if (res ~= C.S_OK) then
         print(chat.header(addon.name):append(chat.error(
@@ -267,7 +278,7 @@ local function load_asset(file, w, h)
 
     local tex = ffi.new('IDirect3DTexture8*', ptr[0]);
     d3d.gc_safe_release(tex);
-    return tex;
+    return tex, info[0].Width, info[0].Height;
 end
 
 --[[
@@ -290,9 +301,13 @@ end
 local icon_tex = T{};
 local function icon_texture(file)
     if (icon_tex[file] == nil) then
-        icon_tex[file] = { tex = load_asset(file, C.D3DX_DEFAULT, C.D3DX_DEFAULT) };
+        local tex, w, h = load_asset(file, C.D3DX_DEFAULT, C.D3DX_DEFAULT);
+        -- tonumber: the info fields come back as cdata, which would poison
+        -- the size arithmetic downstream.
+        icon_tex[file] = { tex = tex, w = tonumber(w) or 1, h = tonumber(h) or 1 };
     end
-    return icon_tex[file].tex;
+    local e = icon_tex[file];
+    return e.tex, e.w, e.h;
 end
 
 --[[
@@ -454,6 +469,32 @@ local function draw_map(view_w, view_h)
         -- Read a frame late by over_map above, which is fine: a click focuses
         -- the box before the drag threshold is ever crossed.
         ui.search_hot = imgui.IsItemActive() or imgui.IsItemHovered();
+
+        -- Toggle icons, sharing the search box's line.  Drawn by hand rather
+        -- than with ImageButton, whose argument list moved between the ImGui
+        -- versions Ashita has shipped; an InvisibleButton over an AddImage is
+        -- the same widget without the version check.
+        local tdl   = imgui.GetWindowDrawList();
+        local tsize = imgui.GetFrameHeight();
+        local tx_at = SEARCH_MARGIN + SEARCH_W + TOGGLE_GAP;
+        for _, file in ipairs(TOGGLES) do
+            local tex, iw, ih = icon_texture(file);
+            if (tex ~= nil) then
+                -- The art is not square, so fit it into a tsize box by its own
+                -- aspect and advance by the width it actually took.
+                local tw = tsize * iw / ih;
+                imgui.SetCursorPos({ tx_at, SEARCH_MARGIN });
+                local sx, sy = imgui.GetCursorScreenPos();
+                tdl:AddImage(tonumber(ffi.cast('uint32_t', tex)),
+                             { sx, sy }, { sx + tw, sy + tsize }, { 0, 0 }, { 1, 1 },
+                             ui.toggle[file] and COL_ICON_OFF or COL_ICON);
+                if (imgui.InvisibleButton('##ubermap_toggle_' .. file, { tw, tsize })) then
+                    ui.toggle[file] = not ui.toggle[file];
+                end
+                ui.search_hot = ui.search_hot or imgui.IsItemHovered();
+                tx_at = tx_at + tw + TOGGLE_GAP;
+            end
+        end
 
         -- Editor panel, stacked under the search box.  Its widgets feed
         -- search_hot too, so dragging in them edits text instead of panning.
