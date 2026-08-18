@@ -37,8 +37,9 @@ local MAX_ZOOM  = 1.0;  -- one screen pixel per source map pixel
 local ZOOM_STEP = 1.15; -- per wheel notch
 
 -- ImGui packs colours as ABGR, not ARGB.
-local COL_READOUT = 0xFFFFFFFF;
+local COL_READOUT = 0xFF000000;
 local COL_OUTLINE = 0xFF000000;
+local COL_TEXT_OUTLINE = 0x80FFFFFF;
 
 local READOUT_SCALE = 2.0;
 
@@ -48,7 +49,7 @@ local ICON_SIZE    = 100;   -- the source art is square, 214x214
 local ICON_ROUND   = 0.0625;  -- corner radius, as a fraction of the drawn size
 local ICON_BORDER  = 2.0;   -- screen pixels
 local COL_ICON     = 0xFFFFFFFF;  -- white: tint that leaves the art untouched
-local COL_LABEL    = 0xFFFFFFFF;
+local COL_LABEL    = 0xFF000000;
 
 -- Labels sit above the icon at a fixed screen size, so they stay readable at
 -- every zoom instead of shrinking away with the art.
@@ -82,12 +83,12 @@ local function notify(msg)
 end
 
 --[[
-* ImGui has no outlined text, so stamp the string in black around itself before
+* ImGui has no outlined text, so stamp the string in white around itself before
 * drawing it.  Keeps it readable over both land and ocean.
 --]]
 local function outlined_text(dl, x, y, text, col)
     for _, o in ipairs({ { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 } }) do
-        dl:AddText({ x + o[1], y + o[2] }, COL_OUTLINE, text);
+        dl:AddText({ x + o[1], y + o[2] }, COL_TEXT_OUTLINE, text);
     end
     dl:AddText({ x, y }, col, text);
 end
@@ -246,7 +247,7 @@ local function draw_map(view_w, view_h)
             local mx = math.floor(mm.to_map(mouse_x, ui.pan_x, ui.zoom, origin_x));
             local my = math.floor(mm.to_map(mouse_y, ui.pan_y, ui.zoom, origin_y));
             -- The font scale applies to the draw list too, so it has to wrap
-            -- the black stamps as well as the text itself.
+            -- the white stamps as well as the text itself.
             imgui.SetWindowFontScale(READOUT_SCALE);
             outlined_text(imgui.GetWindowDrawList(), origin_x + 6, origin_y + view_h - 30,
                           ('%d, %d'):fmt(mx, my), COL_READOUT);
