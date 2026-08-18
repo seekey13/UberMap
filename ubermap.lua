@@ -44,14 +44,23 @@ local READOUT_SCALE = 2.0;
 
 -- Icons are anchored by their centre, in source-image pixels, and drawn at
 -- ICON_SIZE map pixels so they stay pinned to the map as it zooms.
-local ICON_SIZE    = 134;   -- the source PNGs are 134x134
+local ICON_SIZE    = 100;   -- the source art is square, 214x214
 local ICON_ROUND   = 0.0625;  -- corner radius, as a fraction of the drawn size
 local ICON_BORDER  = 2.0;   -- screen pixels
 local COL_ICON     = 0xFFFFFFFF;  -- white: tint that leaves the art untouched
+local COL_LABEL    = 0xFFFFFFFF;
+
+-- Labels sit above the icon at a fixed screen size, so they stay readable at
+-- every zoom instead of shrinking away with the art.
+local LABEL_SCALE = 1;
+local LABEL_GAP   = 2;  -- screen pixels between the label and the icon
 
 local ICONS = T{
-    { file = 'Bastok_Icon.png',    x = 1340, y = 1886 },
-    { file = 'Sandorian_Icon.png', x = 1075, y =  971 },
+    { file = 'SandOria.jpg',  x = 1075, y =  971, label = "San d'Oria" },
+    { file = 'Bastok.jpg',    x = 1340, y = 1886, label = 'Bastok'     },
+    { file = 'Jeuno.jpg',     x = 1737, y = 1207, label = 'Jeuno'      },
+    { file = 'Windurst.jpg',  x = 2115, y = 1986, label = 'Windurst'   },
+    { file = 'AhtUrhgan.jpg', x = 5009, y = 1796, label = 'Aht Urhgan' },
 };
 
 local ui = T{
@@ -70,6 +79,17 @@ local ui = T{
 
 local function notify(msg)
     print(chat.header(addon.name):append(chat.message(msg)));
+end
+
+--[[
+* ImGui has no outlined text, so stamp the string in black around itself before
+* drawing it.  Keeps it readable over both land and ocean.
+--]]
+local function outlined_text(dl, x, y, text, col)
+    for _, o in ipairs({ { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 } }) do
+        dl:AddText({ x + o[1], y + o[2] }, COL_OUTLINE, text);
+    end
+    dl:AddText({ x, y }, col, text);
 end
 
 --[[
@@ -131,6 +151,14 @@ local function draw_icons(origin_x, origin_y, view_w, view_h)
                 dl:AddImageRounded(id, p0, p1, { 0, 0 }, { 1, 1 }, COL_ICON,
                                    round, ImDrawCornerFlags_All);
                 dl:AddRect(p0, p1, COL_OUTLINE, round, ImDrawCornerFlags_All, ICON_BORDER);
+
+                if (ic.label ~= nil) then
+                    imgui.SetWindowFontScale(LABEL_SCALE);
+                    local tw, th = imgui.CalcTextSize(ic.label);
+                    outlined_text(dl, cx - tw / 2, cy - half - th - LABEL_GAP,
+                                  ic.label, COL_LABEL);
+                    imgui.SetWindowFontScale(1.0);
+                end
             end
         end
     end
@@ -217,17 +245,11 @@ local function draw_map(view_w, view_h)
         if (over_map) then
             local mx = math.floor(mm.to_map(mouse_x, ui.pan_x, ui.zoom, origin_x));
             local my = math.floor(mm.to_map(mouse_y, ui.pan_y, ui.zoom, origin_y));
-            -- ImGui has no outlined text, so stamp the string in black around
-            -- itself first.  Keeps it readable over both land and ocean.
-            -- The scale applies to the draw list too, so it wraps the stamps.
-            local dl   = imgui.GetWindowDrawList();
-            local text = ('%d, %d'):fmt(mx, my);
-            local tx, ty = origin_x + 6, origin_y + view_h - 30;
+            -- The font scale applies to the draw list too, so it has to wrap
+            -- the black stamps as well as the text itself.
             imgui.SetWindowFontScale(READOUT_SCALE);
-            for _, o in ipairs({ { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 } }) do
-                dl:AddText({ tx + o[1], ty + o[2] }, COL_OUTLINE, text);
-            end
-            dl:AddText({ tx, ty }, COL_READOUT, text);
+            outlined_text(imgui.GetWindowDrawList(), origin_x + 6, origin_y + view_h - 30,
+                          ('%d, %d'):fmt(mx, my), COL_READOUT);
             imgui.SetWindowFontScale(1.0);
         end
     end

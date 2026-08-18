@@ -34,7 +34,7 @@ Icons are listed in `ICONS` in `ubermap.lua` - a file in `assets/` plus the
 coordinate its centre sits on - and are drawn rounded with a black border:
 
 ```lua
-{ file = 'Bastok_Icon.png', x = 1340, y = 1886 },
+{ file = 'Bastok.jpg', x = 1340, y = 1886 },
 ```
 
 If Home Points do not trigger it on your server, run `/ubermap debug`, talk to
