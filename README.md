@@ -30,6 +30,13 @@ the cursor: `0..5504` across and `0..3072` down, measured on
 is drawn, never what it is, so the same spot on the map always reads the same
 numbers.
 
+Icons are listed in `ICONS` in `ubermap.lua` - a file in `assets/` plus the
+coordinate its centre sits on - and are drawn rounded with a black border:
+
+```lua
+{ file = 'Bastok_Icon.png', x = 1340, y = 1886 },
+```
+
 If Home Points do not trigger it on your server, run `/ubermap debug`, talk to
 one, and check the name it prints against `HOMEPOINT_PATTERN` in `ubermap.lua`.
 

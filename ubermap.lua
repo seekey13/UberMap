@@ -42,6 +42,17 @@ local COL_OUTLINE = 0xFF000000;
 
 local READOUT_SCALE = 2.0;
 
+-- Icons are anchored by their centre, in source-image pixels, and drawn at
+-- ICON_SIZE map pixels so they stay pinned to the map as it zooms.
+local ICON_SIZE    = 134;   -- the source PNGs are 134x134
+local ICON_ROUND   = 0.25;  -- corner radius, as a fraction of the drawn size
+local ICON_BORDER  = 2.0;   -- screen pixels
+local COL_ICON     = 0xFFFFFFFF;  -- white: tint that leaves the art untouched
+
+local ICONS = T{
+    { file = 'Bastok_Icon.png', x = 1340, y = 1886 },
+};
+
 local ui = T{
     is_open     = { false, },
     texture     = nil,
@@ -61,6 +72,28 @@ local function notify(msg)
 end
 
 --[[
+* Loads a texture from assets/ at the given size, or nil if it fails.  Failures
+* are reported once; a nil result on a later call means the file already failed.
+--]]
+local function load_asset(file, w, h)
+    local ptr = ffi.new('IDirect3DTexture8*[1]');
+    local res = C.D3DXCreateTextureFromFileExA(d3d8dev,
+        ('%s/assets/%s'):fmt(addon.path, file),
+        w, h, 1, 0, C.D3DFMT_A8R8G8B8, C.D3DPOOL_MANAGED,
+        C.D3DX_DEFAULT, C.D3DX_DEFAULT, 0, nil, nil, ptr);
+
+    if (res ~= C.S_OK) then
+        print(chat.header(addon.name):append(chat.error(
+            ('Failed to load assets/%s: %08X (%s)'):fmt(file, res, d3d.get_error(res)))));
+        return nil;
+    end
+
+    local tex = ffi.new('IDirect3DTexture8*', ptr[0]);
+    d3d.gc_safe_release(tex);
+    return tex;
+end
+
+--[[
 * Loads the map texture on first use.  The 15MB decode costs a noticeable
 * hitch, so it is deliberately kept off the addon load and zone-in paths.
 --]]
@@ -69,22 +102,37 @@ local function load_texture()
         return;
     end
 
-    local ptr = ffi.new('IDirect3DTexture8*[1]');
-    local res = C.D3DXCreateTextureFromFileExA(d3d8dev,
-        ('%s/assets/Present_Map.jpg'):fmt(addon.path),
-        TEX_W, TEX_H, 1, 0, C.D3DFMT_A8R8G8B8, C.D3DPOOL_MANAGED,
-        C.D3DX_DEFAULT, C.D3DX_DEFAULT, 0, nil, nil, ptr);
+    ui.texture = load_asset('Present_Map.jpg', TEX_W, TEX_H);
+    ui.load_failed = (ui.texture == nil);
+end
 
-    if (res ~= C.S_OK) then
-        ui.load_failed = true;
-        print(chat.header(addon.name):append(chat.error(
-            ('Failed to load assets/Present_Map.jpg: %08X (%s)'):fmt(res, d3d.get_error(res)))));
-        return;
+--[[
+* Draws every icon centred on its map coordinate, with a rounded black border.
+--]]
+local function draw_icons(origin_x, origin_y, view_w, view_h)
+    local dl   = imgui.GetWindowDrawList();
+    local half = ICON_SIZE * ui.zoom / 2;
+
+    for _, ic in ipairs(ICONS) do
+        local cx = mm.to_screen(ic.x, ui.pan_x, ui.zoom, origin_x);
+        local cy = mm.to_screen(ic.y, ui.pan_y, ui.zoom, origin_y);
+        if (cx + half >= origin_x and cx - half <= origin_x + view_w
+            and cy + half >= origin_y and cy - half <= origin_y + view_h) then
+            if (ic.tex == nil and not ic.failed) then
+                ic.tex    = load_asset(ic.file, C.D3DX_DEFAULT, C.D3DX_DEFAULT);
+                ic.failed = (ic.tex == nil);
+            end
+            if (ic.tex ~= nil) then
+                local id    = tonumber(ffi.cast('uint32_t', ic.tex));
+                local p0    = { cx - half, cy - half };
+                local p1    = { cx + half, cy + half };
+                local round = half * 2 * ICON_ROUND;
+                dl:AddImageRounded(id, p0, p1, { 0, 0 }, { 1, 1 }, COL_ICON,
+                                   round, ImDrawCornerFlags_All);
+                dl:AddRect(p0, p1, COL_OUTLINE, round, ImDrawCornerFlags_All, ICON_BORDER);
+            end
+        end
     end
-
-    local tex = ffi.new('IDirect3DTexture8*', ptr[0]);
-    d3d.gc_safe_release(tex);
-    ui.texture = tex;
 end
 
 --[[
@@ -161,6 +209,7 @@ local function draw_map(view_w, view_h)
             bit.bor(ImGuiWindowFlags_NoScrollbar, ImGuiWindowFlags_NoScrollWithMouse))) then
         imgui.SetCursorPos({ -ui.pan_x, -ui.pan_y });
         imgui.Image(tonumber(ffi.cast('uint32_t', ui.texture)), { content_w, content_h });
+        draw_icons(origin_x, origin_y, view_w, view_h);
 
         -- Source-image pixel under the cursor.  Independent of zoom and pan, so
         -- the same spot on the map always reads the same numbers.
@@ -277,4 +326,7 @@ end);
 
 ashita.events.register('unload', 'ubermap_unload', function ()
     ui.texture = nil;
+    for _, ic in ipairs(ICONS) do
+        ic.tex = nil;
+    end
 end);

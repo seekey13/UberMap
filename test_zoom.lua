@@ -33,6 +33,14 @@ assert(near(m.zoom_anchor(300, 200, 0.5, 0.5), 300));
 assert(near(m.to_map(60, 0, 0.5, 60), 0));
 assert(near(m.to_map(60, 300, 0.5, 60), 600));
 
+-- to_screen is the exact inverse of to_map, so an icon anchored at a map
+-- coordinate lands back on the pixel that coordinate names.
+for _, z in ipairs({ 0.05, 0.349, 1.0 }) do
+    for _, pan in ipairs({ 0, 137, 4000 }) do
+        assert(near(m.to_map(m.to_screen(1340, pan, z, 60), pan, z, 60), 1340));
+    end
+end
+
 -- The coordinate under the cursor does not move when zooming about it, which
 -- is what 'locked to the image' means.
 local pan, cursor, origin, z0, z1 = 300, 200, 40, 0.5, 1.0;

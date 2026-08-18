@@ -39,6 +39,13 @@ function M.zoom_anchor(pan, cursor, old_zoom, new_zoom)
 end
 
 --[[
+* Source-image pixel -> screen pixel.  The inverse of to_map.
+--]]
+function M.to_screen(map_v, pan, zoom, origin)
+    return origin - pan + map_v * zoom;
+end
+
+--[[
 * Screen pixel -> source-image pixel.  'origin' is the viewport's top-left.
 * The result is locked to the image: the same spot on the map returns the same
 * coordinate at any zoom or pan.
