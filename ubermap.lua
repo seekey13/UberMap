@@ -45,12 +45,13 @@ local READOUT_SCALE = 2.0;
 -- Icons are anchored by their centre, in source-image pixels, and drawn at
 -- ICON_SIZE map pixels so they stay pinned to the map as it zooms.
 local ICON_SIZE    = 134;   -- the source PNGs are 134x134
-local ICON_ROUND   = 0.25;  -- corner radius, as a fraction of the drawn size
+local ICON_ROUND   = 0.0625;  -- corner radius, as a fraction of the drawn size
 local ICON_BORDER  = 2.0;   -- screen pixels
 local COL_ICON     = 0xFFFFFFFF;  -- white: tint that leaves the art untouched
 
 local ICONS = T{
-    { file = 'Bastok_Icon.png', x = 1340, y = 1886 },
+    { file = 'Bastok_Icon.png',    x = 1340, y = 1886 },
+    { file = 'Sandorian_Icon.png', x = 1075, y =  971 },
 };
 
 local ui = T{
