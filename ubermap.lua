@@ -59,18 +59,25 @@ local COL_SELECT   = 0xFF00FFFF;  -- yellow: ring around the point being edited
 local LABEL_SCALE = 1;
 local LABEL_GAP   = 1;  -- screen pixels between the label and the icon
 
--- Detail tiers.  A group is drawn only once the zoom reaches its threshold, so
--- the world view stays readable and the clutter appears as you zoom in.  Groups
--- that name no threshold (the per-region zone points) use ZOOM_DEFAULT.
-local ZOOM_ALWAYS  = 0;
-local ZOOM_REGIONS = 0.6;
-local ZOOM_DEFAULT = 1.0;
+-- Two detail tiers, swapping at ZOOM_POINTS: below it the world overview (the
+-- groups declared in ICON_GROUPS below), at or above it the zone points that
+-- come from points.lua and the editor.  One tier replaces the other, so the
+-- overview never sits underneath the points.
+local ZOOM_POINTS = 1.0;
 
 -- Search box, pinned in from the viewport corner by SEARCH_MARGIN screen pixels.
 local SEARCH_MARGIN = 50;
-local SEARCH_W      = 300;
+local SEARCH_W      = 600;
 local SEARCH_MAX    = 256;
 local EDIT_ROW      = 28;  -- editor panel row pitch, screen pixels
+
+-- The search box is drawn this many times the default frame height.  The height
+-- comes from frame padding rather than a font scale: ImGui has one baked font
+-- atlas, so scaling the font up magnifies its bitmap and goes blurry.
+local SEARCH_H_MULT   = 2.0;
+local COL_SEARCH_BG   = { 1.0, 1.0, 1.0, 1.0 };
+local COL_SEARCH_TEXT = { 0.0, 0.0, 0.0, 1.0 };
+local COL_SEARCH_HINT = { 0.45, 0.45, 0.45, 1.0 };
 
 -- Layer toggles, drawn on the search box's line.  Clicking one dims its icon;
 -- the state is kept per file name in ui.toggle (nil = lit).
@@ -81,14 +88,14 @@ local COL_ICON_OFF = 0x40FFFFFF;  -- 25% opacity, i.e. 75% transparent
 -- Icons are declared per group, in draw order: later groups land on top of
 -- earlier ones where they overlap.
 local ICON_GROUPS = T{
-    { name = 'Nations', min_zoom = ZOOM_ALWAYS, icons = T{
+    { name = 'Nations', icons = T{
         { file = 'SandOria.jpg',  x = 1075, y =  971, label = "San d'Oria" },
         { file = 'Bastok.jpg',    x = 1340, y = 1886, label = 'Bastok'     },
         { file = 'Jeuno.jpg',     x = 1737, y = 1207, label = 'Jeuno'      },
         { file = 'Windurst.jpg',  x = 2115, y = 1986, label = 'Windurst'   },
         { file = 'AhtUrhgan.jpg', x = 5009, y = 1796, label = 'Aht Urhgan' },
     } },
-    { name = 'Regions', min_zoom = ZOOM_REGIONS, icons = T{
+    { name = 'Regions', icons = T{
         { file = 'Point_0.png',  x = 1000, y =  695, label = 'Valdeaunia', border = false, size = POINT_SIZE },
         { file = 'Point_0.png',  x = 1538, y =  837, label = 'Fauregandi',  border = false, size = POINT_SIZE },
         { file = 'Point_0.png',  x = 1473, y =  941, label = 'Norvallen',   border = false, size = POINT_SIZE },
@@ -120,9 +127,9 @@ local ICON_GROUPS = T{
 -- zoom each group appears at.  Keyed by name so points loaded from points.lua
 -- and points added in the editor pick their threshold up from their group too.
 local ICONS = T{};
-local GROUP_MIN_ZOOM = T{};
+local OVERVIEW = T{};
 for _, g in ipairs(ICON_GROUPS) do
-    GROUP_MIN_ZOOM[g.name] = g.min_zoom or ZOOM_DEFAULT;
+    OVERVIEW[g.name] = true;
     for _, ic in ipairs(g.icons) do
         ic.group = g.name;
         table.insert(ICONS, ic);
@@ -142,6 +149,7 @@ local ui = T{
     dragging    = false,
     drag_x      = 0,
     drag_y      = 0,
+    press       = nil,       -- overview marker the left button went down on
     debug       = false,
     dbg         = nil,
     edit        = false,     -- point editor on
@@ -151,6 +159,19 @@ local ui = T{
     edit_name   = { '', },
     edit_group  = { 'Regions', },
 };
+
+-- ui.zoom is nil until the first frame sizes the viewport, so treat that as
+-- hidden rather than comparing against nil.
+local function icon_visible(ic)
+    local z = ui.zoom;
+    if (z == nil) then
+        return false;
+    end
+    if (OVERVIEW[ic.group]) then
+        return z < ZOOM_POINTS;
+    end
+    return z >= ZOOM_POINTS;
+end
 
 local function notify(msg)
     print(chat.header(addon.name):append(chat.message(msg)));
@@ -203,7 +224,7 @@ load_points();
 local function point_at(mx, my)
     for _, ic in ipairs(ICONS) do
         local half = (ic.size or ICON_SIZE) / 2;
-        if (ic.user and ui.zoom >= (GROUP_MIN_ZOOM[ic.group] or ZOOM_DEFAULT)
+        if (ic.user and icon_visible(ic)
             and mx >= ic.x - half and mx <= ic.x + half
             and my >= ic.y - half and my <= ic.y + half) then
             return ic;
@@ -314,13 +335,17 @@ end
 * Draws every icon centred on its map coordinate, with a rounded black border
 * unless the entry sets border = false.  A hovered icon swaps to its _1 art
 * (Point_0.png -> Point_1.png); entries without one keep the art they have.
+*
+* Returns the icon under the cursor, or nil.  Later icons win where they
+* overlap, matching the draw order.
 --]]
 local function draw_icons(origin_x, origin_y, view_w, view_h, over_map)
     local dl = imgui.GetWindowDrawList();
     local mouse_x, mouse_y = imgui.GetMousePos();
+    local hot_ic = nil;
 
     for _, ic in ipairs(ICONS) do
-      if (ui.zoom >= (GROUP_MIN_ZOOM[ic.group] or ZOOM_DEFAULT)) then
+      if (icon_visible(ic)) then
         local half = (ic.size or ICON_SIZE) * ui.zoom / 2;
         local cx = mm.to_screen(ic.x, ui.pan_x, ui.zoom, origin_x);
         local cy = mm.to_screen(ic.y, ui.pan_y, ui.zoom, origin_y);
@@ -331,6 +356,7 @@ local function draw_icons(origin_x, origin_y, view_w, view_h, over_map)
                 and mouse_y >= cy - half and mouse_y <= cy + half;
             local tex = nil;
             if (hot) then
+                hot_ic = ic;
                 tex = icon_texture((ic.file:gsub('_0%.png$', '_1.png')));
             end
             tex = tex or icon_texture(ic.file);
@@ -360,6 +386,38 @@ local function draw_icons(origin_x, origin_y, view_w, view_h, over_map)
         end
       end
     end
+    return hot_ic;
+end
+
+--[[
+* Frames every point whose group matches 'name', so clicking an overview marker
+* opens the zone points it stands for.  The zoom floor is ZOOM_POINTS, below
+* which those points are not drawn at all.  Returns false when nothing carries
+* the group, which leaves the view alone.
+--]]
+local ZOOM_PAD = ICON_SIZE;  -- map pixels of margin around the framed group
+
+local function zoom_to_group(name, view_w, view_h)
+    local x0, y0, x1, y1;
+    for _, ic in ipairs(ICONS) do
+        if (ic.group == name) then
+            x0 = math.min(x0 or ic.x, ic.x);
+            y0 = math.min(y0 or ic.y, ic.y);
+            x1 = math.max(x1 or ic.x, ic.x);
+            y1 = math.max(y1 or ic.y, ic.y);
+        end
+    end
+    if (x0 == nil) then
+        return false;
+    end
+
+    local floor_z = math.max(ZOOM_POINTS, mm.cover_zoom(MAP_W, MAP_H, view_w, view_h));
+    local fit = math.min(view_w / (x1 - x0 + ZOOM_PAD * 2),
+                         view_h / (y1 - y0 + ZOOM_PAD * 2));
+    ui.zoom  = mm.clamp(fit, floor_z, MAX_ZOOM);
+    ui.pan_x = (x0 + x1) / 2 * ui.zoom - view_w / 2;
+    ui.pan_y = (y0 + y1) / 2 * ui.zoom - view_h / 2;
+    return true;
 end
 
 --[[
@@ -463,9 +521,19 @@ local function draw_map(view_w, view_h)
         imgui.Image(tonumber(ffi.cast('uint32_t', ui.texture)), { content_w, content_h });
         draw_icons(origin_x, origin_y, view_w, view_h, over_map);
 
+        local row_h = imgui.GetFrameHeight() * SEARCH_H_MULT;
+        imgui.PushStyleVar(ImGuiStyleVar_FramePadding,
+                           { 6, (row_h - imgui.GetFontSize()) / 2 });
+        imgui.PushStyleColor(ImGuiCol_FrameBg, COL_SEARCH_BG);
+        imgui.PushStyleColor(ImGuiCol_FrameBgHovered, COL_SEARCH_BG);
+        imgui.PushStyleColor(ImGuiCol_FrameBgActive, COL_SEARCH_BG);
+        imgui.PushStyleColor(ImGuiCol_Text, COL_SEARCH_TEXT);
+        imgui.PushStyleColor(ImGuiCol_TextDisabled, COL_SEARCH_HINT);
         imgui.SetCursorPos({ SEARCH_MARGIN, SEARCH_MARGIN });
         imgui.SetNextItemWidth(SEARCH_W);
         imgui.InputTextWithHint('##ubermap_search', 'Search', ui.search, SEARCH_MAX);
+        imgui.PopStyleColor(5);
+        imgui.PopStyleVar();
         -- Read a frame late by over_map above, which is fine: a click focuses
         -- the box before the drag threshold is ever crossed.
         ui.search_hot = imgui.IsItemActive() or imgui.IsItemHovered();
@@ -475,7 +543,7 @@ local function draw_map(view_w, view_h)
         -- versions Ashita has shipped; an InvisibleButton over an AddImage is
         -- the same widget without the version check.
         local tdl   = imgui.GetWindowDrawList();
-        local tsize = imgui.GetFrameHeight();
+        local tsize = row_h;
         local tx_at = SEARCH_MARGIN + SEARCH_W + TOGGLE_GAP;
         for _, file in ipairs(TOGGLES) do
             local tex, iw, ih = icon_texture(file);
@@ -496,22 +564,25 @@ local function draw_map(view_w, view_h)
             end
         end
 
+        -- Everything below the search row stacks from here.
+        local edit_y = SEARCH_MARGIN + row_h + TOGGLE_GAP;
+
         -- Editor panel, stacked under the search box.  Its widgets feed
         -- search_hot too, so dragging in them edits text instead of panning.
         if (ui.edit) then
             if (ui.sel == nil) then
                 outlined_text(imgui.GetWindowDrawList(),
-                              origin_x + SEARCH_MARGIN, origin_y + SEARCH_MARGIN + 30,
+                              origin_x + SEARCH_MARGIN, origin_y + edit_y,
                               'ctrl+click the map to add or grab a point', COL_READOUT);
             else
                 -- Rows are placed by hand rather than by flow, so the panel does
                 -- not depend on the child's cursor advancing a particular amount.
-                imgui.SetCursorPos({ SEARCH_MARGIN, SEARCH_MARGIN + EDIT_ROW });
+                imgui.SetCursorPos({ SEARCH_MARGIN, edit_y });
                 imgui.SetNextItemWidth(SEARCH_W);
                 imgui.InputTextWithHint('##ubermap_pt_name', 'Name', ui.edit_name, SEARCH_MAX);
                 local hot = imgui.IsItemActive() or imgui.IsItemHovered();
 
-                imgui.SetCursorPos({ SEARCH_MARGIN, SEARCH_MARGIN + EDIT_ROW * 2 });
+                imgui.SetCursorPos({ SEARCH_MARGIN, edit_y + EDIT_ROW });
                 imgui.SetNextItemWidth(SEARCH_W);
                 imgui.InputTextWithHint('##ubermap_pt_group', 'Group', ui.edit_group, SEARCH_MAX);
                 hot = hot or imgui.IsItemActive() or imgui.IsItemHovered();
@@ -521,9 +592,9 @@ local function draw_map(view_w, view_h)
                     ui.dirty = true;
                 end
 
-                imgui.SetCursorPos({ SEARCH_MARGIN, SEARCH_MARGIN + EDIT_ROW * 3 });
+                imgui.SetCursorPos({ SEARCH_MARGIN, edit_y + EDIT_ROW * 2 });
                 imgui.Text(('%d, %d'):fmt(ui.sel.x, ui.sel.y));
-                imgui.SetCursorPos({ SEARCH_MARGIN, SEARCH_MARGIN + EDIT_ROW * 4 });
+                imgui.SetCursorPos({ SEARCH_MARGIN, edit_y + EDIT_ROW * 3 });
                 if (imgui.Button('Delete')) then
                     delete_point(ui.sel);
                     ui.sel = nil;
