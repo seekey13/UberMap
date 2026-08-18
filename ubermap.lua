@@ -82,7 +82,7 @@ local ICON_GROUPS = T{
         { file = 'Point_0.png',  x = 1899, y =  976, label = 'Qufim',       border = false, size = POINT_SIZE },
         { file = 'Point_0.png',  x = 2029, y =  777, label = "Tu'Lia",     border = false, size = POINT_SIZE },
         { file = 'Point_0.png',  x = 1074, y = 1089, label = 'Ronfaure',    border = false, size = POINT_SIZE },
-        { file = 'Point_0.png',  x =  702, y = 1185, label = 'Tavnazian Archipelago', border = false, size = POINT_SIZE },
+        { file = 'Point_0.png',  x =  431, y = 1415, label = "Tavnazian Achipelago", border = false, size = POINT_SIZE},
         { file = 'Point_0.png',  x =  597, y = 1574, label = 'Vollbow',     border = false, size = POINT_SIZE },
         { file = 'Point_0.png',  x = 1105, y = 1459, label = 'Zulkheim',    border = false, size = POINT_SIZE },
         { file = 'Point_0.png',  x =  533, y = 2134, label = 'Kuzotz',      border = false, size = POINT_SIZE },
