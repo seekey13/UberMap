@@ -36,6 +36,12 @@ local HOMEPOINT_PATTERN = '^Home Point';
 local MAX_ZOOM  = 1.0;  -- one screen pixel per source map pixel
 local ZOOM_STEP = 1.15; -- per wheel notch
 
+-- ImGui packs colours as ABGR, not ARGB.
+local COL_READOUT = 0xFFFFFFFF;
+local COL_OUTLINE = 0xFF000000;
+
+local READOUT_SCALE = 2.0;
+
 local ui = T{
     is_open     = { false, },
     texture     = nil,
@@ -155,6 +161,25 @@ local function draw_map(view_w, view_h)
             bit.bor(ImGuiWindowFlags_NoScrollbar, ImGuiWindowFlags_NoScrollWithMouse))) then
         imgui.SetCursorPos({ -ui.pan_x, -ui.pan_y });
         imgui.Image(tonumber(ffi.cast('uint32_t', ui.texture)), { content_w, content_h });
+
+        -- Source-image pixel under the cursor.  Independent of zoom and pan, so
+        -- the same spot on the map always reads the same numbers.
+        if (over_map) then
+            local mx = math.floor(mm.to_map(mouse_x, ui.pan_x, ui.zoom, origin_x));
+            local my = math.floor(mm.to_map(mouse_y, ui.pan_y, ui.zoom, origin_y));
+            -- ImGui has no outlined text, so stamp the string in black around
+            -- itself first.  Keeps it readable over both land and ocean.
+            -- The scale applies to the draw list too, so it wraps the stamps.
+            local dl   = imgui.GetWindowDrawList();
+            local text = ('%d, %d'):fmt(mx, my);
+            local tx, ty = origin_x + 6, origin_y + view_h - 30;
+            imgui.SetWindowFontScale(READOUT_SCALE);
+            for _, o in ipairs({ { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 } }) do
+                dl:AddText({ tx + o[1], ty + o[2] }, COL_OUTLINE, text);
+            end
+            dl:AddText({ tx, ty }, COL_READOUT, text);
+            imgui.SetWindowFontScale(1.0);
+        end
     end
     imgui.EndChild();
 
@@ -239,7 +264,9 @@ ashita.events.register('command', 'ubermap_command', function (e)
 
     e.blocked = true;
 
-    if (args[2] ~= nil and args[2]:lower() == 'debug') then
+    local sub = args[2] ~= nil and args[2]:lower() or nil;
+
+    if (sub == 'debug') then
         ui.debug = not ui.debug;
         notify(('NPC event debug: %s'):fmt(ui.debug and 'on' or 'off'));
         return;

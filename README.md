@@ -22,6 +22,14 @@ Mouse wheel zooms about the cursor and left-drag pans. Hold **shift** while
 dragging to move the window itself. The map also opens on its own when you talk
 to a Home Point; if it is already open your current view is left alone.
 
+## Coordinates
+
+Hover the map and the bottom-left corner shows the **source-image pixel** under
+the cursor: `0..5504` across and `0..3072` down, measured on
+`assets/Present_Map.jpg` itself. Zooming and panning change where a coordinate
+is drawn, never what it is, so the same spot on the map always reads the same
+numbers.
+
 If Home Points do not trigger it on your server, run `/ubermap debug`, talk to
 one, and check the name it prints against `HOMEPOINT_PATTERN` in `ubermap.lua`.
 
