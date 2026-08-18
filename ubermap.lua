@@ -54,6 +54,11 @@ local COL_ICON     = 0xFFFFFFFF;  -- white: tint that leaves the art untouched
 local COL_LABEL    = 0xFF000000;
 local COL_SELECT   = 0xFF00FFFF;  -- yellow: ring around the point being edited
 
+-- Faded versions, used for everything outside the focused group.  The label
+-- needs its outline faded to match, or the white stamp outlives the glyph.
+local COL_LABEL_OFF        = 0x40000000;
+local COL_TEXT_OUTLINE_OFF = 0x20FFFFFF;
+
 -- Labels sit above the icon at a fixed screen size, so they stay readable at
 -- every zoom instead of shrinking away with the art.
 local LABEL_SCALE = 1;
@@ -150,6 +155,7 @@ local ui = T{
     drag_x      = 0,
     drag_y      = 0,
     press       = nil,       -- overview marker the left button went down on
+    focus       = nil,       -- group name to keep lit; everything else dims
     debug       = false,
     dbg         = nil,
     edit        = false,     -- point editor on
@@ -269,9 +275,9 @@ end
 * ImGui has no outlined text, so stamp the string in white around itself before
 * drawing it.  Keeps it readable over both land and ocean.
 --]]
-local function outlined_text(dl, x, y, text, col)
+local function outlined_text(dl, x, y, text, col, outline)
     for _, o in ipairs({ { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 } }) do
-        dl:AddText({ x + o[1], y + o[2] }, COL_TEXT_OUTLINE, text);
+        dl:AddText({ x + o[1], y + o[2] }, outline or COL_TEXT_OUTLINE, text);
     end
     dl:AddText({ x, y }, col, text);
 end
@@ -351,7 +357,10 @@ local function draw_icons(origin_x, origin_y, view_w, view_h, over_map)
         local cy = mm.to_screen(ic.y, ui.pan_y, ui.zoom, origin_y);
         if (cx + half >= origin_x and cx - half <= origin_x + view_w
             and cy + half >= origin_y and cy - half <= origin_y + view_h) then
-            local hot = over_map
+            -- Everything outside the focused group fades back, so the group
+            -- that was clicked reads as the subject of the view.
+            local dim = (ui.focus ~= nil and ic.group ~= ui.focus);
+            local hot = over_map and not dim
                 and mouse_x >= cx - half and mouse_x <= cx + half
                 and mouse_y >= cy - half and mouse_y <= cy + half;
             local tex = nil;
@@ -365,7 +374,8 @@ local function draw_icons(origin_x, origin_y, view_w, view_h, over_map)
                 local p0    = { cx - half, cy - half };
                 local p1    = { cx + half, cy + half };
                 local round = half * 2 * ICON_ROUND;
-                dl:AddImageRounded(id, p0, p1, { 0, 0 }, { 1, 1 }, COL_ICON,
+                dl:AddImageRounded(id, p0, p1, { 0, 0 }, { 1, 1 },
+                                   dim and COL_ICON_OFF or COL_ICON,
                                    round, ImDrawCornerFlags_All);
                 if (ic.border ~= false) then
                     dl:AddRect(p0, p1, COL_OUTLINE, round, ImDrawCornerFlags_All, ICON_BORDER);
@@ -379,7 +389,9 @@ local function draw_icons(origin_x, origin_y, view_w, view_h, over_map)
                     imgui.SetWindowFontScale(LABEL_SCALE);
                     local tw, th = imgui.CalcTextSize(ic.label);
                     outlined_text(dl, cx - tw / 2, cy - half - th - LABEL_GAP,
-                                  ic.label, COL_LABEL);
+                                  ic.label,
+                                  dim and COL_LABEL_OFF or COL_LABEL,
+                                  dim and COL_TEXT_OUTLINE_OFF or nil);
                     imgui.SetWindowFontScale(1.0);
                 end
             end
@@ -417,6 +429,7 @@ local function zoom_to_group(name, view_w, view_h)
     ui.zoom  = mm.clamp(fit, floor_z, MAX_ZOOM);
     ui.pan_x = (x0 + x1) / 2 * ui.zoom - view_w / 2;
     ui.pan_y = (y0 + y1) / 2 * ui.zoom - view_h / 2;
+    ui.focus = name;
     return true;
 end
 
@@ -471,6 +484,9 @@ local function draw_map(view_w, view_h)
             ui.pan_x = mm.zoom_anchor(ui.pan_x, mouse_x - origin_x, old, new);
             ui.pan_y = mm.zoom_anchor(ui.pan_y, mouse_y - origin_y, old, new);
             ui.zoom  = new;
+            -- Zooming by hand ends the group focus: the user is looking around
+            -- again, so everything comes back up to full.
+            ui.focus = nil;
         end
     end
 
