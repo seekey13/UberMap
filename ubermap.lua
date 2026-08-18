@@ -34,7 +34,7 @@ local TEX_W, TEX_H = 4096, 2048;
 -- renames them.
 local HOMEPOINT_PATTERN = '^Home Point';
 
-local MAX_ZOOM  = 1.0;  -- one screen pixel per source map pixel
+local MAX_ZOOM  = 2.0;  -- two screen pixels per source map pixel
 local ZOOM_STEP = 1.15; -- per wheel notch
 
 -- ImGui packs colours as ABGR, not ARGB.
