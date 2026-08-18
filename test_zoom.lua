@@ -21,6 +21,16 @@ for _, view in ipairs({ { 1920, 1080 }, { 4000, 1080 }, { 800, 1200 } }) do
     assert(5504 * z >= view[1] - 1e-6 and 3072 * z >= view[2] - 1e-6);
 end
 
+-- fit_zoom keeps the whole span on screen: neither axis overflows, and the
+-- tighter axis is the one that lands exactly on the viewport edge.
+for _, view in ipairs({ { 1920, 1080 }, { 800, 1200 } }) do
+    for _, span in ipairs({ { 600, 400 }, { 200, 900 }, { 240, 240 } }) do
+        local z = m.fit_zoom(span[1], span[2], view[1], view[2]);
+        assert(span[1] * z <= view[1] + 1e-6 and span[2] * z <= view[2] + 1e-6);
+        assert(near(span[1] * z, view[1]) or near(span[2] * z, view[2]));
+    end
+end
+
 -- The pan stays inside the image..
 assert(near(m.clamp_pan(-50, 4000, 1920), 0));
 assert(near(m.clamp_pan(9999, 4000, 1920), 2080));

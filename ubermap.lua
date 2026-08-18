@@ -412,8 +412,8 @@ local function zoom_to_group(name, view_w, view_h)
     end
 
     local floor_z = math.max(ZOOM_POINTS, mm.cover_zoom(MAP_W, MAP_H, view_w, view_h));
-    local fit = math.min(view_w / (x1 - x0 + ZOOM_PAD * 2),
-                         view_h / (y1 - y0 + ZOOM_PAD * 2));
+    local fit = mm.fit_zoom(x1 - x0 + ZOOM_PAD * 2, y1 - y0 + ZOOM_PAD * 2,
+                            view_w, view_h);
     ui.zoom  = mm.clamp(fit, floor_z, MAX_ZOOM);
     ui.pan_x = (x0 + x1) / 2 * ui.zoom - view_w / 2;
     ui.pan_y = (y0 + y1) / 2 * ui.zoom - view_h / 2;
@@ -519,7 +519,23 @@ local function draw_map(view_w, view_h)
             bit.bor(ImGuiWindowFlags_NoScrollbar, ImGuiWindowFlags_NoScrollWithMouse))) then
         imgui.SetCursorPos({ -ui.pan_x, -ui.pan_y });
         imgui.Image(tonumber(ffi.cast('uint32_t', ui.texture)), { content_w, content_h });
-        draw_icons(origin_x, origin_y, view_w, view_h, over_map);
+        local hot_ic = draw_icons(origin_x, origin_y, view_w, view_h, over_map);
+
+        -- Clicking an overview marker frames the group its label names.  The
+        -- press is remembered and acted on at release, so a drag that starts on
+        -- a marker pans as usual instead of jumping the view.  Ctrl is the
+        -- editor's chord, so it is left alone.
+        if (imgui.IsMouseClicked(0)) then
+            ui.press = (hot_ic ~= nil and OVERVIEW[hot_ic.group]
+                        and not imgui.GetIO().KeyCtrl) and hot_ic or nil;
+        end
+        if (ui.dragging) then
+            ui.press = nil;
+        end
+        if (ui.press ~= nil and imgui.IsMouseReleased(0)) then
+            zoom_to_group(ui.press.label, view_w, view_h);
+            ui.press = nil;
+        end
 
         local row_h = imgui.GetFrameHeight() * SEARCH_H_MULT;
         imgui.PushStyleVar(ImGuiStyleVar_FramePadding,

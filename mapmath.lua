@@ -16,6 +16,15 @@ function M.cover_zoom(map_w, map_h, view_w, view_h)
     return math.max(view_w / map_w, view_h / map_h);
 end
 
+--[[
+* Returns the zoom at which a map_w x map_h span fits inside the viewport.  The
+* opposite of cover_zoom: the long side is what runs out of room first, so the
+* whole span stays visible and the short side gets slack.
+--]]
+function M.fit_zoom(map_w, map_h, view_w, view_h)
+    return math.min(view_w / map_w, view_h / map_h);
+end
+
 function M.clamp(v, lo, hi)
     return math.max(lo, math.min(v, hi));
 end
