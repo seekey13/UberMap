@@ -17,6 +17,7 @@ Drop the `UberMap` folder into `Ashita/addons/`, then:
 | --- | --- |
 | `/ubermap` or `/um` | Toggle the map |
 | `/ubermap debug` | Show an input-state overlay and print the name behind every NPC interaction event |
+| `/ubermap edit` | Toggle the point editor |
 
 Mouse wheel zooms about the cursor and left-drag pans. Hold **shift** while
 dragging to move the window itself. The map also opens on its own when you talk
@@ -36,6 +37,21 @@ coordinate its centre sits on - and are drawn rounded with a black border:
 ```lua
 { file = 'Bastok.jpg', x = 1340, y = 1886 },
 ```
+
+## Placing points in game
+
+`/ubermap edit` turns on the point editor. **Ctrl+click** the map to drop a
+point, or to grab one already there; keep the button held to drag it. The panel
+under the search box renames it, sets its group, and deletes it. Plain drag
+still pans, so only ctrl-drag moves points.
+
+Every change is written to `points.lua` beside the addon, which is loaded back
+at startup - reloading the addon or the game does not lose the work. The file is
+paste-ready: when the set is final, move its rows into `ICON_GROUPS` in
+`ubermap.lua` and delete it.
+
+Only points made in the editor are editable. The icons hardcoded in
+`ICON_GROUPS` are drawn but cannot be selected, moved, or deleted.
 
 If Home Points do not trigger it on your server, run `/ubermap debug`, talk to
 one, and check the name it prints against `HOMEPOINT_PATTERN` in `ubermap.lua`.

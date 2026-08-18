@@ -12,6 +12,7 @@ addon.desc    = 'Displays the server map, automatically on Home Point interactio
 
 require('common');
 
+local chat  = require('chat');
 local imgui = require('imgui');
 local ffi   = require('ffi');
 local d3d   = require('d3d8');
@@ -51,6 +52,7 @@ local ICON_ROUND   = 0.0625;  -- corner radius, as a fraction of the drawn size
 local ICON_BORDER  = 2.0;   -- screen pixels
 local COL_ICON     = 0xFFFFFFFF;  -- white: tint that leaves the art untouched
 local COL_LABEL    = 0xFF000000;
+local COL_SELECT   = 0xFF00FFFF;  -- yellow: ring around the point being edited
 
 -- Labels sit above the icon at a fixed screen size, so they stay readable at
 -- every zoom instead of shrinking away with the art.
@@ -61,6 +63,7 @@ local LABEL_GAP   = 1;  -- screen pixels between the label and the icon
 local SEARCH_MARGIN = 50;
 local SEARCH_W      = 300;
 local SEARCH_MAX    = 256;
+local EDIT_ROW      = 28;  -- editor panel row pitch, screen pixels
 
 -- Icons are declared per group, in draw order: later groups land on top of
 -- earlier ones where they overlap.
@@ -123,10 +126,103 @@ local ui = T{
     drag_y      = 0,
     debug       = false,
     dbg         = nil,
+    edit        = false,     -- point editor on
+    sel         = nil,       -- the user point being edited
+    moving      = false,     -- ctrl-drag in progress
+    dirty       = false,     -- an edit is waiting to be written to points.lua
+    edit_name   = { '', },
+    edit_group  = { 'Regions', },
 };
 
 local function notify(msg)
     print(chat.header(addon.name):append(chat.message(msg)));
+end
+
+--[[
+* Points placed in game go to points.lua beside the addon and are loaded back at
+* startup, so the work survives a reload.  The file is paste-ready: drop its rows
+* into ICON_GROUPS above and delete it when the set is final.
+--]]
+local POINTS_FILE = ('%s/points.lua'):fmt(addon.path);
+local POINT_FMT   = "    { file = 'Point_0.png',  x = %4d, y = %4d, label = %q, border = false, size = POINT_SIZE, group = %q },\n";
+
+local function save_points()
+    local f = io.open(POINTS_FILE, 'w');
+    if (f == nil) then
+        notify(('could not write %s'):fmt(POINTS_FILE));
+        return;
+    end
+    f:write('-- UberMap points, written by /um edit.  Paste the rows into ICON_GROUPS\n');
+    f:write('-- in ubermap.lua, then delete this file.\n');
+    f:write(('local POINT_SIZE = %d;\n\nreturn {\n'):fmt(POINT_SIZE));
+    for _, ic in ipairs(ICONS) do
+        if (ic.user) then
+            f:write(POINT_FMT:fmt(ic.x, ic.y, ic.label or '', ic.group or ''));
+        end
+    end
+    f:write('};\n');
+    f:close();
+end
+
+-- No file is the normal case, so only a file that fails to parse is reported.
+local function load_points()
+    local chunk = loadfile(POINTS_FILE);
+    if (chunk == nil) then
+        return;
+    end
+    local ok, list = pcall(chunk);
+    if (not ok or type(list) ~= 'table') then
+        notify(('%s failed to load: %s'):fmt(POINTS_FILE, tostring(list)));
+        return;
+    end
+    for _, ic in ipairs(list) do
+        ic.user = true;
+        table.insert(ICONS, ic);
+    end
+end
+load_points();
+
+local function point_at(mx, my)
+    for _, ic in ipairs(ICONS) do
+        local half = (ic.size or ICON_SIZE) / 2;
+        if (ic.user and mx >= ic.x - half and mx <= ic.x + half
+            and my >= ic.y - half and my <= ic.y + half) then
+            return ic;
+        end
+    end
+    return nil;
+end
+
+local function add_point(mx, my)
+    local n = 0;
+    for _, ic in ipairs(ICONS) do
+        if (ic.user) then
+            n = n + 1;
+        end
+    end
+    local ic = {
+        file   = 'Point_0.png',
+        x      = mx,
+        y      = my,
+        label  = ('Point %d'):fmt(n + 1),
+        group  = ui.edit_group[1],
+        border = false,
+        size   = POINT_SIZE,
+        user   = true,
+    };
+    table.insert(ICONS, ic);
+    ui.dirty = true;
+    return ic;
+end
+
+local function delete_point(ic)
+    for i, v in ipairs(ICONS) do
+        if (v == ic) then
+            table.remove(ICONS, i);
+            break;
+        end
+    end
+    ui.dirty = true;
 end
 
 --[[
@@ -220,6 +316,10 @@ local function draw_icons(origin_x, origin_y, view_w, view_h, over_map)
                 if (ic.border ~= false) then
                     dl:AddRect(p0, p1, COL_OUTLINE, round, ImDrawCornerFlags_All, ICON_BORDER);
                 end
+                if (ic == ui.sel) then
+                    dl:AddRect({ p0[1] - 2, p0[2] - 2 }, { p1[1] + 2, p1[2] + 2 },
+                               COL_SELECT, round, ImDrawCornerFlags_All, ICON_BORDER);
+                end
 
                 if (ic.label ~= nil) then
                     imgui.SetWindowFontScale(LABEL_SCALE);
@@ -287,9 +387,30 @@ local function draw_map(view_w, view_h)
         end
     end
 
+    -- Point editor: ctrl+click drops a new point, or grabs the one already under
+    -- the cursor, and holding the button drags it.  Plain drag still pans.
+    if (ui.edit) then
+        local mx = math.floor(mm.to_map(mouse_x, ui.pan_x, ui.zoom, origin_x));
+        local my = math.floor(mm.to_map(mouse_y, ui.pan_y, ui.zoom, origin_y));
+        if (over_map and imgui.GetIO().KeyCtrl and imgui.IsMouseClicked(0)) then
+            ui.sel           = point_at(mx, my) or add_point(mx, my);
+            ui.edit_name[1]  = ui.sel.label;
+            ui.edit_group[1] = ui.sel.group;
+            ui.moving        = true;
+        end
+        if (ui.moving) then
+            if (not imgui.IsMouseDown(0)) then
+                ui.moving = false;
+            elseif (ui.sel.x ~= mx or ui.sel.y ~= my) then
+                ui.sel.x, ui.sel.y = mx, my;
+                ui.dirty = true;
+            end
+        end
+    end
+
     -- Left-drag pans.  Once a drag starts it keeps going even if the cursor
     -- leaves the map, which is what every other map viewer does.
-    if (imgui.IsMouseDragging(0) and (over_map or ui.dragging)) then
+    if (not ui.moving and imgui.IsMouseDragging(0) and (over_map or ui.dragging)) then
         if (ui.dragging) then
             ui.pan_x = ui.pan_x - (mouse_x - ui.drag_x);
             ui.pan_y = ui.pan_y - (mouse_y - ui.drag_y);
@@ -320,6 +441,42 @@ local function draw_map(view_w, view_h)
         -- the box before the drag threshold is ever crossed.
         ui.search_hot = imgui.IsItemActive() or imgui.IsItemHovered();
 
+        -- Editor panel, stacked under the search box.  Its widgets feed
+        -- search_hot too, so dragging in them edits text instead of panning.
+        if (ui.edit) then
+            if (ui.sel == nil) then
+                outlined_text(imgui.GetWindowDrawList(),
+                              origin_x + SEARCH_MARGIN, origin_y + SEARCH_MARGIN + 30,
+                              'ctrl+click the map to add or grab a point', COL_READOUT);
+            else
+                -- Rows are placed by hand rather than by flow, so the panel does
+                -- not depend on the child's cursor advancing a particular amount.
+                imgui.SetCursorPos({ SEARCH_MARGIN, SEARCH_MARGIN + EDIT_ROW });
+                imgui.SetNextItemWidth(SEARCH_W);
+                imgui.InputTextWithHint('##ubermap_pt_name', 'Name', ui.edit_name, SEARCH_MAX);
+                local hot = imgui.IsItemActive() or imgui.IsItemHovered();
+
+                imgui.SetCursorPos({ SEARCH_MARGIN, SEARCH_MARGIN + EDIT_ROW * 2 });
+                imgui.SetNextItemWidth(SEARCH_W);
+                imgui.InputTextWithHint('##ubermap_pt_group', 'Group', ui.edit_group, SEARCH_MAX);
+                hot = hot or imgui.IsItemActive() or imgui.IsItemHovered();
+
+                if (ui.edit_name[1] ~= ui.sel.label or ui.edit_group[1] ~= ui.sel.group) then
+                    ui.sel.label, ui.sel.group = ui.edit_name[1], ui.edit_group[1];
+                    ui.dirty = true;
+                end
+
+                imgui.SetCursorPos({ SEARCH_MARGIN, SEARCH_MARGIN + EDIT_ROW * 3 });
+                imgui.Text(('%d, %d'):fmt(ui.sel.x, ui.sel.y));
+                imgui.SetCursorPos({ SEARCH_MARGIN, SEARCH_MARGIN + EDIT_ROW * 4 });
+                if (imgui.Button('Delete')) then
+                    delete_point(ui.sel);
+                    ui.sel = nil;
+                end
+                ui.search_hot = ui.search_hot or hot or imgui.IsItemHovered();
+            end
+        end
+
         -- Source-image pixel under the cursor.  Independent of zoom and pan, so
         -- the same spot on the map always reads the same numbers.
         if (over_map) then
@@ -334,6 +491,12 @@ local function draw_map(view_w, view_h)
         end
     end
     imgui.EndChild();
+
+    -- One write per finished edit, rather than one per frame of a drag.
+    if (ui.dirty and not ui.moving) then
+        save_points();
+        ui.dirty = false;
+    end
 
     if (ui.debug) then
         ui.dbg = ('hovered=%s over_map=%s shift=%s wheel=%.2f drag=%s | mouse %.0f,%.0f origin %.0f,%.0f view %.0fx%.0f | zoom %.4f (cover %.4f) pan %.0f,%.0f'):fmt(
@@ -417,6 +580,17 @@ ashita.events.register('command', 'ubermap_command', function (e)
     e.blocked = true;
 
     local sub = args[2] ~= nil and args[2]:lower() or nil;
+
+    if (sub == 'edit') then
+        ui.edit = not ui.edit;
+        if (ui.edit) then
+            ui.is_open[1] = true;
+        else
+            ui.sel = nil;
+        end
+        notify(('point editor: %s'):fmt(ui.edit and 'on, ctrl+click the map' or 'off'));
+        return;
+    end
 
     if (sub == 'debug') then
         ui.debug = not ui.debug;
