@@ -57,8 +57,11 @@ scroll API, which this Ashita build does not appear to expose.
   under the cursor stays pinned across the change.
 - **Pan**: left-drag, tracked by frame-to-frame mouse delta. A drag that starts
   on the map continues even if the cursor leaves it.
-- Mouse input is ignored unless the cursor is inside the map viewport, so
-  dragging the title bar moves the window without also panning. The hover test
+- The window carries `ImGuiWindowFlags_NoMove` unless `io.KeyShift` is set, and
+  panning is suppressed while shift is held. ImGui otherwise moves a window from
+  a drag on any empty part of it, child windows included, which fights the map's
+  own panning - and with `NoTitleBar` there is no separate grab area to use.
+- Mouse input is ignored unless the cursor is inside the map viewport. The hover test
   needs `ImGuiHoveredFlags_ChildWindows`, because the map child covers the whole
   content region and is therefore the window ImGui reports as hovered - a bare
   `IsWindowHovered()` is false exactly when the cursor is over the map, killing

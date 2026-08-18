@@ -18,9 +18,9 @@ Drop the `UberMap` folder into `Ashita/addons/`, then:
 | `/ubermap` or `/um` | Toggle the map |
 | `/ubermap debug` | Show an input-state overlay and print the name behind every NPC interaction event |
 
-Mouse wheel zooms about the cursor, left-drag pans. The map also opens on its
-own when you talk to a Home Point; if it is already open your current view is
-left alone.
+Mouse wheel zooms about the cursor and left-drag pans. Hold **shift** while
+dragging to move the window itself. The map also opens on its own when you talk
+to a Home Point; if it is already open your current view is left alone.
 
 If Home Points do not trigger it on your server, run `/ubermap debug`, talk to
 one, and check the name it prints against `HOMEPOINT_PATTERN` in `ubermap.lua`.

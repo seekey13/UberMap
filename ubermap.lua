@@ -190,8 +190,8 @@ ashita.events.register('d3d_present', 'ubermap_present', function ()
         flags = bit.bor(flags, ImGuiWindowFlags_NoMove);
     end
 
-    -- No title bar and zero padding, so the map reaches the window edges.
-    imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, { 0, 0 });
+    -- No title bar and a 2px border, so the map runs nearly to the edges.
+    imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, { 4, 4 });
     if (imgui.Begin('UberMap', ui.is_open, flags)) then
         local view_w, view_h = imgui.GetContentRegionAvail();
         if (view_w > 0 and view_h > 0) then
