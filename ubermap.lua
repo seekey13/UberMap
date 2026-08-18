@@ -55,44 +55,59 @@ local COL_LABEL    = 0xFF000000;
 -- Labels sit above the icon at a fixed screen size, so they stay readable at
 -- every zoom instead of shrinking away with the art.
 local LABEL_SCALE = 1;
-local LABEL_GAP   = 2;  -- screen pixels between the label and the icon
+local LABEL_GAP   = 1;  -- screen pixels between the label and the icon
 
 -- Search box, pinned in from the viewport corner by SEARCH_MARGIN screen pixels.
 local SEARCH_MARGIN = 50;
 local SEARCH_W      = 300;
 local SEARCH_MAX    = 256;
 
-local ICONS = T{
-    { file = 'SandOria.jpg',  x = 1075, y =  971, label = "San d'Oria" },
-    { file = 'Bastok.jpg',    x = 1340, y = 1886, label = 'Bastok'     },
-    { file = 'Jeuno.jpg',     x = 1737, y = 1207, label = 'Jeuno'      },
-    { file = 'Windurst.jpg',  x = 2115, y = 1986, label = 'Windurst'   },
-    { file = 'AhtUrhgan.jpg', x = 5009, y = 1796, label = 'Aht Urhgan' },
-    { file = 'Point_0.png',  x = 1000, y =  695, label = 'Valdeaunia', border = false, size = POINT_SIZE },
-    { file = 'Point_0.png',  x = 1538, y =  837, label = 'Fauregandi',  border = false, size = POINT_SIZE },
-    { file = 'Point_0.png',  x = 1473, y =  941, label = 'Norvallen',   border = false, size = POINT_SIZE },
-    { file = 'Point_0.png',  x = 1899, y =  976, label = 'Qufim',       border = false, size = POINT_SIZE },
-    { file = 'Point_0.png',  x = 2029, y =  777, label = "Tu'Lia",     border = false, size = POINT_SIZE },
-    { file = 'Point_0.png',  x = 1074, y = 1089, label = 'Ronfaure',    border = false, size = POINT_SIZE },
-    { file = 'Point_0.png',  x =  702, y = 1185, label = 'Tavnazian Archipelago', border = false, size = POINT_SIZE },
-    { file = 'Point_0.png',  x =  597, y = 1574, label = 'Vollbow',     border = false, size = POINT_SIZE },
-    { file = 'Point_0.png',  x = 1105, y = 1459, label = 'Zulkheim',    border = false, size = POINT_SIZE },
-    { file = 'Point_0.png',  x =  533, y = 2134, label = 'Kuzotz',      border = false, size = POINT_SIZE },
-    { file = 'Point_0.png',  x = 1003, y = 1898, label = 'Gustaberg',   border = false, size = POINT_SIZE },
-    { file = 'Point_0.png',  x = 1488, y = 1787, label = 'Movalpolos',  border = false, size = POINT_SIZE },
-    { file = 'Point_0.png',  x = 1530, y = 1412, label = 'Derfland',    border = false, size = POINT_SIZE },
-    { file = 'Point_0.png',  x = 2184, y = 1348, label = 'Aragoneu',    border = false, size = POINT_SIZE },
-    { file = 'Point_0.png',  x = 2538, y = 1283, label = "Li'Telor",    border = false, size = POINT_SIZE },
-    { file = 'Point_0.png',  x = 2295, y = 1577, label = 'Kolshushu',   border = false, size = POINT_SIZE },
-    { file = 'Point_0.png',  x = 2180, y = 1780, label = 'Sarutabaruta', border = false, size = POINT_SIZE },
-    { file = 'Point_0.png',  x = 2445, y = 2364, label = 'Elshimo Lowlands', border = false, size = POINT_SIZE },
-    { file = 'Point_0.png',  x = 2669, y = 2364, label = 'Elshimo Uplands', border = false, size = POINT_SIZE },
-    { file = 'Point_0.png',  x = 3863, y =  861, label = 'Arrapago Islands', border = false, size = POINT_SIZE },
-    { file = 'Point_0.png',  x = 3981, y = 1343, label = 'Ruins of Alzadaal', border = false, size = POINT_SIZE },
-    { file = 'Point_0.png',  x = 4158, y = 1713, label = 'Halvung Territory', border = false, size = POINT_SIZE },
-    { file = 'Point_0.png',  x = 4072, y = 2344, label = 'Mamool Ja Savagelands', border = false, size = POINT_SIZE },
-    { file = 'Point_0.png',  x = 4703, y = 1852, label = 'West Aht Urhgan', border = false, size = POINT_SIZE },
+-- Icons are declared per group, in draw order: later groups land on top of
+-- earlier ones where they overlap.
+local ICON_GROUPS = T{
+    { name = 'Nations', icons = T{
+        { file = 'SandOria.jpg',  x = 1075, y =  971, label = "San d'Oria" },
+        { file = 'Bastok.jpg',    x = 1340, y = 1886, label = 'Bastok'     },
+        { file = 'Jeuno.jpg',     x = 1737, y = 1207, label = 'Jeuno'      },
+        { file = 'Windurst.jpg',  x = 2115, y = 1986, label = 'Windurst'   },
+        { file = 'AhtUrhgan.jpg', x = 5009, y = 1796, label = 'Aht Urhgan' },
+    } },
+    { name = 'Regions', icons = T{
+        { file = 'Point_0.png',  x = 1000, y =  695, label = 'Valdeaunia', border = false, size = POINT_SIZE },
+        { file = 'Point_0.png',  x = 1538, y =  837, label = 'Fauregandi',  border = false, size = POINT_SIZE },
+        { file = 'Point_0.png',  x = 1473, y =  941, label = 'Norvallen',   border = false, size = POINT_SIZE },
+        { file = 'Point_0.png',  x = 1899, y =  976, label = 'Qufim',       border = false, size = POINT_SIZE },
+        { file = 'Point_0.png',  x = 2029, y =  777, label = "Tu'Lia",     border = false, size = POINT_SIZE },
+        { file = 'Point_0.png',  x = 1074, y = 1089, label = 'Ronfaure',    border = false, size = POINT_SIZE },
+        { file = 'Point_0.png',  x =  702, y = 1185, label = 'Tavnazian Archipelago', border = false, size = POINT_SIZE },
+        { file = 'Point_0.png',  x =  597, y = 1574, label = 'Vollbow',     border = false, size = POINT_SIZE },
+        { file = 'Point_0.png',  x = 1105, y = 1459, label = 'Zulkheim',    border = false, size = POINT_SIZE },
+        { file = 'Point_0.png',  x =  533, y = 2134, label = 'Kuzotz',      border = false, size = POINT_SIZE },
+        { file = 'Point_0.png',  x = 1003, y = 1898, label = 'Gustaberg',   border = false, size = POINT_SIZE },
+        { file = 'Point_0.png',  x = 1488, y = 1787, label = 'Movalpolos',  border = false, size = POINT_SIZE },
+        { file = 'Point_0.png',  x = 1530, y = 1412, label = 'Derfland',    border = false, size = POINT_SIZE },
+        { file = 'Point_0.png',  x = 2184, y = 1348, label = 'Aragoneu',    border = false, size = POINT_SIZE },
+        { file = 'Point_0.png',  x = 2538, y = 1283, label = "Li'Telor",    border = false, size = POINT_SIZE },
+        { file = 'Point_0.png',  x = 2295, y = 1577, label = 'Kolshushu',   border = false, size = POINT_SIZE },
+        { file = 'Point_0.png',  x = 2180, y = 1780, label = 'Sarutabaruta', border = false, size = POINT_SIZE },
+        { file = 'Point_0.png',  x = 2445, y = 2364, label = 'Elshimo Lowlands', border = false, size = POINT_SIZE },
+        { file = 'Point_0.png',  x = 2669, y = 2364, label = 'Elshimo Uplands', border = false, size = POINT_SIZE },
+        { file = 'Point_0.png',  x = 3863, y =  861, label = 'Arrapago Islands', border = false, size = POINT_SIZE },
+        { file = 'Point_0.png',  x = 3981, y = 1343, label = 'Ruins of Alzadaal', border = false, size = POINT_SIZE },
+        { file = 'Point_0.png',  x = 4158, y = 1713, label = 'Halvung Territory', border = false, size = POINT_SIZE },
+        { file = 'Point_0.png',  x = 4072, y = 2344, label = 'Mamool Ja Savagelands', border = false, size = POINT_SIZE },
+        { file = 'Point_0.png',  x = 4703, y = 1852, label = 'West Aht Urhgan', border = false, size = POINT_SIZE },
+    } },
 };
+
+-- One flat list for drawing, each entry tagged with its group name.
+local ICONS = T{};
+for _, g in ipairs(ICON_GROUPS) do
+    for _, ic in ipairs(g.icons) do
+        ic.group = g.name;
+        table.insert(ICONS, ic);
+    end
+end
 
 local ui = T{
     is_open     = { false, },
@@ -102,6 +117,7 @@ local ui = T{
     pan_x       = 0,
     pan_y       = 0,
     search      = { '', },
+    search_hot  = false,
     dragging    = false,
     drag_x      = 0,
     drag_y      = 0,
@@ -249,10 +265,13 @@ local function draw_map(view_w, view_h)
         bit.bor(ImGuiHoveredFlags_ChildWindows, ImGuiHoveredFlags_RectOnly));
 
     -- Ignore the mouse outside the map, and while shift is held, so a
-    -- shift-drag moves the window instead of panning underneath it.  An active
-    -- widget (the search box) also swallows the mouse, so it does not pan too.
+    -- shift-drag moves the window instead of panning underneath it.  The search
+    -- box is skipped too, so dragging in it selects text instead of panning.
+    -- IsAnyItemActive cannot stand in for that flag: ImGui sets ActiveId to the
+    -- window's MoveId on any press in blank space, NoMove included, so it is
+    -- true for exactly the drag that should pan.
     local shift    = imgui.GetIO().KeyShift;
-    local over_map = hovered and not shift and not imgui.IsAnyItemActive()
+    local over_map = hovered and not shift and not ui.search_hot
         and mouse_x >= origin_x and mouse_x < origin_x + view_w
         and mouse_y >= origin_y and mouse_y < origin_y + view_h;
 
@@ -297,6 +316,9 @@ local function draw_map(view_w, view_h)
         imgui.SetCursorPos({ SEARCH_MARGIN, SEARCH_MARGIN });
         imgui.SetNextItemWidth(SEARCH_W);
         imgui.InputTextWithHint('##ubermap_search', 'Search', ui.search, SEARCH_MAX);
+        -- Read a frame late by over_map above, which is fine: a click focuses
+        -- the box before the drag threshold is ever crossed.
+        ui.search_hot = imgui.IsItemActive() or imgui.IsItemHovered();
 
         -- Source-image pixel under the cursor.  Independent of zoom and pan, so
         -- the same spot on the map always reads the same numbers.
