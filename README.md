@@ -1,7 +1,7 @@
 # UberMap
 
 Ashita v4 addon by Seekey. Pops up a zoomable, pannable server map whenever you
-interact with a Home Point.
+interact with a Home Point, Survival Guide or Unity Concord.
 
 ## Install
 
@@ -18,6 +18,7 @@ Drop the `UberMap` folder into `Ashita/addons/`, then:
 | `/ubermap` or `/um` | Toggle the map |
 | `/ubermap debug` | Show an input-state overlay and print the name behind every NPC interaction event |
 | `/ubermap edit` | Toggle the point editor |
+| `/ubermap near` | Print the kind of warp NPC the auto-filter sees in reach |
 
 The button at the right of the search row switches between past and present: it
 reads **Past** while the present-day map is up and **Present** while the past one
@@ -28,7 +29,8 @@ image is held in memory at a time.
 
 Mouse wheel zooms about the cursor and left-drag pans. Hold **shift** while
 dragging to move the window itself. The map also opens on its own when you talk
-to a Home Point; if it is already open your current view is left alone.
+to a Home Point, a Survival Guide or a Unity Concord NPC; if it is already open
+your current view is left alone.
 
 ## Warp list
 
@@ -46,6 +48,17 @@ The four icons at the right of the search row filter it: dimming **Crystal**
 drops the Home Point rows, **Guide** the Survival Guides and **Unity** the Unity
 Warps. **Maw** names no warp type and so filters nothing. A zone whose every row
 is filtered out - or that has no warps at all - does not open a panel.
+
+The map sets those toggles for you, from what you are standing next to: within
+10 yalms of a Home Point, a Survival Guide or a Unity Concord NPC - Igsli in
+Bastok Markets, Urbiolaine in Southern San d'Oria, Teldro-Kesdrodo or Yonolala
+in Windurst Woods - only that kind stays lit, since that NPC is the only one you
+can warp from. Walk away and all three light again.
+
+It is re-read twice a second while the map is up, but the toggles are only set
+when the answer changes, so a toggle clicked by hand stands until you walk off
+the NPC or up to a different kind. Run `/ubermap near` to see what the check
+finds.
 
 While any of those three is dimmed the filter reaches the map itself: a zone
 marker with no row left to show fades back the way an unfocused group does, and
@@ -105,7 +118,8 @@ Only the rows under `points` are editable. The `groups` icons are drawn but
 cannot be selected, moved, or deleted; edit those in `points.lua` by hand.
 
 If Home Points do not trigger it on your server, run `/ubermap debug`, talk to
-one, and check the name it prints against `HOMEPOINT_PATTERN` in `ubermap.lua`.
+one, and check the name it prints against `WARP_NPC` in `ubermap.lua` - the same
+table names the Survival Guide and Unity Concord NPCs the auto-filter looks for.
 
 The same toggle draws a line at the top of the map window showing `hovered`,
 `over_map`, the wheel delta, zoom and pan. If zoom or pan stops responding,

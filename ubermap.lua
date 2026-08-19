@@ -52,10 +52,28 @@ local TIMES = {
 -- once - switching between them drops the other.
 local TEX_W, TEX_H = 4096, 2048;
 
--- Home Point entities are named 'Home Point #1', 'Home Point #2' and so on.
--- Use '/ubermap debug' to print the name of every NPC event if a server
--- renames them.
-local HOMEPOINT_PATTERN = '^Home Point';
+-- The NPCs a warp starts from, as a name pattern and the warp type it begins.
+-- Home Point entities are named 'Home Point #1', 'Home Point #2' and so on,
+-- and Survival Guides carry their own name; the Unity Concord is a person, so
+-- those are named one by one.  Use '/ubermap debug' to print the name of every
+-- NPC event if a server renames them.
+local WARP_NPC = T{
+    { '^Home Point',        'home'  },
+    { '^Survival Guide',    'guide' },
+    { '^Igsli$',            'unity' },  -- Bastok Markets (E-11)
+    { '^Urbiolaine$',       'unity' },  -- Southern San d'Oria (G-10)
+    { '^Teldro%-Kesdrodo$', 'unity' },  -- Windurst Woods (J-10)
+    { '^Yonolala$',         'unity' },  -- Windurst Woods (J-10)
+};
+
+-- How close one of those has to be to count as being stood at, in yalms, and
+-- how often the map re-checks while it is open, in seconds.
+local WARP_NPC_NEAR = 10;
+local NEAR_POLL     = 0.5;
+
+-- NPCs and mobs occupy the bottom of the entity array; players start at 0x400
+-- and pets and trusts above them, so the walk stops before either.
+local NPC_FIRST, NPC_LAST = 0x000, 0x3FF;
 
 local MAX_ZOOM  = 2.0;  -- two screen pixels per source map pixel
 local ZOOM_STEP = 1.15; -- per wheel notch
@@ -184,6 +202,8 @@ local ui = T{
     drag_x      = 0,
     drag_y      = 0,
     press       = nil,       -- marker the left button went down on
+    near_kind   = false,     -- warp type last seen in reach; false until checked
+    near_at     = 0,         -- os.clock() of that check
     warp        = nil,       -- zone point whose warp popup is open
     warp_hot    = false,     -- cursor was inside that popup last frame
     thanks      = false,     -- credits panel is open
@@ -236,6 +256,72 @@ local function warps_lit(label)
 end
 
 --[[
+* The warp type an NPC's name begins, or nil when it begins none.
+--]]
+local function warp_npc_type(name)
+    for _, v in ipairs(WARP_NPC) do
+        if (name:match(v[1])) then
+            return v[2];
+        end
+    end
+    return nil;
+end
+
+--[[
+* The warp type of the nearest such NPC within WARP_NPC_NEAR, or nil when none
+* is in reach.  Nearest rather than first found: a zone can hold two kinds
+* within the radius, and the one being stood at is the one meant.
+--]]
+local function near_warp_type()
+    local ent = AshitaCore:GetMemoryManager():GetEntity();
+    if (ent == nil) then
+        return nil;
+    end
+    local kind, near = nil, WARP_NPC_NEAR * WARP_NPC_NEAR;
+    for i = NPC_FIRST, NPC_LAST do
+        -- GetDistance is squared yalms, so the radius is squared to match it
+        -- rather than taking a root per entity.  0x200 is the rendered bit: a
+        -- slot keeps the name of whatever last held it after that despawns.
+        local d = ent:GetDistance(i);
+        if (d < near and bit.band(ent:GetRenderFlags0(i), 0x200) == 0x200) then
+            local t = warp_npc_type(ent:GetName(i) or '');
+            if (t ~= nil) then
+                kind, near = t, d;
+            end
+        end
+    end
+    return kind;
+end
+
+--[[
+* Narrow the map to one kind of warp, or light every kind again when given nil.
+--]]
+local function filter_to(kind)
+    for t, file in pairs(WARP_ICON) do
+        ui.toggle[file] = (kind ~= nil and t ~= kind) or nil;
+    end
+end
+
+--[[
+* Re-read what is in reach while the map is up and narrow to it.  Only when the
+* answer has changed, so a toggle clicked by hand stands until the player walks
+* off the NPC or up to a different kind.  Polled rather than done per frame:
+* walking in and out of range happens on a human timescale, and the read is a
+* thousand-odd entity slots.
+--]]
+local function poll_near(now)
+    if (now - ui.near_at < NEAR_POLL) then
+        return;
+    end
+    ui.near_at = now;
+    local kind = near_warp_type();
+    if (kind ~= ui.near_kind) then
+        ui.near_kind = kind;
+        filter_to(kind);
+    end
+end
+
+--[[
 * Everything outside the focused group fades back, and so does a zone the
 * toggles have left with no warp row: the marker stays on the map to say the
 * zone is there, dimmed to say it holds none of the kind being looked for.  The
@@ -272,6 +358,43 @@ end
 
 local function notify(msg)
     print(chat.header(addon.name):append(chat.message(msg)));
+end
+
+--[[
+* Every named entity within NEAR_DUMP, printed with everything near_warp_type
+* tests it on: the slot, so an NPC outside NPC_FIRST..NPC_LAST shows up as one;
+* the distance, so a radius that is too tight shows up as one; the render flags,
+* whose 0x200 bit a live entity carries; and the type its name matched, so a
+* name the server spells differently shows up as '-'.  The whole array is
+* walked, not just the NPC slice, because the slice is one of the things being
+* checked.  '/ubermap near'.
+--]]
+local NEAR_DUMP = 30;  -- yalms
+local DUMP_MAX  = 20;  -- rows, so a crowded zone cannot flood the log
+
+local function near_dump()
+    local ent = AshitaCore:GetMemoryManager():GetEntity();
+    if (ent == nil) then
+        notify('no entity manager - are you logged in?');
+        return;
+    end
+    local shown, found = 0, 0;
+    for i = 0, 2303 do
+        local name = ent:GetName(i);
+        local d    = ent:GetDistance(i);
+        if (name ~= nil and name ~= '' and d < NEAR_DUMP * NEAR_DUMP) then
+            found = found + 1;
+            if (shown < DUMP_MAX) then
+                shown = shown + 1;
+                notify(('%04X %-22s %5.1fy flags %08X %s'):fmt(
+                    i, name, math.sqrt(d), ent:GetRenderFlags0(i),
+                    warp_npc_type(name) or '-'));
+            end
+        end
+    end
+    notify(('%d entity(s) within %dy, %d shown'):fmt(found, NEAR_DUMP, shown));
+    notify(('filter sees: %s (radius %dy, slots %04X-%04X)'):fmt(
+        near_warp_type() or 'nothing', WARP_NPC_NEAR, NPC_FIRST, NPC_LAST));
 end
 
 --[[
@@ -677,11 +800,21 @@ end
 --]]
 local function show()
     ui.is_open[1] = true;
+    -- Opening reads the world afresh on the next frame, whatever the toggles
+    -- were left at when it was last up.
+    ui.near_kind = false;
+    ui.near_at   = 0;
 end
 
 local function draw_map(view_w, view_h)
     if (ui.debug) then
         imgui.Text(ui.dbg or '');
+        -- What the auto-filter is acting on, live: the kind in reach, when it
+        -- was last read, and the toggle each kind was left at.
+        imgui.Text(('near=%s polled %.1fs ago | crystal=%s guide=%s unity=%s'):fmt(
+            tostring(ui.near_kind), os.clock() - ui.near_at,
+            tostring(ui.toggle['Crystal.png']), tostring(ui.toggle['Guide.png']),
+            tostring(ui.toggle['Unity.png'])));
         local _, avail_h = imgui.GetContentRegionAvail();
         view_h = avail_h;
     end
@@ -1173,6 +1306,8 @@ ashita.events.register('d3d_present', 'ubermap_present', function ()
         return;
     end
 
+    poll_near(os.clock());
+
     load_texture();
     if (ui.texture == nil) then
         ui.is_open[1] = false;
@@ -1221,7 +1356,7 @@ ashita.events.register('packet_in', 'ubermap_packet_in', function (e)
         notify(('NPC event: %s'):fmt(name));
     end
 
-    if (name:match(HOMEPOINT_PATTERN)) then
+    if (warp_npc_type(name) ~= nil) then
         show();
     end
 
@@ -1260,7 +1395,17 @@ ashita.events.register('command', 'ubermap_command', function (e)
         return;
     end
 
-    ui.is_open[1] = not ui.is_open[1];
+    if (sub == 'near') then
+        near_dump();
+        return;
+    end
+
+    -- Opening filters to whatever is in reach; closing leaves the toggles be.
+    if (ui.is_open[1]) then
+        ui.is_open[1] = false;
+    else
+        show();
+    end
 end);
 
 ashita.events.register('unload', 'ubermap_unload', function ()
