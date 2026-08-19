@@ -392,10 +392,10 @@ return {
         { type = 'guide', label = 'Survival Guide (F-11)' },
     },
     ["Riverne - Site A01"] = {
-        { type = 'home',  label = 'Home Point #1 (I-9)', zone = 'Riverne - Site #A01' },
+        { type = 'home',  label = 'Home Point #1 (I-9)', zone = 'Riverne - Site A01' },
     },
     ["Riverne - Site B01"] = {
-        { type = 'home',  label = 'Home Point #1 (E-8)', zone = 'Riverne - Site #B01' },
+        { type = 'home',  label = 'Home Point #1 (E-8)', zone = 'Riverne - Site B01' },
     },
     ["Ro'Maeve"] = {
         { type = 'guide', label = 'Survival Guide (H-6)' },

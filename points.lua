@@ -237,5 +237,9 @@ return {
         { file = "Point_0.png", x = 2576, y =  494, label = "Grand Palace of Hu'Xzoi", border = false, size = POINT_SIZE, group = "Lumoria", time = "present" },
         { file = "Point_0.png", x = 2576, y =  541, label = "Al'Taieu", border = false, size = POINT_SIZE, group = "Lumoria", time = "present" },
         { file = "Point_0.png", x = 2576, y =  449, label = "The Garden of Ru'Hmet", border = false, size = POINT_SIZE, group = "Lumoria", time = "present" },
+        { file = "Point_0.png", x =  375, y = 1558, label = "Sealions Den", border = false, size = POINT_SIZE, group = "Tavnazian Archipelago", time = "present" },
+        { file = "Point_0.png", x =  236, y = 1221, label = "Riverne - Site A01", border = false, size = POINT_SIZE, group = "Tavnazian Archipelago", time = "present" },
+        { file = "Point_0.png", x =  236, y = 1134, label = "Riverne - Site B01", border = false, size = POINT_SIZE, group = "Tavnazian Archipelago", time = "present" },
+        { file = "Point_0.png", x =  173, y = 1174, label = "Monarch Linn", border = false, size = POINT_SIZE, group = "Tavnazian Archipelago", time = "present" },
     },
 };

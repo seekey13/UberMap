@@ -53,6 +53,12 @@ drops the Home Point rows, **Guide** the Survival Guides and **Unity** the Unity
 Warps. A zone whose every row is filtered out - or that has no warps at all -
 does not open a panel.
 
+A fourth icon, **Warp**, sits after them and is not a filter: it reads an
+Instant Warp scroll (item 4181) out of your bag, sending
+`/item "Instant Warp" <me>` and closing the map. It is lit only while one is
+carried and takes no click while it is not; the bag is re-read twice a second on
+the same beat as the check below.
+
 The map sets those toggles for you, from what you are standing next to: within
 10 yalms of a Home Point, a Survival Guide or a Unity Concord NPC - Igsli in
 Bastok Markets, Urbiolaine in Southern San d'Oria, Teldro-Kesdrodo or Yonolala

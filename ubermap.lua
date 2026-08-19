@@ -142,6 +142,17 @@ local COL_ICON_OFF = 0x40FFFFFF;  -- 25% opacity, i.e. 75% transparent
 -- from the popup.  A type no toggle names never shows.
 local WARP_ICON = T{ home = 'Crystal.png', guide = 'Guide.png', unity = 'Unity.png' };
 
+-- The Instant Warp scroll, drawn on the toggles' line after them.  Not a layer:
+-- it warps out of the bag rather than from an NPC, so it filters nothing and is
+-- lit only while a scroll is carried.
+local WARP_ITEM_ICON = 'Warp.png';
+local WARP_ITEM_ID   = 4181;
+local WARP_ITEM_CMD  = '/item "Instant Warp" <me>';
+-- Inventory container 0 - the bag, which is what /item reads from - and its
+-- slot count.  Slot 0 is the gil slot rather than an item, so the walk starts
+-- at 1.
+local BAG, BAG_SLOTS = 0, 80;
+
 -- Warp popup: a header row and one row per destination, hung off the zone
 -- point that opened it.
 local POPUP_PAD      = 8;   -- screen pixels of margin inside the panel
@@ -210,6 +221,7 @@ local ui = T{
     drag_y      = 0,
     press       = nil,       -- marker the left button went down on
     near_kind   = false,     -- warp type last seen in reach; false until checked
+    has_warp    = false,     -- an Instant Warp scroll was in the bag last poll
     near_at     = 0,         -- os.clock() of that check
     open_x      = nil,       -- where the player stood when the map went up;
     open_z      = nil,       -- nil until the first frame after opening reads it
@@ -312,6 +324,26 @@ local function filter_to(kind)
 end
 
 --[[
+* True while an Instant Warp scroll sits in the bag.  Matched by item id rather
+* than by name: the resource name a server gives an item need not be the string
+* a name lookup wants.  pcall'd whole because the inventory is not readable
+* while zoning.
+--]]
+local function have_warp_item()
+    local ok, found = pcall(function()
+        local inv = AshitaCore:GetMemoryManager():GetInventory();
+        for i = 1, BAG_SLOTS do
+            local it = inv:GetContainerItem(BAG, i);
+            if (it ~= nil and it.Id == WARP_ITEM_ID and it.Count > 0) then
+                return true;
+            end
+        end
+        return false;
+    end);
+    return ok and found;
+end
+
+--[[
 * Re-read what is in reach while the map is up and narrow to it.  Only when the
 * answer has changed, so a toggle clicked by hand stands until the player walks
 * off the NPC or up to a different kind.  Polled rather than done per frame:
@@ -323,6 +355,7 @@ local function poll_near(now)
         return;
     end
     ui.near_at = now;
+    ui.has_warp = have_warp_item();
     local kind = near_warp_type();
     if (kind ~= ui.near_kind) then
         ui.near_kind = kind;
@@ -850,10 +883,10 @@ local function draw_map(view_w, view_h)
         imgui.Text(ui.dbg or '');
         -- What the auto-filter is acting on, live: the kind in reach, when it
         -- was last read, and the toggle each kind was left at.
-        imgui.Text(('near=%s polled %.1fs ago | crystal=%s guide=%s unity=%s'):fmt(
+        imgui.Text(('near=%s polled %.1fs ago | crystal=%s guide=%s unity=%s warp=%s'):fmt(
             tostring(ui.near_kind), os.clock() - ui.near_at,
             tostring(ui.toggle['Crystal.png']), tostring(ui.toggle['Guide.png']),
-            tostring(ui.toggle['Unity.png'])));
+            tostring(ui.toggle['Unity.png']), tostring(ui.has_warp)));
         local _, avail_h = imgui.GetContentRegionAvail();
         view_h = avail_h;
     end
@@ -1048,6 +1081,28 @@ local function draw_map(view_w, view_h)
                 ui.search_hot = ui.search_hot or imgui.IsItemHovered();
                 tx_at = tx_at + tw + TOGGLE_GAP;
             end
+        end
+
+        -- Instant Warp, last on that line.  It uses the scroll instead of
+        -- filtering the map, so it is drawn dim and takes no press while none
+        -- is carried.  The press is vetoed by a warp popup lying over it for
+        -- the same reason the toggles above are.
+        local wtex, wiw, wih = icon_texture(WARP_ITEM_ICON);
+        if (wtex ~= nil) then
+            local tw = tsize * wiw / wih;
+            imgui.SetCursorPos({ tx_at, SEARCH_MARGIN });
+            local sx, sy = imgui.GetCursorScreenPos();
+            tdl:AddImage(tonumber(ffi.cast('uint32_t', wtex)),
+                         { sx, sy }, { sx + tw, sy + tsize }, { 0, 0 }, { 1, 1 },
+                         ui.has_warp and COL_ICON or COL_ICON_OFF);
+            if (imgui.InvisibleButton('##ubermap_warpitem', { tw, tsize })
+                and not ui.warp_hot and ui.has_warp) then
+                AshitaCore:GetChatManager():QueueCommand(-1, WARP_ITEM_CMD);
+                -- Reading the scroll is what the map was opened for, so it puts
+                -- the map away the way clicking a warp row does.
+                ui.is_open[1] = false;
+            end
+            ui.search_hot = ui.search_hot or imgui.IsItemHovered();
         end
 
         -- Colour pickers, pinned to the viewport's top-right corner and
