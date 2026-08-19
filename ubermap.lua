@@ -165,6 +165,7 @@ local POPUP_ICON     = 24;  -- the box a type icon is fitted into
 local POPUP_GAP      = 6;   -- screen pixels between the marker and the panel
 local COL_POPUP_BG   = 0xE0101010;  -- near black, a little of the map showing through
 local COL_POPUP_TEXT = 0xFFFFFFFF;  -- fixed, not the pickers: the panel has its own ground
+local COL_POPUP_OFF  = 0x60FFFFFF;  -- a row whose kind of NPC is not in reach
 
 -- Credits, opened by the heart in the viewport's bottom-right corner.  One
 -- entry per credit: who, then where to find them.
@@ -266,6 +267,16 @@ end
 local function warp_lit(w)
     local file = WARP_ICON[w.type];
     return file ~= nil and not ui.toggle[file];
+end
+
+--[[
+* True while a row can actually be taken, i.e. the player is stood at the kind
+* of NPC it travels from.  ui.near_kind is false before the first poll and nil
+* while nothing is in reach, and neither matches a type, so both read as out of
+* reach.
+--]]
+local function warp_reachable(w)
+    return w.type == ui.near_kind;
 end
 
 -- True while a toggle that lists warp rows is dimmed, i.e. the map has been
@@ -1338,10 +1349,15 @@ local function draw_map(view_w, view_h)
                 local hot_row = nil;
                 for i, r in ipairs(rows) do
                     local ry = py + POPUP_PAD + POPUP_ROW * (i - 1);
+                    -- A row only travels from the kind of NPC the player is
+                    -- stood at, so one of another kind is drawn dim and takes
+                    -- no hover or press.  Listed rather than dropped: the row
+                    -- says the destination exists and what to walk up to.
+                    local live = warp_reachable(r);
                     -- The hover is drawn straight into the list rather than
                     -- coming off an ImGui item, for the same reason the click
                     -- below is tested by hand: the panel is one InvisibleButton.
-                    if (mouse_x >= px and mouse_x <= px + w
+                    if (live and mouse_x >= px and mouse_x <= px + w
                         and mouse_y >= ry and mouse_y < ry + POPUP_ROW) then
                         hot_row = r;
                         pdl:AddRectFilled({ px + ICON_BORDER, ry },
@@ -1358,10 +1374,11 @@ local function draw_map(view_w, view_h)
                         local iy = ry + (POPUP_ROW - ih * sc) / 2;
                         pdl:AddImage(tonumber(ffi.cast('uint32_t', tex)),
                                      { ix, iy }, { ix + iw * sc, iy + ih * sc },
-                                     { 0, 0 }, { 1, 1 }, COL_ICON);
+                                     { 0, 0 }, { 1, 1 },
+                                     live and COL_ICON or COL_ICON_OFF);
                     end
                     pdl:AddText({ px + POPUP_PAD * 2 + POPUP_ICON, ry + (POPUP_ROW - th) / 2 },
-                                COL_POPUP_TEXT, r.label);
+                                live and COL_POPUP_TEXT or COL_POPUP_OFF, r.label);
                 end
 
                 -- An InvisibleButton over the panel takes the press, so it

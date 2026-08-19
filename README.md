@@ -48,6 +48,11 @@ anywhere else closes it, as does zooming, panning, or switching past/present,
 and clicking another point replaces it. While the cursor is over the panel the
 map underneath neither pans nor zooms.
 
+A row only travels from the kind of NPC you are stood at, so rows of any other
+kind are drawn greyed out and take no click: the panel still lists the
+destination and its icon says what to walk up to. Stand away from every warp NPC
+and the whole panel reads grey.
+
 The three icons at the right of the search row filter it: dimming **Crystal**
 drops the Home Point rows, **Guide** the Survival Guides and **Unity** the Unity
 Warps. A zone whose every row is filtered out - or that has no warps at all -
