@@ -83,6 +83,12 @@ local NEAR_POLL     = 0.5;
 -- taken to walk off does.
 local MOVE_CLOSE = 1.0;
 
+-- How long the map ignores NPC interaction packets after it sends a command,
+-- in seconds.  The command makes the NPC talk, and that talk would otherwise
+-- open the map straight back up on top of what was asked for.
+-- ponytail: a fixed window; a reply-aware gate if the server ever lags past it.
+local SEND_QUIET = 3.0;
+
 -- NPCs and mobs occupy the bottom of the entity array; players start at 0x400
 -- and pets and trusts above them, so the walk stops before either.
 local NPC_FIRST, NPC_LAST = 0x000, 0x3FF;
@@ -246,6 +252,7 @@ local ui = T{
     near_kind   = false,     -- warp type last seen in reach; false until checked
     has_warp    = false,     -- an Instant Warp scroll was in the bag last poll
     near_at     = 0,         -- os.clock() of that check
+    sent_at     = 0,         -- os.clock() the map last sent a command
     open_x      = nil,       -- where the player stood when the map went up;
     open_z      = nil,       -- nil until the first frame after opening reads it
     warp        = nil,       -- zone point whose warp popup is open
@@ -285,6 +292,13 @@ end
 --]]
 local function send_cmd(cmd)
     AshitaCore:GetChatManager():QueueCommand(-1, ui.mss and (MSS_PREFIX .. cmd) or cmd);
+    -- Sending is what the map was opened for, so it goes away whole: window,
+    -- warp popup and credits panel together.  sent_at holds the NPC event the
+    -- command triggers off, which would otherwise reopen it.
+    ui.is_open[1] = false;
+    ui.warp       = nil;
+    ui.thanks     = false;
+    ui.sent_at    = os.clock();
 end
 
 --[[
@@ -1154,9 +1168,6 @@ local function draw_map(view_w, view_h)
             if (imgui.InvisibleButton('##ubermap_warpitem', { tw, tsize })
                 and not ui.warp_hot and ui.has_warp) then
                 send_cmd(WARP_ITEM_CMD);
-                -- Reading the scroll is what the map was opened for, so it puts
-                -- the map away the way clicking a warp row does.
-                ui.is_open[1] = false;
             end
             item_tip(ui.has_warp and 'Use Instant Warp scroll'
                                   or 'No Instant Warp scroll in inventory');
@@ -1462,10 +1473,6 @@ local function draw_map(view_w, view_h)
                         local cmd = warp_cmd(ui.warp.label, hot_row);
                         if (cmd ~= nil) then
                             send_cmd(cmd);
-                            -- The row was the thing the map was opened for, so
-                            -- sending it puts both the popup and the map away.
-                            ui.warp       = nil;
-                            ui.is_open[1] = false;
                         end
                     end
                 end
@@ -1566,7 +1573,9 @@ ashita.events.register('packet_in', 'ubermap_packet_in', function (e)
         notify(('NPC event %04X: %s'):fmt(e.id, name));
     end
 
-    if (warp_npc_type(name) ~= nil) then
+    -- A talk the map's own command started is not a reason to reopen it: the
+    -- send closed it on purpose.
+    if (warp_npc_type(name) ~= nil and os.clock() - ui.sent_at > SEND_QUIET) then
         show();
     end
 
