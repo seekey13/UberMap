@@ -1325,11 +1325,19 @@ local function draw_map(view_w, view_h)
             else
                 local pdl    = imgui.GetWindowDrawList();
                 local _, th  = imgui.CalcTextSize(ui.warp.label);
-                local w      = 0;
+                -- The grid reference is a column of its own, so every row's
+                -- label starts at one x and every '(F-11)' at another.
+                local labw, posw = 0, 0;
                 for _, r in ipairs(rows) do
-                    w = math.max(w, POPUP_ICON + POPUP_PAD + imgui.CalcTextSize(r.label));
+                    labw = math.max(labw, imgui.CalcTextSize(r.label));
+                    if (r.pos ~= nil) then
+                        posw = math.max(posw, imgui.CalcTextSize(r.pos));
+                    end
                 end
-                w = w + POPUP_PAD * 2;
+                local lab_x = POPUP_PAD * 2 + POPUP_ICON;
+                local pos_x = lab_x + labw + POPUP_PAD;
+                local w     = ((posw > 0) and (pos_x + posw) or (lab_x + labw))
+                              + POPUP_PAD;
                 local h = POPUP_PAD * 2 + POPUP_ROW * #rows;
 
                 -- Hung under the marker and clamped both ways, so a point near
@@ -1377,8 +1385,12 @@ local function draw_map(view_w, view_h)
                                      { 0, 0 }, { 1, 1 },
                                      live and COL_ICON or COL_ICON_OFF);
                     end
-                    pdl:AddText({ px + POPUP_PAD * 2 + POPUP_ICON, ry + (POPUP_ROW - th) / 2 },
-                                live and COL_POPUP_TEXT or COL_POPUP_OFF, r.label);
+                    local ty  = ry + (POPUP_ROW - th) / 2;
+                    local col = live and COL_POPUP_TEXT or COL_POPUP_OFF;
+                    pdl:AddText({ px + lab_x, ty }, col, r.label);
+                    if (r.pos ~= nil) then
+                        pdl:AddText({ px + pos_x, ty }, col, r.pos);
+                    end
                 end
 
                 -- An InvisibleButton over the panel takes the press, so it

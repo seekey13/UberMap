@@ -1,6 +1,7 @@
 --[[
 * Self-check for the warp data.  Every row carries an icon type the popup knows
-* how to draw and a label to print, each zone offers at most one Unity Concord, and
+* how to draw, a label to print and a grid reference held apart from it in 'pos'
+* so the popup can column it, each zone offers at most one Unity Concord, and
 * a zone's Home Points are numbered 1..n with no gaps or repeats, so a bad merge
 * fails here instead of drawing a blank row in game.  Run with any Lua 5.1+:
 *     lua test/test_warps.lua
@@ -25,6 +26,10 @@ for zone, list in pairs(data) do
         assert(TYPES[row.type], ('%s[%d]: bad type %q'):format(zone, i, tostring(row.type)));
         assert(type(row.label) == 'string' and row.label ~= '',
                ('%s[%d]: label must be a non-empty string'):format(zone, i));
+        assert(not row.label:match('%(%u%-%d+%)$'),
+               ('%s[%d]: %q keeps its grid reference, move it to pos'):format(zone, i, row.label));
+        assert(row.pos == nil or (type(row.pos) == 'string' and row.pos:match('^%(%u%-%d+%)$')),
+               ('%s[%d]: bad pos %q'):format(zone, i, tostring(row.pos)));
         assert(row.zone == nil or (type(row.zone) == 'string' and row.zone ~= ''),
                ('%s[%d]: zone override must be a non-empty string'):format(zone, i));
 
@@ -50,7 +55,7 @@ for zone, list in pairs(data) do
             homes[n] = true;
         end
 
-        if not row.label:match('%(%u%-%d+%)$') then noGrid[#noGrid + 1] = zone .. ': ' .. row.label; end
+        if row.pos == nil then noGrid[#noGrid + 1] = zone .. ': ' .. row.label; end
 
         byType[row.type] = byType[row.type] + 1;
         rows = rows + 1;

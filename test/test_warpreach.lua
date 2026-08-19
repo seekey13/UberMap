@@ -12,8 +12,8 @@ local function warp_reachable(w, near_kind)
     return w.type == near_kind;
 end
 
-local home  = { type = 'home',  label = 'Home Point #1 (H-9)' };
-local guide = { type = 'guide', label = 'Survival Guide (G-9)' };
+local home  = { type = 'home',  label = 'Home Point #1',  pos = '(H-9)' };
+local guide = { type = 'guide', label = 'Survival Guide', pos = '(G-9)' };
 
 -- Stood at a Home Point: its rows are live, the other kinds are not.
 assert(warp_reachable(home, 'home'), 'a Home Point row must be live at a Home Point');

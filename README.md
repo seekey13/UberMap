@@ -83,13 +83,15 @@ zones with a Home Point lit. With all three lit the map reads plain again.
 The data lives in `lib/warps.lua` under the addon, keyed by the zone name, which is
 the point's `label` in `lib/points.lua`. A row whose key is not the game's own name
 for the zone - `Delkfutt Tower`, the two halves of Windurst Waters - carries a
-`zone` field with the name `/uw` wants; `(S)` keys are sent as `[S]`. Rows are listed in the order the file gives
-them:
+`zone` field with the name `/uw` wants; `(S)` keys are sent as `[S]`. `pos` is the
+grid reference, held apart from the label so the panel can draw it in a column of
+its own and every row's lines up; a row with no grid reference leaves it out. Rows
+are listed in the order the file gives them:
 
 ```lua
 ["Aht Urhgan Whitegate"] = {
-    { type = 'home',  label = 'Home Point #1 (H-9)' },
-    { type = 'guide', label = 'Survival Guide (L-8)' },
+    { type = 'home',  label = 'Home Point #1', pos = '(H-9)' },
+    { type = 'guide', label = 'Survival Guide', pos = '(L-8)' },
 },
 ```
 
