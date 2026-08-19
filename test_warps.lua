@@ -29,9 +29,10 @@ for zone, list in pairs(data) do
                ('%s[%d]: zone override must be a non-empty string'):format(zone, i));
 
         -- The /uw line the popup sends, built the way ubermap.lua builds it.
+        local n = row.label:match('^Home Point #(%d+)');
         local cmd = ('/uw %s %s%s'):format(
             UW[row.type], (row.zone or zone):gsub('%(S%)$', '[S]'),
-            row.label:match('^Home Point #(%d+)') or '');
+            (n ~= '1') and n or '');
         assert(cmd:match('^/uw %a%a %S.*%S$'),
                ('%s[%d]: bad command %q'):format(zone, i, cmd));
         cmds[#cmds + 1] = cmd;

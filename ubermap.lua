@@ -325,8 +325,10 @@ local function warp_cmd(label, row)
     end
     -- The map writes the Campaign zones '(S)', the game calls them '[S]'.
     local zone = (row.zone or label):gsub('%(S%)$', '[S]');
+    -- The first Home Point of a zone is the bare name: '#1' is the default the
+    -- command falls back to, so sending it would be a zone the server rejects.
     local n = (row.type == 'home') and row.label:match('^Home Point #(%d+)') or nil;
-    return ('/uw %s %s%s'):fmt(kind, zone, n or '');
+    return ('/uw %s %s%s'):fmt(kind, zone, (n ~= '1') and n or '');
 end
 
 local function point_at(mx, my)

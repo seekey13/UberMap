@@ -35,9 +35,9 @@ to a Home Point; if it is already open your current view is left alone.
 Left-click a zone point - the markers that appear once the view is zoomed past
 the overview - and a panel opens on it listing that zone's warp destinations:
 its Home Points, Survival Guide and Unity Concord, each with the icon of its kind.
-Clicking a row sends its `/uw` command - `/uw hp Aht Urhgan Whitegate3` for that
-zone's third Home Point, `/uw sg <zone>` for a Survival Guide and `/uw uc <zone>`
-for a Unity Concord - and closes the panel. Clicking
+Clicking a row sends its `/uw` command - `/uw hp <zone>` for the first Home Point
+and `/uw hp <zone>3` for the third, `/uw sg <zone>` for a Survival Guide and
+`/uw uc <zone>` for a Unity Concord - and closes the panel. Clicking
 anywhere else closes it, as does zooming, panning, or switching past/present,
 and clicking another point replaces it. While the cursor is over the panel the
 map underneath neither pans nor zooms.
