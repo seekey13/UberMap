@@ -705,21 +705,24 @@ local function draw_map(view_w, view_h)
         -- tables outlined_text packs from, so the map retints as they move.
         -- NoInputs leaves only the swatch, which opens the picker on click;
         -- NoLabel forwards the name to that popup instead of printing it.
-        local pick_flags = bit.bor(ImGuiColorEditFlags_NoInputs,
-                                   ImGuiColorEditFlags_NoLabel,
-                                   ImGuiColorEditFlags_AlphaBar,
-                                   ImGuiColorEditFlags_AlphaPreview);
-        imgui.PushStyleVar(ImGuiStyleVar_FramePadding,
-                           { 6, (row_h - imgui.GetFontSize()) / 2 });
-        local pick_x = view_w - SEARCH_MARGIN - row_h * 2 - TOGGLE_GAP;
-        for _, pick in ipairs({ { 'Text', ui.col_text }, { 'Outline', ui.col_outline } }) do
-            imgui.SetCursorPos({ pick_x, SEARCH_MARGIN });
-            imgui.ColorEdit4(pick[1], pick[2], pick_flags);
-            ui.search_hot = ui.search_hot
-                            or imgui.IsItemActive() or imgui.IsItemHovered();
-            pick_x = pick_x + row_h + TOGGLE_GAP;
+        -- Editor-only, like the coordinate readout: retinting is authoring.
+        if (ui.edit) then
+            local pick_flags = bit.bor(ImGuiColorEditFlags_NoInputs,
+                                       ImGuiColorEditFlags_NoLabel,
+                                       ImGuiColorEditFlags_AlphaBar,
+                                       ImGuiColorEditFlags_AlphaPreview);
+            imgui.PushStyleVar(ImGuiStyleVar_FramePadding,
+                               { 6, (row_h - imgui.GetFontSize()) / 2 });
+            local pick_x = view_w - SEARCH_MARGIN - row_h * 2 - TOGGLE_GAP;
+            for _, pick in ipairs({ { 'Text', ui.col_text }, { 'Outline', ui.col_outline } }) do
+                imgui.SetCursorPos({ pick_x, SEARCH_MARGIN });
+                imgui.ColorEdit4(pick[1], pick[2], pick_flags);
+                ui.search_hot = ui.search_hot
+                                or imgui.IsItemActive() or imgui.IsItemHovered();
+                pick_x = pick_x + row_h + TOGGLE_GAP;
+            end
+            imgui.PopStyleVar();
         end
-        imgui.PopStyleVar();
 
         -- Everything below the search row stacks from here.
         local edit_y = SEARCH_MARGIN + row_h + TOGGLE_GAP;
@@ -760,9 +763,10 @@ local function draw_map(view_w, view_h)
             end
         end
 
-        -- Source-image pixel under the cursor.  Independent of zoom and pan, so
-        -- the same spot on the map always reads the same numbers.
-        if (over_map) then
+        -- Source-image pixel under the cursor, for typing into a point's
+        -- coordinates.  Independent of zoom and pan, so the same spot on the map
+        -- always reads the same numbers.
+        if (ui.edit and over_map) then
             local mx = math.floor(mm.to_map(mouse_x, ui.pan_x, ui.zoom, origin_x));
             local my = math.floor(mm.to_map(mouse_y, ui.pan_y, ui.zoom, origin_y));
             -- The font scale applies to the draw list too, so it has to wrap
