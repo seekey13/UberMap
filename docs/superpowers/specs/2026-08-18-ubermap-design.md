@@ -9,8 +9,8 @@ Point.
 | File | Purpose |
 | --- | --- |
 | `ubermap.lua` | The addon: texture load, packet hook, ImGui render, commands. |
-| `mapmath.lua` | Pure view math (fit, clamp, zoom anchor). No Ashita deps. |
-| `test_zoom.lua` | Standalone self-check for `mapmath.lua`. `lua test_zoom.lua`. |
+| `lib/mapmath.lua` | Pure view math (fit, clamp, zoom anchor). No Ashita deps. |
+| `test/test_zoom.lua` | Standalone self-check for `lib/mapmath.lua`. `lua test/test_zoom.lua`. |
 
 ## Home Point detection
 

@@ -3,7 +3,7 @@
 * and sits inside that map's image, so a point placed on the wrong one or tagged
 * by hand with a typo fails here instead of vanishing in game.  Run with any
 * Lua 5.1+:
-*     lua test_points.lua
+*     lua test/test_points.lua
 --]]
 
 -- Kept in step with TIMES in ubermap.lua.
@@ -12,7 +12,7 @@ local TIMES = {
     past    = { w = 4096, h = 4096 },
 };
 
-local data = assert(loadfile('points.lua'))();
+local data = assert(loadfile('lib/points.lua'))();
 
 local n = 0;
 local function check(ic)

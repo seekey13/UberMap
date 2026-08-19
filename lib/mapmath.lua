@@ -41,6 +41,15 @@ function M.clamp_pan(pan, content, view)
 end
 
 --[[
+* Keeps a panel of 'size' inside the 'view' long span that starts at 'origin',
+* on one axis.  A panel too big for the span pins to the origin, so its head
+* stays on screen and its tail is what runs off.
+--]]
+function M.clamp_box(v, size, origin, view)
+    return math.max(origin, math.min(v, origin + view - size));
+end
+
+--[[
 * Returns the pan that keeps the map pixel under the cursor pinned in place
 * across a zoom change.  'cursor' is relative to the viewport's top-left.
 --]]
