@@ -602,16 +602,47 @@ local function player_moved()
 end
 
 --[[
+* True when a group marker stands for at least one zone the toggles have left
+* with a warp row.  A marker no point carries the group of -- the beastmen
+* strongholds, the Aht Urhgan crest -- says nothing either way, so it counts as
+* lit rather than fading out on a question it cannot answer.
+*
+* ponytail: walks every icon per group marker.  Cheap at the thirty-odd markers
+* an overview frame draws; index group -> labels at load if the point list ever
+* grows an order of magnitude.
+--]]
+local function group_warps_lit(name)
+    local any = false;
+    for _, ic in ipairs(ICONS) do
+        if (ic.group == name and ic.time == ui.time) then
+            if (warps_lit(ic.label)) then
+                return true;
+            end
+            any = true;
+        end
+    end
+    return not any;
+end
+
+--[[
 * Everything outside the focused group fades back, and so does a zone the
 * toggles have left with no warp row: the marker stays on the map to say the
-* zone is there, dimmed to say it holds none of the kind being looked for.  The
-* overview tier carries no warps of its own, so the toggles leave it lit.
+* zone is there, dimmed to say it holds none of the kind being looked for.  An
+* overview marker carries no warps of its own, so it answers for the zones it
+* stands for: a nation or region whose every zone has been filtered out fades
+* back with them.
 --]]
 local function icon_dim(ic)
     if (ui.focus ~= nil and ic.group ~= ui.focus) then
         return true;
     end
-    return not OVERVIEW[ic.group] and warps_filtered() and not warps_lit(ic.label);
+    if (not warps_filtered()) then
+        return false;
+    end
+    if (OVERVIEW[ic.group]) then
+        return not group_warps_lit(ic.label);
+    end
+    return not warps_lit(ic.label);
 end
 
 -- ui.zoom is nil until the first frame sizes the viewport, so treat that as

@@ -96,3 +96,88 @@ print(('ok: %d zone markers, %d warp zones'):format(total, (function()
     for _ in pairs(WARPS) do n = n + 1; end
     return n;
 end)()));
+
+--[[
+* Group markers answer for the zones they stand for.  Mirrors group_warps_lit
+* in ubermap.lua: an overview marker is lit while any point carrying its label
+* as a group, on the same map, still has a row; a marker no point carries the
+* group of stays lit, having nothing to say.
+--]]
+local ICONS, OVERVIEW = {}, {};
+for _, g in ipairs(POINTS.groups) do
+    OVERVIEW[g.name] = true;
+    for _, ic in ipairs(g.icons) do
+        ic.group = g.name;
+        table.insert(ICONS, ic);
+    end
+end
+for _, ic in ipairs(POINTS.points) do
+    table.insert(ICONS, ic);
+end
+
+local time = 'present';
+
+local function group_warps_lit(name)
+    local any = false;
+    for _, ic in ipairs(ICONS) do
+        if (ic.group == name and ic.time == time) then
+            if (warps_lit(ic.label)) then
+                return true;
+            end
+            any = true;
+        end
+    end
+    return not any;
+end
+
+-- The overview markers on the map being checked, in draw order.
+local overview = {};
+for _, ic in ipairs(ICONS) do
+    if (OVERVIEW[ic.group] and ic.time == time) then
+        table.insert(overview, ic);
+    end
+end
+assert(#overview > 0, 'the present map must carry overview markers');
+
+-- Nothing dimmed: every group marker is lit, childless ones included.
+for _, ic in ipairs(overview) do
+    assert(group_warps_lit(ic.label),
+           ('%s: an unfiltered map must leave every group marker lit'):format(ic.label));
+end
+
+-- Home Points only: a group marker is lit exactly when one of its zones has a
+-- Home Point, or when no zone carries it at all.
+toggle['Guide.png'], toggle['Unity.png'] = true, true;
+local dimmed = 0;
+for _, ic in ipairs(overview) do
+    local has, any = false, false;
+    for _, p in ipairs(ICONS) do
+        if (p.group == ic.label and p.time == time) then
+            any = true;
+            for _, w in ipairs(WARPS[p.label] or {}) do
+                has = has or w.type == 'home';
+            end
+        end
+    end
+    local want = has or not any;
+    assert(group_warps_lit(ic.label) == want,
+           ('%s: lit %s with a Home Point below %s'):format(
+               ic.label, tostring(group_warps_lit(ic.label)), tostring(want)));
+    dimmed = dimmed + (want and 0 or 1);
+end
+assert(dimmed > 0, 'the Home Point filter must fade back some group marker');
+print(('Home Points only: %d of %d group markers faded back'):format(dimmed, #overview));
+
+-- Every toggle dimmed: only the childless markers are left lit.
+toggle['Crystal.png'] = true;
+for _, ic in ipairs(overview) do
+    local any = false;
+    for _, p in ipairs(ICONS) do
+        any = any or (p.group == ic.label and p.time == time);
+    end
+    assert(group_warps_lit(ic.label) == (not any),
+           ('%s: dimming every toggle must fade back a group with zones'):format(ic.label));
+end
+toggle['Crystal.png'], toggle['Guide.png'], toggle['Unity.png'] = nil, nil, nil;
+
+print(('ok: %d group markers on the %s map'):format(#overview, time));
