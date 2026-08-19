@@ -1309,7 +1309,10 @@ local function draw_map(view_w, view_h)
                         local cmd = warp_cmd(ui.warp.label, hot_row);
                         if (cmd ~= nil) then
                             AshitaCore:GetChatManager():QueueCommand(-1, cmd);
-                            ui.warp = nil;
+                            -- The row was the thing the map was opened for, so
+                            -- sending it puts both the popup and the map away.
+                            ui.warp       = nil;
+                            ui.is_open[1] = false;
                         end
                     end
                 end

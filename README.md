@@ -33,7 +33,8 @@ to a Home Point, a Survival Guide or a Unity Concord NPC; if it is already open
 your current view is left alone.
 
 It closes itself once you walk a yalm from where it opened, so the map is never
-left covering the screen while you move. Zoning counts as moving.
+left covering the screen while you move. Zoning counts as moving. Clicking a
+warp row closes it too, since the warp is what the map was opened for.
 
 ## Warp list
 
