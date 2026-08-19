@@ -30,6 +30,37 @@ Mouse wheel zooms about the cursor and left-drag pans. Hold **shift** while
 dragging to move the window itself. The map also opens on its own when you talk
 to a Home Point; if it is already open your current view is left alone.
 
+## Warp list
+
+Left-click a zone point - the markers that appear once the view is zoomed past
+the overview - and a panel opens on it listing that zone's warp destinations:
+its Home Points, Survival Guide and Unity Warp, each with the icon of its kind.
+It is a read-out, not a travel menu; clicking a row does nothing yet. Clicking
+anywhere else closes it, as does zooming, panning, or switching past/present,
+and clicking another point replaces it. While the cursor is over the panel the
+map underneath neither pans nor zooms.
+
+The four icons at the right of the search row filter it: dimming **Crystal**
+drops the Home Point rows, **Guide** the Survival Guides and **Unity** the Unity
+Warps. **Maw** names no warp type and so filters nothing. A zone whose every row
+is filtered out - or that has no warps at all - does not open a panel.
+
+The data lives in `warps.lua` beside the addon, keyed by the zone name, which is
+the point's `label` in `points.lua`. Rows are listed in the order the file gives
+them:
+
+```lua
+["Aht Urhgan Whitegate"] = {
+    { type = 'home',  label = 'Home Point #1 (H-9)' },
+    { type = 'guide', label = 'Survival Guide (L-8)' },
+},
+```
+
+`type` is `home`, `guide` or `unity`, picking `assets/Crystal.png`,
+`assets/Guide.png` or `assets/Unity.png`. Unlike `points.lua` the file is an
+overlay: if it is missing or broken the addon says so once and runs on without
+the panels.
+
 ## Coordinates
 
 Hover the map and the bottom-left corner shows the **source-image pixel** under

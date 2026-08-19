@@ -98,10 +98,28 @@ local TOGGLES      = T{ 'Crystal.png', 'Guide.png', 'Maw.png', 'Unity.png' };
 local TOGGLE_GAP   = 6;   -- screen pixels between toggles
 local COL_ICON_OFF = 0x40FFFFFF;  -- 25% opacity, i.e. 75% transparent
 
+-- Warp type -> the toggle that lists it, so dimming a toggle drops those rows
+-- from the popup.  Maw.png names no type, which is why it toggles nothing.
+local WARP_ICON = T{ home = 'Crystal.png', guide = 'Guide.png', unity = 'Unity.png' };
+
+-- Warp popup: a header row and one row per destination, hung off the zone
+-- point that opened it.
+local POPUP_PAD      = 8;   -- screen pixels of margin inside the panel
+local POPUP_ROW      = 24;  -- row pitch, screen pixels
+local POPUP_ICON     = 24;  -- the box a type icon is fitted into
+local POPUP_GAP      = 6;   -- screen pixels between the marker and the panel
+local COL_POPUP_BG   = 0xE0101010;  -- near black, a little of the map showing through
+local COL_POPUP_TEXT = 0xFFFFFFFF;  -- fixed, not the pickers: the panel has its own ground
+
 -- The map data lives in points.lua beside the addon: the overview groups, in
 -- draw order so later groups land on top of earlier ones where they overlap,
 -- and the zone points placed with /um edit.  Editing writes the file back out.
 local POINTS_FILE = ('%s/points.lua'):fmt(addon.path);
+
+-- Warp destinations keyed by a point's label, in warps.lua beside the addon.
+-- An overlay on the map rather than map data, so it is loaded softly.
+local WARPS_FILE = ('%s/warps.lua'):fmt(addon.path);
+local WARPS      = T{};
 
 -- One flat list for drawing, each entry tagged with its group name, plus the
 -- set of overview group names, so a point knows which detail tier it belongs to
@@ -128,7 +146,9 @@ local ui = T{
     dragging    = false,
     drag_x      = 0,
     drag_y      = 0,
-    press       = nil,       -- overview marker the left button went down on
+    press       = nil,       -- marker the left button went down on
+    warp        = nil,       -- zone point whose warp popup is open
+    warp_hot    = false,     -- cursor was inside that popup last frame
     focus       = nil,       -- group name to keep lit; everything else dims
     debug       = false,
     dbg         = nil,
@@ -254,6 +274,40 @@ local function load_points()
 end
 load_points();
 
+--[[
+* Unlike points.lua this file is an overlay: the map draws without it, so a
+* missing or broken one costs the popups and nothing else.
+--]]
+local function load_warps()
+    local chunk, err = loadfile(WARPS_FILE);
+    if (chunk == nil) then
+        notify(('could not read %s: %s'):fmt(WARPS_FILE, tostring(err)));
+        return;
+    end
+    local ok, data = pcall(chunk);
+    if (not ok or type(data) ~= 'table') then
+        notify(('%s failed to load: %s'):fmt(WARPS_FILE, tostring(data)));
+        return;
+    end
+    WARPS = T(data);
+end
+load_warps();
+
+--[[
+* The warp rows of a zone that the toggles leave lit, in the order the data
+* lists them.  nil when the zone has none, which is what keeps the popup shut.
+--]]
+local function warp_rows(label)
+    local rows = T{};
+    for _, w in ipairs(WARPS[label] or {}) do
+        local file = WARP_ICON[w.type];
+        if (file ~= nil and not ui.toggle[file]) then
+            table.insert(rows, w);
+        end
+    end
+    return (#rows > 0) and rows or nil;
+end
+
 local function point_at(mx, my)
     for _, ic in ipairs(ICONS) do
         -- The drawn size is in screen pixels, so it shrinks in map space as
@@ -297,6 +351,9 @@ local function delete_point(ic)
             table.remove(ICONS, i);
             break;
         end
+    end
+    if (ui.warp == ic) then
+        ui.warp = nil;  -- or the panel keeps drawing off a marker that is gone
     end
     ui.dirty = true;
 end
@@ -390,6 +447,7 @@ local function set_time(time)
     ui.focus = nil;
     ui.sel   = nil;
     ui.press = nil;
+    ui.warp  = nil;
 end
 
 --[[
@@ -563,8 +621,10 @@ local function draw_map(view_w, view_h)
             ui.pan_y = mm.zoom_anchor(ui.pan_y, mouse_y - origin_y, old, new);
             ui.zoom  = new;
             -- Zooming by hand ends the group focus: the user is looking around
-            -- again, so everything comes back up to full.
+            -- again, so everything comes back up to full.  The popup goes with
+            -- it, being anchored on a marker that just moved.
             ui.focus = nil;
+            ui.warp  = nil;
         end
     end
 
@@ -615,19 +675,24 @@ local function draw_map(view_w, view_h)
         imgui.Image(tonumber(ffi.cast('uint32_t', ui.texture)), { content_w, content_h });
         local hot_ic = draw_icons(origin_x, origin_y, view_w, view_h, over_map);
 
-        -- Clicking an overview marker frames the group its label names.  The
-        -- press is remembered and acted on at release, so a drag that starts on
-        -- a marker pans as usual instead of jumping the view.  Ctrl is the
-        -- editor's chord, so it is left alone.
+        -- Clicking an overview marker frames the group its label names; a zone
+        -- point opens its warp list instead.  The press is remembered and acted
+        -- on at release, so a drag that starts on a marker pans as usual instead
+        -- of jumping the view.  Ctrl is the editor's chord, so it is left alone.
         if (imgui.IsMouseClicked(0)) then
-            ui.press = (hot_ic ~= nil and OVERVIEW[hot_ic.group]
-                        and not imgui.GetIO().KeyCtrl) and hot_ic or nil;
+            ui.press = (hot_ic ~= nil and not imgui.GetIO().KeyCtrl) and hot_ic or nil;
         end
         if (ui.dragging) then
             ui.press = nil;
         end
         if (ui.press ~= nil and imgui.IsMouseReleased(0)) then
-            zoom_to_group(ui.press.label, view_w, view_h);
+            if (OVERVIEW[ui.press.group]) then
+                zoom_to_group(ui.press.label, view_w, view_h);
+            else
+                -- A zone nothing warps to leaves the panel shut rather than
+                -- opening an empty one.
+                ui.warp = (warp_rows(ui.press.label) ~= nil) and ui.press or nil;
+            end
             ui.press = nil;
         end
 
@@ -649,10 +714,14 @@ local function draw_map(view_w, view_h)
             imgui.GetWindowDrawList():AddImage(tonumber(ffi.cast('uint32_t', ttex)),
                                                { sx, sy }, { sx + time_w, sy + row_h },
                                                { 0, 0 }, { 1, 1 }, COL_ICON);
-            if (imgui.InvisibleButton('##ubermap_time', { time_w, row_h })) then
+            -- Vetoed by a warp popup lying over it, for the reason spelled out
+            -- on the toggles below.
+            if (imgui.InvisibleButton('##ubermap_time', { time_w, row_h })
+                and not ui.warp_hot) then
                 ui.next_time = other;
             end
-        elseif (imgui.Button(ui.time == 'past' and 'Past' or 'Present', { time_w, row_h })) then
+        elseif (imgui.Button(ui.time == 'past' and 'Past' or 'Present', { time_w, row_h })
+                and not ui.warp_hot) then
             ui.next_time = other;
         end
         local time_hot = imgui.IsItemHovered();
@@ -692,7 +761,13 @@ local function draw_map(view_w, view_h)
                 tdl:AddImage(tonumber(ffi.cast('uint32_t', tex)),
                              { sx, sy }, { sx + tw, sy + tsize }, { 0, 0 }, { 1, 1 },
                              ui.toggle[file] and COL_ICON_OFF or COL_ICON);
-                if (imgui.InvisibleButton('##ubermap_toggle_' .. file, { tw, tsize })) then
+                -- ui.warp_hot vetoes the press: this row is submitted before the
+                -- warp popup, and ImGui gives hover to the first item that
+                -- claims it, so a panel lying over a toggle would otherwise flip
+                -- it from underneath.  A frame late, which is harmless - the
+                -- panel does not move while it is open.
+                if (imgui.InvisibleButton('##ubermap_toggle_' .. file, { tw, tsize })
+                    and not ui.warp_hot) then
                     ui.toggle[file] = not ui.toggle[file];
                 end
                 ui.search_hot = ui.search_hot or imgui.IsItemHovered();
@@ -775,6 +850,77 @@ local function draw_map(view_w, view_h)
             outlined_text(imgui.GetWindowDrawList(), origin_x + 6, origin_y + view_h - 30,
                           ('%d, %d'):fmt(mx, my));
             imgui.SetWindowFontScale(1.0);
+        end
+
+        -- Warp list for the zone point that was clicked, drawn after everything
+        -- else so it lands on top of it.  Rows are read out in the order the
+        -- data gives them; they are not travel buttons.
+        if (ui.warp ~= nil) then
+            local rows = warp_rows(ui.warp.label);
+            if (rows == nil) then
+                ui.warp = nil;  -- the toggles emptied it while it was open
+            else
+                local pdl    = imgui.GetWindowDrawList();
+                local w, th  = imgui.CalcTextSize(ui.warp.label);
+                for _, r in ipairs(rows) do
+                    w = math.max(w, POPUP_ICON + POPUP_PAD + imgui.CalcTextSize(r.label));
+                end
+                w = w + POPUP_PAD * 2;
+                local h = POPUP_PAD * 2 + POPUP_ROW * (#rows + 1);
+
+                -- Hung under the marker and clamped both ways, so a point near
+                -- an edge does not push the panel off the viewport.
+                local half = (ui.warp.size or ICON_SIZE) / 2;
+                local px = mm.clamp_box(
+                    mm.to_screen(ui.warp.x, ui.pan_x, ui.zoom, origin_x) - w / 2,
+                    w, origin_x, view_w);
+                local py = mm.clamp_box(
+                    mm.to_screen(ui.warp.y, ui.pan_y, ui.zoom, origin_y) + half + POPUP_GAP,
+                    h, origin_y, view_h);
+
+                pdl:AddRectFilled({ px, py }, { px + w, py + h }, COL_POPUP_BG,
+                                  0, ImDrawCornerFlags_All);
+                pdl:AddRect({ px, py }, { px + w, py + h }, COL_OUTLINE,
+                            0, ImDrawCornerFlags_All, ICON_BORDER);
+                pdl:AddText({ px + POPUP_PAD, py + POPUP_PAD + (POPUP_ROW - th) / 2 },
+                            COL_POPUP_TEXT, ui.warp.label);
+                for i, r in ipairs(rows) do
+                    local ry = py + POPUP_PAD + POPUP_ROW * i;
+                    local tex, iw, ih = icon_texture(WARP_ICON[r.type]);
+                    if (tex ~= nil) then
+                        -- The art is not square, so fit it into the icon column
+                        -- by its own aspect and centre the slack.
+                        local sc = math.min(POPUP_ICON / iw, POPUP_ROW / ih);
+                        local ix = px + POPUP_PAD + (POPUP_ICON - iw * sc) / 2;
+                        local iy = ry + (POPUP_ROW - ih * sc) / 2;
+                        pdl:AddImage(tonumber(ffi.cast('uint32_t', tex)),
+                                     { ix, iy }, { ix + iw * sc, iy + ih * sc },
+                                     { 0, 0 }, { 1, 1 }, COL_ICON);
+                    end
+                    pdl:AddText({ px + POPUP_PAD * 2 + POPUP_ICON, ry + (POPUP_ROW - th) / 2 },
+                                COL_POPUP_TEXT, r.label);
+                end
+
+                -- An InvisibleButton over the panel takes the press, so it
+                -- neither falls through to the map nor starts a window move.
+                -- The hover test is the rect and not IsItemHovered: ImGui gives
+                -- hover to the first item that claims it, and the search row is
+                -- submitted before this one.  Feeding search_hot keeps the map
+                -- from panning or zooming underneath; a click anywhere else
+                -- closes the panel.
+                imgui.SetCursorPos({ px - origin_x, py - origin_y });
+                imgui.InvisibleButton('##ubermap_warps', { w, h });
+                local warp_hot = mouse_x >= px and mouse_x <= px + w
+                                 and mouse_y >= py and mouse_y <= py + h;
+                ui.search_hot = ui.search_hot or warp_hot;
+                ui.warp_hot   = warp_hot;
+                if (not warp_hot and imgui.IsMouseClicked(0)) then
+                    ui.warp = nil;
+                end
+            end
+        end
+        if (ui.warp == nil) then
+            ui.warp_hot = false;
         end
     end
     imgui.EndChild();

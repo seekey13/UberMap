@@ -37,6 +37,18 @@ assert(near(m.clamp_pan(9999, 4000, 1920), 2080));
 -- ..and centers the image when it is smaller than the viewport.
 assert(near(m.clamp_pan(0, 1000, 1920), -460));
 
+-- A popup panel stays inside the viewport on each axis, wherever the marker it
+-- is anchored on sits..
+assert(near(m.clamp_box(200, 100, 0, 500), 200));
+assert(near(m.clamp_box(-30, 100, 0, 500), 0));
+assert(near(m.clamp_box(450, 100, 0, 500), 400));
+-- ..measured from the viewport's own origin, not the screen's..
+assert(near(m.clamp_box(0, 100, 60, 500), 60));
+assert(near(m.clamp_box(9999, 100, 60, 500), 460));
+-- ..and a panel taller than the viewport pins to the origin, so its header is
+-- the part that stays on screen.
+assert(near(m.clamp_box(9999, 900, 60, 500), 60));
+
 -- Zooming keeps the map pixel under the cursor pinned in place.
 local pan, cursor, z0, z1 = 300, 200, 0.5, 1.0;
 local pinned = (pan + cursor) / z0;
