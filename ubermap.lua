@@ -134,6 +134,10 @@ local COL_SEARCH_HINT = { 0.45, 0.45, 0.45, 1.0 };
 -- the state is kept per file name in ui.toggle (nil = lit).
 -- Maw.png is left out until maw warps are implemented.
 local TOGGLES      = T{ 'Crystal.png', 'Guide.png', 'Unity.png' };
+-- What each toggle is called on its tooltip, keyed the way ui.toggle is.
+local TOGGLE_NAME  = T{ ['Crystal.png'] = 'Home Points',
+                        ['Guide.png']   = 'Survival Guides',
+                        ['Unity.png']   = 'Unity Concords' };
 local TOGGLE_GAP   = 6;   -- screen pixels between toggles
 local PICK_LABEL_GAP = 2;  -- screen pixels between a picker's name and its swatch
 local COL_ICON_OFF = 0x40FFFFFF;  -- 25% opacity, i.e. 75% transparent
@@ -242,6 +246,17 @@ local ui = T{
 local function map_size()
     local m = TIMES[ui.time];
     return m.w, m.h;
+end
+
+--[[
+* Tooltip for the item just submitted.  Vetoed by a warp popup lying over that
+* item for the same reason its press is: the row is submitted before the popup,
+* so ImGui hands it the hover of a cursor that is really over the panel.
+--]]
+local function item_tip(text)
+    if (imgui.IsItemHovered() and not ui.warp_hot) then
+        imgui.SetTooltip(text);
+    end
 end
 
 --[[
@@ -1033,6 +1048,7 @@ local function draw_map(view_w, view_h)
             ui.next_time = other;
         end
         local time_hot = imgui.IsItemHovered();
+        item_tip('Switch to a map of the ' .. other);
         local search_x = SEARCH_MARGIN + time_w + TOGGLE_GAP;
 
         imgui.PushStyleVar(ImGuiStyleVar_FramePadding,
@@ -1078,6 +1094,8 @@ local function draw_map(view_w, view_h)
                     and not ui.warp_hot) then
                     ui.toggle[file] = not ui.toggle[file];
                 end
+                item_tip((ui.toggle[file] and 'Show ' or 'Hide ')
+                         .. (TOGGLE_NAME[file] or file));
                 ui.search_hot = ui.search_hot or imgui.IsItemHovered();
                 tx_at = tx_at + tw + TOGGLE_GAP;
             end
@@ -1102,6 +1120,8 @@ local function draw_map(view_w, view_h)
                 -- the map away the way clicking a warp row does.
                 ui.is_open[1] = false;
             end
+            item_tip(ui.has_warp and 'Use an Instant Warp scroll'
+                                  or 'No Instant Warp scroll in inventory');
             ui.search_hot = ui.search_hot or imgui.IsItemHovered();
         end
 
