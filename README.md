@@ -47,6 +47,11 @@ drops the Home Point rows, **Guide** the Survival Guides and **Unity** the Unity
 Warps. **Maw** names no warp type and so filters nothing. A zone whose every row
 is filtered out - or that has no warps at all - does not open a panel.
 
+While any of those three is dimmed the filter reaches the map itself: a zone
+marker with no row left to show fades back the way an unfocused group does, and
+stops taking the cursor. Dimming **Guide** and **Unity** so leaves only the
+zones with a Home Point lit. With all three lit the map reads plain again.
+
 The data lives in `warps.lua` beside the addon, keyed by the zone name, which is
 the point's `label` in `points.lua`. A row whose key is not the game's own name
 for the zone - `Delkfutt Tower`, the two halves of Windurst Waters - carries a

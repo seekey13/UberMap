@@ -203,6 +203,51 @@ local function map_size()
     return m.w, m.h;
 end
 
+--[[
+* A warp row shows while the toggle its type names is still lit.  Maw.png names
+* no type, which is why it toggles nothing.
+--]]
+local function warp_lit(w)
+    local file = WARP_ICON[w.type];
+    return file ~= nil and not ui.toggle[file];
+end
+
+-- True while a toggle that lists warp rows is dimmed, i.e. the map has been
+-- narrowed to some of the kinds rather than showing all of them.
+local function warps_filtered()
+    for _, file in pairs(WARP_ICON) do
+        if (ui.toggle[file]) then
+            return true;
+        end
+    end
+    return false;
+end
+
+-- True when the zone still has a row left after the toggles, i.e. its marker
+-- has something to open.  Deliberately allocation free: this runs per marker
+-- per frame, unlike warp_rows below.
+local function warps_lit(label)
+    for _, w in ipairs(WARPS[label] or {}) do
+        if (warp_lit(w)) then
+            return true;
+        end
+    end
+    return false;
+end
+
+--[[
+* Everything outside the focused group fades back, and so does a zone the
+* toggles have left with no warp row: the marker stays on the map to say the
+* zone is there, dimmed to say it holds none of the kind being looked for.  The
+* overview tier carries no warps of its own, so the toggles leave it lit.
+--]]
+local function icon_dim(ic)
+    if (ui.focus ~= nil and ic.group ~= ui.focus) then
+        return true;
+    end
+    return not OVERVIEW[ic.group] and warps_filtered() and not warps_lit(ic.label);
+end
+
 -- Rows written before the past map existed carry no tag, so an untagged marker
 -- is a present-day one.
 local function icon_time(ic)
@@ -338,8 +383,7 @@ load_warps();
 local function warp_rows(label)
     local rows = T{};
     for _, w in ipairs(WARPS[label] or {}) do
-        local file = WARP_ICON[w.type];
-        if (file ~= nil and not ui.toggle[file]) then
+        if (warp_lit(w)) then
             table.insert(rows, w);
         end
     end
@@ -547,9 +591,9 @@ local function draw_icons(origin_x, origin_y, view_w, view_h, over_map)
         local cy = mm.to_screen(ic.y, ui.pan_y, ui.zoom, origin_y);
         if (cx + half >= origin_x and cx - half <= origin_x + view_w
             and cy + half >= origin_y and cy - half <= origin_y + view_h) then
-            -- Everything outside the focused group fades back, so the group
-            -- that was clicked reads as the subject of the view.
-            local dim = (ui.focus ~= nil and ic.group ~= ui.focus);
+            -- A dimmed marker is out of the subject of the view, so it does
+            -- not take the cursor either: nothing to frame, nothing to open.
+            local dim = icon_dim(ic);
             local hot = over_map and not dim
                 and mouse_x >= cx - half and mouse_x <= cx + half
                 and mouse_y >= cy - half and mouse_y <= cy + half;
