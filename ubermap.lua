@@ -66,8 +66,8 @@ local LABEL_SCALE = 1;
 local LABEL_GAP   = 1;  -- screen pixels between the label and the icon
 
 -- Two detail tiers, swapping at ZOOM_POINTS: below it the world overview (the
--- groups declared in ICON_GROUPS below), at or above it the zone points that
--- come from points.lua and the editor.  One tier replaces the other, so the
+-- groups declared in points.lua), at or above it the zone points that come
+-- from the same file and the editor.  One tier replaces the other, so the
 -- overview never sits underneath the points.
 local ZOOM_POINTS = 1.0;
 
@@ -91,56 +91,17 @@ local TOGGLES      = T{ 'Crystal.png', 'Guide.png', 'Maw.png', 'Unity.png' };
 local TOGGLE_GAP   = 6;   -- screen pixels between toggles
 local COL_ICON_OFF = 0x40FFFFFF;  -- 25% opacity, i.e. 75% transparent
 
--- Icons are declared per group, in draw order: later groups land on top of
--- earlier ones where they overlap.
-local ICON_GROUPS = T{
-    { name = 'Nations', icons = T{
-        { file = 'SandOria.jpg',  x = 1075, y =  971, label = "San d'Oria" },
-        { file = 'Bastok.jpg',    x = 1340, y = 1886, label = 'Bastok'     },
-        { file = 'Jeuno.jpg',     x = 1737, y = 1207, label = 'Jeuno'      },
-        { file = 'Windurst.jpg',  x = 2115, y = 1986, label = 'Windurst'   },
-        { file = 'AhtUrhgan.jpg', x = 5009, y = 1796, label = 'Aht Urhgan' },
-    } },
-    { name = 'Regions', icons = T{
-        { file = 'Point_0.png',  x = 1000, y =  695, label = 'Valdeaunia', border = false, size = POINT_SIZE },
-        { file = 'Point_0.png',  x = 1538, y =  837, label = 'Fauregandi',  border = false, size = POINT_SIZE },
-        { file = 'Point_0.png',  x = 1473, y =  941, label = 'Norvallen',   border = false, size = POINT_SIZE },
-        { file = 'Point_0.png',  x = 1899, y =  976, label = 'Qufim',       border = false, size = POINT_SIZE },
-        { file = 'Point_0.png',  x = 2029, y =  777, label = "Tu'Lia",     border = false, size = POINT_SIZE },
-        { file = 'Point_0.png',  x = 1074, y = 1089, label = 'Ronfaure',    border = false, size = POINT_SIZE },
-        { file = 'Point_0.png',  x =  431, y = 1415, label = "Tavnazian Achipelago", border = false, size = POINT_SIZE},
-        { file = 'Point_0.png',  x =  597, y = 1574, label = 'Vollbow',     border = false, size = POINT_SIZE },
-        { file = 'Point_0.png',  x = 1105, y = 1459, label = 'Zulkheim',    border = false, size = POINT_SIZE },
-        { file = 'Point_0.png',  x =  533, y = 2134, label = 'Kuzotz',      border = false, size = POINT_SIZE },
-        { file = 'Point_0.png',  x = 1003, y = 1898, label = 'Gustaberg',   border = false, size = POINT_SIZE },
-        { file = 'Point_0.png',  x = 1488, y = 1787, label = 'Movalpolos',  border = false, size = POINT_SIZE },
-        { file = 'Point_0.png',  x = 1530, y = 1412, label = 'Derfland',    border = false, size = POINT_SIZE },
-        { file = 'Point_0.png',  x = 2184, y = 1348, label = 'Aragoneu',    border = false, size = POINT_SIZE },
-        { file = 'Point_0.png',  x = 2538, y = 1283, label = "Li'Telor",    border = false, size = POINT_SIZE },
-        { file = 'Point_0.png',  x = 2295, y = 1577, label = 'Kolshushu',   border = false, size = POINT_SIZE },
-        { file = 'Point_0.png',  x = 2180, y = 1780, label = 'Sarutabaruta', border = false, size = POINT_SIZE },
-        { file = 'Point_0.png',  x = 2445, y = 2364, label = 'Elshimo Lowlands', border = false, size = POINT_SIZE },
-        { file = 'Point_0.png',  x = 2669, y = 2364, label = 'Elshimo Uplands', border = false, size = POINT_SIZE },
-        { file = 'Point_0.png',  x = 3863, y =  861, label = 'Arrapago Islands', border = false, size = POINT_SIZE },
-        { file = 'Point_0.png',  x = 3981, y = 1343, label = 'Ruins of Alzadaal', border = false, size = POINT_SIZE },
-        { file = 'Point_0.png',  x = 4158, y = 1713, label = 'Halvung Territory', border = false, size = POINT_SIZE },
-        { file = 'Point_0.png',  x = 4072, y = 2344, label = 'Mamool Ja Savagelands', border = false, size = POINT_SIZE },
-        { file = 'Point_0.png',  x = 4703, y = 1852, label = 'West Aht Urhgan', border = false, size = POINT_SIZE },
-    } },
-};
+-- The map data lives in points.lua beside the addon: the overview groups, in
+-- draw order so later groups land on top of earlier ones where they overlap,
+-- and the zone points placed with /um edit.  Editing writes the file back out.
+local POINTS_FILE = ('%s/points.lua'):fmt(addon.path);
 
 -- One flat list for drawing, each entry tagged with its group name, plus the
--- zoom each group appears at.  Keyed by name so points loaded from points.lua
--- and points added in the editor pick their threshold up from their group too.
-local ICONS = T{};
-local OVERVIEW = T{};
-for _, g in ipairs(ICON_GROUPS) do
-    OVERVIEW[g.name] = true;
-    for _, ic in ipairs(g.icons) do
-        ic.group = g.name;
-        table.insert(ICONS, ic);
-    end
-end
+-- set of overview group names, so a point knows which detail tier it belongs to
+-- whether it came from a group block, the points list, or the editor.
+local ICON_GROUPS = T{};
+local ICONS       = T{};
+local OVERVIEW    = T{};
 
 local ui = T{
     is_open     = { false, },
@@ -185,12 +146,30 @@ local function notify(msg)
 end
 
 --[[
-* Points placed in game go to points.lua beside the addon and are loaded back at
-* startup, so the work survives a reload.  The file is paste-ready: drop its rows
-* into ICON_GROUPS above and delete it when the set is final.
+* Points placed in game go back to points.lua, so the work survives a reload.
+* Group blocks are re-emitted as they were loaded: only the points list and the
+* labels and positions in it are editable in game.
 --]]
-local POINTS_FILE = ('%s/points.lua'):fmt(addon.path);
-local POINT_FMT   = "    { file = 'Point_0.png',  x = %4d, y = %4d, label = %q, border = false, size = POINT_SIZE, group = %q },\n";
+local function fmt_icon(ic, indent)
+    local s = ('%s{ file = %q, x = %4d, y = %4d, label = %q'):fmt(
+        indent, ic.file, ic.x, ic.y, ic.label or '');
+    if (ic.border ~= nil) then
+        s = s .. (', border = %s'):fmt(tostring(ic.border));
+    end
+    if (ic.size ~= nil) then
+        s = s .. (ic.size == POINT_SIZE and ', size = POINT_SIZE'
+                                         or (', size = %d'):fmt(ic.size));
+    end
+    -- Group icons take their group from the block they sit in, so only the
+    -- points list carries the name on the row itself.
+    if (ic.user and ic.group ~= nil) then
+        s = s .. (', group = %q'):fmt(ic.group);
+    end
+    if (ic.time ~= nil) then
+        s = s .. (', time = %q'):fmt(ic.time);
+    end
+    return s .. ' },\n';
+end
 
 local function save_points()
     local f = io.open(POINTS_FILE, 'w');
@@ -198,30 +177,51 @@ local function save_points()
         notify(('could not write %s'):fmt(POINTS_FILE));
         return;
     end
-    f:write('-- UberMap points, written by /um edit.  Paste the rows into ICON_GROUPS\n');
-    f:write('-- in ubermap.lua, then delete this file.\n');
-    f:write(('local POINT_SIZE = %d;\n\nreturn {\n'):fmt(POINT_SIZE));
+    f:write('-- UberMap map data, rewritten by /um edit.\n--\n');
+    f:write("-- 'groups' holds the overview tiers, drawn in order so later groups land on top\n");
+    f:write("-- of earlier ones; their names are what the point rows below refer to by 'group'.\n");
+    f:write("-- 'points' holds the zone markers, drawn once the view is zoomed past the\n");
+    f:write("-- overview.  'time' tags the era a marker belongs to.\n");
+    f:write(('local POINT_SIZE = %d;\n\nreturn {\n    groups = {\n'):fmt(POINT_SIZE));
+    for _, g in ipairs(ICON_GROUPS) do
+        f:write(('        { name = %q, icons = {\n'):fmt(g.name));
+        for _, ic in ipairs(g.icons) do
+            f:write(fmt_icon(ic, '            '));
+        end
+        f:write('        } },\n');
+    end
+    f:write('    },\n    points = {\n');
     for _, ic in ipairs(ICONS) do
         if (ic.user) then
-            f:write(POINT_FMT:fmt(ic.x, ic.y, ic.label or '', ic.group or ''));
+            f:write(fmt_icon(ic, '        '));
         end
     end
-    f:write('};\n');
+    f:write('    },\n};\n');
     f:close();
 end
 
--- No file is the normal case, so only a file that fails to parse is reported.
+-- The file is the addon's data, not an optional overlay, so a missing or broken
+-- one is reported rather than passed over.
 local function load_points()
-    local chunk = loadfile(POINTS_FILE);
+    local chunk, err = loadfile(POINTS_FILE);
     if (chunk == nil) then
+        notify(('could not read %s: %s'):fmt(POINTS_FILE, tostring(err)));
         return;
     end
-    local ok, list = pcall(chunk);
-    if (not ok or type(list) ~= 'table') then
-        notify(('%s failed to load: %s'):fmt(POINTS_FILE, tostring(list)));
+    local ok, data = pcall(chunk);
+    if (not ok or type(data) ~= 'table') then
+        notify(('%s failed to load: %s'):fmt(POINTS_FILE, tostring(data)));
         return;
     end
-    for _, ic in ipairs(list) do
+    for _, g in ipairs(data.groups or {}) do
+        table.insert(ICON_GROUPS, g);
+        OVERVIEW[g.name] = true;
+        for _, ic in ipairs(g.icons or {}) do
+            ic.group = g.name;
+            table.insert(ICONS, ic);
+        end
+    end
+    for _, ic in ipairs(data.points or {}) do
         ic.user = true;
         table.insert(ICONS, ic);
     end
@@ -257,6 +257,7 @@ local function add_point(mx, my)
         group  = ui.edit_group[1],
         border = false,
         size   = POINT_SIZE,
+        time   = 'present',
         user   = true,
     };
     table.insert(ICONS, ic);

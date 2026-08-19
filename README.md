@@ -46,12 +46,13 @@ under the search box renames it, sets its group, and deletes it. Plain drag
 still pans, so only ctrl-drag moves points.
 
 Every change is written to `points.lua` beside the addon, which is loaded back
-at startup - reloading the addon or the game does not lose the work. The file is
-paste-ready: when the set is final, move its rows into `ICON_GROUPS` in
-`ubermap.lua` and delete it.
+at startup - reloading the addon or the game does not lose the work. That file
+holds all the map data: `groups` for the overview tiers drawn when zoomed out,
+`points` for the zone markers drawn when zoomed in. Every marker carries a
+`time` tag naming the era it belongs to.
 
-Only points made in the editor are editable. The icons hardcoded in
-`ICON_GROUPS` are drawn but cannot be selected, moved, or deleted.
+Only the rows under `points` are editable. The `groups` icons are drawn but
+cannot be selected, moved, or deleted; edit those in `points.lua` by hand.
 
 If Home Points do not trigger it on your server, run `/ubermap debug`, talk to
 one, and check the name it prints against `HOMEPOINT_PATTERN` in `ubermap.lua`.
