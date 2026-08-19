@@ -117,7 +117,7 @@ local LABEL_GAP   = 1;  -- screen pixels between the label and the icon
 local ZOOM_POINTS = 1.0;
 
 -- Search box, pinned in from the viewport corner by SEARCH_MARGIN screen pixels.
-local SEARCH_MARGIN = 50;
+local SEARCH_MARGIN = 20;
 local SEARCH_W      = 600;
 local SEARCH_MAX    = 256;
 local EDIT_ROW      = 28;  -- editor panel row pitch, screen pixels
