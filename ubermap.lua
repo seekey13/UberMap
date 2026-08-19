@@ -71,6 +71,12 @@ local WARP_NPC = T{
 local WARP_NPC_NEAR = 10;
 local NEAR_POLL     = 0.5;
 
+-- How far the player has to travel from where the map went up before it closes
+-- itself again, in yalms.  Far enough that a nudge from a passing mob or the
+-- knock of a spell does not drop the map mid-read, short enough that a step
+-- taken to walk off does.
+local MOVE_CLOSE = 1.0;
+
 -- NPCs and mobs occupy the bottom of the entity array; players start at 0x400
 -- and pets and trusts above them, so the walk stops before either.
 local NPC_FIRST, NPC_LAST = 0x000, 0x3FF;
@@ -205,6 +211,8 @@ local ui = T{
     press       = nil,       -- marker the left button went down on
     near_kind   = false,     -- warp type last seen in reach; false until checked
     near_at     = 0,         -- os.clock() of that check
+    open_x      = nil,       -- where the player stood when the map went up;
+    open_z      = nil,       -- nil until the first frame after opening reads it
     warp        = nil,       -- zone point whose warp popup is open
     warp_hot    = false,     -- cursor was inside that popup last frame
     thanks      = false,     -- credits panel is open
@@ -320,6 +328,32 @@ local function poll_near(now)
         ui.near_kind = kind;
         filter_to(kind);
     end
+end
+
+--[[
+* True once the player has walked MOVE_CLOSE from the spot the map was opened
+* at.  Measured against that spot rather than the last frame, so a slow walk
+* adds up instead of falling under a per-frame threshold.  Position rather than
+* a keypress, because the client also moves on gamepad, autorun and follow.
+*
+* The first call after opening only records the spot, so a map opened while
+* already running does not shut on the same frame.  Zoning jumps the position
+* and so closes the map, which is what walking through a zone line should do
+* anyway.
+--]]
+local function player_moved()
+    local ent = AshitaCore:GetMemoryManager():GetEntity();
+    if (ent == nil) then
+        return false;
+    end
+    local index = AshitaCore:GetMemoryManager():GetParty():GetMemberTargetIndex(0);
+    local x, z  = ent:GetLocalPositionX(index), ent:GetLocalPositionZ(index);
+    if (ui.open_x == nil) then
+        ui.open_x, ui.open_z = x, z;
+        return false;
+    end
+    local dx, dz = x - ui.open_x, z - ui.open_z;
+    return dx * dx + dz * dz > MOVE_CLOSE * MOVE_CLOSE;
 end
 
 --[[
@@ -805,6 +839,10 @@ local function show()
     -- were left at when it was last up.
     ui.near_kind = false;
     ui.near_at   = 0;
+    -- and re-anchors where the player is standing now, so the map does not
+    -- close on the distance walked since the last time it was up.
+    ui.open_x    = nil;
+    ui.open_z    = nil;
 end
 
 local function draw_map(view_w, view_h)
@@ -1304,6 +1342,13 @@ end
 
 ashita.events.register('d3d_present', 'ubermap_present', function ()
     if (not ui.is_open[1]) then
+        return;
+    end
+
+    -- Walking away puts the map away: it covers most of the screen, so leaving
+    -- it up while moving is never what was wanted.
+    if (player_moved()) then
+        ui.is_open[1] = false;
         return;
     end
 

@@ -32,6 +32,9 @@ dragging to move the window itself. The map also opens on its own when you talk
 to a Home Point, a Survival Guide or a Unity Concord NPC; if it is already open
 your current view is left alone.
 
+It closes itself once you walk a yalm from where it opened, so the map is never
+left covering the screen while you move. Zoning counts as moving.
+
 ## Warp list
 
 Left-click a zone point - the markers that appear once the view is zoomed past
