@@ -12,7 +12,7 @@ local WARP_ICON = { home = 'Crystal.png', guide = 'Guide.png', unity = 'Unity.pn
 local WARPS  = assert(loadfile('lib/warps.lua'))();
 local POINTS = assert(loadfile('lib/points.lua'))();
 
-local toggle = {};  -- stands in for ui.toggle: file name -> true when dimmed
+local toggle = {};  -- stands in for cfg.toggle: file name -> true when dimmed
 
 local function warp_lit(w)
     local file = WARP_ICON[w.type];

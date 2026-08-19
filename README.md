@@ -16,9 +16,7 @@ Drop the `UberMap` folder into `Ashita/addons/`, then:
 | Command | Effect |
 | --- | --- |
 | `/ubermap` or `/um` | Toggle the map |
-| `/ubermap debug` | Show an input-state overlay and print the name behind every NPC interaction event |
 | `/ubermap edit` | Toggle the point editor |
-| `/ubermap near` | Print the kind of warp NPC the auto-filter sees in reach |
 
 The button at the right of the search row switches between past and present: it
 reads **Past** while the present-day map is up and **Present** while the past one
@@ -72,11 +70,11 @@ Instant Warp scroll (item 4181) out of your bag, sending
 carried and takes no click while it is not; the bag is re-read twice a second on
 the same beat as the check below.
 
-In the bottom-right corner, left of the heart, **Multisend** sends for your whole
-party of characters: while it is lit every command the map sends - warp rows and
-the Instant Warp scroll alike - goes out with a `/mss ` prefix, so
+In the bottom-right corner, **Multisend** sends for your whole party of
+characters: while it is lit every command the map sends - warp rows and the
+Instant Warp scroll alike - goes out with a `/mss ` prefix, so
 [Multisend](https://github.com/ThornyFFXI/Multisend) repeats it on every
-logged-in character. It is off, and drawn dimmer than the heart, until clicked.
+logged-in character. It is off, and drawn dimmed, until clicked.
 
 The map sets those toggles for you, from what you are standing next to: within
 10 yalms of a Home Point, a Survival Guide or a Unity Concord NPC - Igsli in
@@ -86,19 +84,16 @@ can warp from. Walk away and all three light again.
 
 It is re-read twice a second while the map is up, but the toggles are only set
 when the answer changes, so a toggle clicked by hand stands until you walk off
-the NPC or up to a different kind. Run `/ubermap near` to see what the check
-finds.
+the NPC or up to a different kind.
 
 While any of those three is dimmed the filter reaches the map itself: a zone
 marker with no row left to show fades back the way an unfocused group does, and
 stops taking the cursor. Dimming **Guide** and **Unity** so leaves only the
 zones with a Home Point lit. With all three lit the map reads plain again.
 
-The Multisend gate, those three toggles and the editor's three colours are
-remembered per character, in
+The Multisend gate and those three toggles are remembered per character, in
 `config/addons/UberMap/<name>_<server id>/settings.lua`, written the moment you
-change one. Only what you set by hand is kept - the auto-filter's own toggling
-is not - so your choices stand the next time you log in.
+change one, so your choices stand the next time you log in.
 
 The data lives in `lib/warps.lua` under the addon, keyed by the zone name, which is
 the point's `label` in `lib/points.lua`. A row whose key is not the game's own name
@@ -149,26 +144,33 @@ holds all the map data: `groups` for the overview tiers drawn when zoomed out,
 `points` for the zone markers drawn when zoomed in. Every marker carries a
 `time` tag - `'present'` or `'past'` - naming the map it belongs to, and is drawn
 only while that map is up. Points dropped with the editor take the map on screen
-at the time; an untagged row counts as present.
+at the time; a row with no tag is drawn on neither map.
 
 Only the rows under `points` are editable. The `groups` icons are drawn but
 cannot be selected, moved, or deleted; edit those in `lib/points.lua` by hand.
 
-If Home Points do not trigger it on your server, run `/ubermap debug`, talk to
-one, and check the name it prints against `WARP_NPC` in `ubermap.lua` - the same
-table names the Survival Guide and Unity Concord NPCs the auto-filter looks for.
-
-The same toggle draws a line at the top of the map window showing `hovered`,
-`over_map`, the wheel delta, zoom and pan. If zoom or pan stops responding,
-that line says which gate is refusing the input.
+If Home Points do not trigger it on your server, they are named differently
+there: `WARP_NPC` in `ubermap.lua` holds the name patterns, for Survival Guides
+and Unity Concord NPCs as well.
 
 ## Development
 
-`lib/mapmath.lua` holds the view math with no game dependencies:
+The checks run outside the game on any Lua 5.1+, against the real data files:
 
 ```
-lua test/test_zoom.lua
+lua test/test_zoom.lua      # lib/mapmath.lua, the view math
+lua test/test_points.lua    # every marker sits on a map that exists
+lua test/test_warps.lua     # every warp row builds a /uw the game takes
+lua test/test_toggles.lua   # the layer toggles against the real points
 ```
+
+## Credits
+
+This addon wouldn't work or look good without:
+
+- Thorny - [Uberwarp](https://github.com/ThornyFFXI/Uberwarp) and
+  [Multisend](https://github.com/ThornyFFXI/Multisend)
+- The [FFXI Remapster Project](https://remapster.com/)
 
 ## License
 
