@@ -1616,3 +1616,24 @@ ashita.events.register('unload', 'ubermap_unload', function ()
     ui.texture = nil;
     icon_tex = T{};
 end);
+
+--[[
+* event: key
+* desc : Escape puts the map away, the way it closes the game's own windows.
+--]]
+ashita.events.register('key', 'ubermap_key', function (e)
+    if (e.wparam ~= VK_ESCAPE or not ui.is_open[1]) then
+        return;
+    end
+
+    -- The event is the WNDPROC message, whose lparam carries the transition
+    -- state: bit 31 set is the release, which nothing here has to answer.
+    if (bit.band(e.lparam, bit.lshift(0x8000, 0x10)) ~= 0) then
+        return;
+    end
+
+    -- Swallowed, or the client opens its own menu behind the map that just
+    -- went away.
+    ui.is_open[1] = false;
+    e.blocked = true;
+end);
