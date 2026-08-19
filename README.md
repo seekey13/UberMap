@@ -19,6 +19,13 @@ Drop the `UberMap` folder into `Ashita/addons/`, then:
 | `/ubermap debug` | Show an input-state overlay and print the name behind every NPC interaction event |
 | `/ubermap edit` | Toggle the point editor |
 
+The button at the right of the search row switches between past and present: it
+reads **Past** while the present-day map is up and **Present** while the past one
+is. Switching swaps `Present_Map.jpg` for `Past_Map.jpg` and draws only the
+markers whose `time` matches. The two images have different sizes and share no
+coordinates, so the view resets to the whole map on each switch, and only one
+image is held in memory at a time.
+
 Mouse wheel zooms about the cursor and left-drag pans. Hold **shift** while
 dragging to move the window itself. The map also opens on its own when you talk
 to a Home Point; if it is already open your current view is left alone.
@@ -26,10 +33,11 @@ to a Home Point; if it is already open your current view is left alone.
 ## Coordinates
 
 Hover the map and the bottom-left corner shows the **source-image pixel** under
-the cursor: `0..5504` across and `0..3072` down, measured on
-`assets/Present_Map.jpg` itself. Zooming and panning change where a coordinate
-is drawn, never what it is, so the same spot on the map always reads the same
-numbers.
+the cursor, measured on the map's own image: `0..5504` across and `0..3072` down
+on `assets/Present_Map.jpg`, `0..4096` both ways on `assets/Past_Map.jpg`.
+Zooming and panning change where a coordinate is drawn, never what it is, so the
+same spot on a map always reads the same numbers - but the same numbers mean
+different places on the two maps.
 
 Icons are listed in `ICONS` in `ubermap.lua` - a file in `assets/` plus the
 coordinate its centre sits on - and are drawn rounded with a black border:
@@ -49,7 +57,9 @@ Every change is written to `points.lua` beside the addon, which is loaded back
 at startup - reloading the addon or the game does not lose the work. That file
 holds all the map data: `groups` for the overview tiers drawn when zoomed out,
 `points` for the zone markers drawn when zoomed in. Every marker carries a
-`time` tag naming the era it belongs to.
+`time` tag - `'present'` or `'past'` - naming the map it belongs to, and is drawn
+only while that map is up. Points dropped with the editor take the map on screen
+at the time; an untagged row counts as present.
 
 Only the rows under `points` are editable. The `groups` icons are drawn but
 cannot be selected, moved, or deleted; edit those in `points.lua` by hand.

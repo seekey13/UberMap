@@ -21,12 +21,21 @@ local mm    = require('mapmath');
 local C       = ffi.C;
 local d3d8dev = d3d.get_device();
 
--- Present_Map.jpg is 5504x3072.  D3D8 rounds non-power-of-two textures up, so
--- loading it natively lands on 8192x4096 (~134MB, doubled again by the managed
--- pool's system copy) which risks exhausting FFXI's 32-bit address space.  We
--- force a power-of-two 4096x2048 (~32MB) instead; drawing at MAP_W x MAP_H
--- undoes the squash, at the cost of some detail at full zoom.
-local MAP_W, MAP_H = 5504, 3072;
+-- The two times of the world, each its own image with its own pixel size.  Map
+-- coordinates - the numbers on every point row and the readout in the corner -
+-- are in the source image's own pixels, so they mean different places on
+-- different maps; a point belongs to whichever one its 'time' tag names.
+local TIMES = {
+    present = { file = 'Present_Map.jpg', w = 5504, h = 3072 },
+    past    = { file = 'Past_Map.jpg',    w = 4096, h = 4096 },
+};
+
+-- D3D8 rounds non-power-of-two textures up, so loading Present_Map.jpg
+-- natively lands on 8192x4096 (~134MB, doubled again by the managed pool's
+-- system copy) which risks exhausting FFXI's 32-bit address space.  Both maps
+-- are forced to 4096x2048 (~32MB) instead; drawing at each map's own size undoes
+-- the squash, at the cost of some detail at full zoom.  Only one is resident at
+-- once - switching between them drops the other.
 local TEX_W, TEX_H = 4096, 2048;
 
 -- Home Point entities are named 'Home Point #1', 'Home Point #2' and so on.
@@ -105,8 +114,11 @@ local OVERVIEW    = T{};
 
 local ui = T{
     is_open     = { false, },
+    time        = 'present',  -- which map of TIMES is on screen
     texture     = nil,
-    load_failed = false,
+    tex_time    = nil,       -- time ui.texture was loaded for
+    next_time   = nil,       -- time the switch was clicked for, applied at frame end
+    load_failed = nil,       -- time whose image failed to load
     zoom        = nil,  -- nil until the first frame gives us a viewport size
     pan_x       = 0,
     pan_y       = 0,
@@ -128,11 +140,25 @@ local ui = T{
     edit_group  = { 'Regions', },
 };
 
+local function map_size()
+    local m = TIMES[ui.time];
+    return m.w, m.h;
+end
+
+-- Rows written before the past map existed carry no tag, so an untagged marker
+-- is a present-day one.
+local function icon_time(ic)
+    return ic.time or 'present';
+end
+
 -- ui.zoom is nil until the first frame sizes the viewport, so treat that as
 -- hidden rather than comparing against nil.
 local function icon_visible(ic)
     local z = ui.zoom;
     if (z == nil) then
+        return false;
+    end
+    if (icon_time(ic) ~= ui.time) then
         return false;
     end
     if (OVERVIEW[ic.group]) then
@@ -181,7 +207,7 @@ local function save_points()
     f:write("-- 'groups' holds the overview tiers, drawn in order so later groups land on top\n");
     f:write("-- of earlier ones; their names are what the point rows below refer to by 'group'.\n");
     f:write("-- 'points' holds the zone markers, drawn once the view is zoomed past the\n");
-    f:write("-- overview.  'time' tags the era a marker belongs to.\n");
+    f:write("-- overview.  'time' tags which map a marker belongs to.\n");
     f:write(('local POINT_SIZE = %d;\n\nreturn {\n    groups = {\n'):fmt(POINT_SIZE));
     for _, g in ipairs(ICON_GROUPS) do
         f:write(('        { name = %q, icons = {\n'):fmt(g.name));
@@ -257,7 +283,7 @@ local function add_point(mx, my)
         group  = ui.edit_group[1],
         border = false,
         size   = POINT_SIZE,
-        time   = 'present',
+        time   = ui.time,
         user   = true,
     };
     table.insert(ICONS, ic);
@@ -317,12 +343,38 @@ end
 * hitch, so it is deliberately kept off the addon load and zone-in paths.
 --]]
 local function load_texture()
-    if (ui.texture ~= nil or ui.load_failed) then
+    if (ui.tex_time == ui.time or ui.load_failed == ui.time) then
         return;
     end
 
-    ui.texture = load_asset('Present_Map.jpg', TEX_W, TEX_H);
-    ui.load_failed = (ui.texture == nil);
+    -- Drop the other map's texture before the new one is decoded, so the two
+    -- never sit in memory together.  gc_safe_release frees it on collection,
+    -- which is why the collect is explicit rather than left to run later.
+    ui.texture = nil;
+    ui.tex_time = nil;
+    collectgarbage();
+
+    ui.texture = load_asset(TIMES[ui.time].file, TEX_W, TEX_H);
+    ui.tex_time = (ui.texture ~= nil) and ui.time or nil;
+    ui.load_failed = (ui.texture == nil) and ui.time or nil;
+end
+
+--[[
+* Switches which map is on screen.  The two images do not share a coordinate
+* space, so the view is reset rather than carried across: zoom nil re-fits to
+* the viewport on the next frame.
+--]]
+local function set_time(time)
+    if (TIMES[time] == nil or time == ui.time) then
+        return;
+    end
+    ui.time  = time;
+    ui.zoom  = nil;
+    ui.pan_x = 0;
+    ui.pan_y = 0;
+    ui.focus = nil;
+    ui.sel   = nil;
+    ui.press = nil;
 end
 
 --[[
@@ -416,7 +468,7 @@ local ZOOM_PAD = 100;  -- map pixels of margin around the framed group
 local function zoom_to_group(name, view_w, view_h)
     local x0, y0, x1, y1;
     for _, ic in ipairs(ICONS) do
-        if (ic.group == name) then
+        if (ic.group == name and icon_time(ic) == ui.time) then
             x0 = math.min(x0 or ic.x, ic.x);
             y0 = math.min(y0 or ic.y, ic.y);
             x1 = math.max(x1 or ic.x, ic.x);
@@ -427,7 +479,8 @@ local function zoom_to_group(name, view_w, view_h)
         return false;
     end
 
-    local floor_z = math.max(ZOOM_POINTS, mm.cover_zoom(MAP_W, MAP_H, view_w, view_h));
+    local map_w, map_h = map_size();
+    local floor_z = math.max(ZOOM_POINTS, mm.cover_zoom(map_w, map_h, view_w, view_h));
     local fit = mm.fit_zoom(x1 - x0 + ZOOM_PAD * 2, y1 - y0 + ZOOM_PAD * 2,
                             view_w, view_h);
     ui.zoom  = mm.clamp(fit, floor_z, MAX_ZOOM);
@@ -454,7 +507,8 @@ local function draw_map(view_w, view_h)
 
     -- The minimum zoom covers the viewport, so the map never letterboxes.
     -- Re-applied every frame because growing the window raises the floor.
-    local cover = mm.cover_zoom(MAP_W, MAP_H, view_w, view_h);
+    local map_w, map_h = map_size();
+    local cover = mm.cover_zoom(map_w, map_h, view_w, view_h);
     ui.zoom = mm.clamp(ui.zoom or cover, cover, MAX_ZOOM);
 
     -- The viewport's top-left, captured before the child is opened.
@@ -528,8 +582,8 @@ local function draw_map(view_w, view_h)
         ui.dragging = false;
     end
 
-    local content_w = MAP_W * ui.zoom;
-    local content_h = MAP_H * ui.zoom;
+    local content_w = map_w * ui.zoom;
+    local content_h = map_h * ui.zoom;
     ui.pan_x = mm.clamp_pan(ui.pan_x, content_w, view_w);
     ui.pan_y = mm.clamp_pan(ui.pan_y, content_h, view_h);
 
@@ -600,6 +654,17 @@ local function draw_map(view_w, view_h)
             end
         end
 
+        -- Past/present switch, last on the search row.  The label names the
+        -- map it takes you to, not the one you are on.  The switch is recorded
+        -- and applied after the frame, because set_time clears the zoom that
+        -- the rest of this frame still reads.
+        local other = (ui.time == 'present') and 'past' or 'present';
+        imgui.SetCursorPos({ tx_at, SEARCH_MARGIN });
+        if (imgui.Button(other == 'past' and 'Past' or 'Present', { 0, tsize })) then
+            ui.next_time = other;
+        end
+        ui.search_hot = ui.search_hot or imgui.IsItemHovered();
+
         -- Everything below the search row stacks from here.
         local edit_y = SEARCH_MARGIN + row_h + TOGGLE_GAP;
 
@@ -653,6 +718,11 @@ local function draw_map(view_w, view_h)
         end
     end
     imgui.EndChild();
+
+    if (ui.next_time ~= nil) then
+        set_time(ui.next_time);
+        ui.next_time = nil;
+    end
 
     -- One write per finished edit, rather than one per frame of a drag.
     if (ui.dirty and not ui.moving) then

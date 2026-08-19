@@ -3,7 +3,7 @@
 -- 'groups' holds the overview tiers, drawn in order so later groups land on top
 -- of earlier ones; their names are what the point rows below refer to by 'group'.
 -- 'points' holds the zone markers, drawn once the view is zoomed past the
--- overview.  'time' tags the era a marker belongs to.
+-- overview.  'time' tags which map a marker belongs to.
 local POINT_SIZE = 30;
 
 return {
