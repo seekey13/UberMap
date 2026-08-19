@@ -22,15 +22,10 @@ local mm    = require('lib.mapmath');
 local C       = ffi.C;
 local d3d8dev = d3d.get_device();
 
--- Opening a link hands it to the shell, which sends it to the default browser.
--- ShellExecute rather than os.execute: the latter flashes a console window over
--- the game.  Typed as void* so this needs none of the Windows typedefs.
 -- keybd_event presses Escape for the map: Ashita's IKeyboard binds keys but
 -- cannot send them, so leaving an NPC's menu goes through user32, the same way
 -- MapBind does.
 ffi.cdef[[
-    void* ShellExecuteA(void* hwnd, const char* op, const char* file,
-                        const char* params, const char* dir, int show);
     void __stdcall keybd_event(uint8_t vk, uint8_t scan, uint32_t flags, uintptr_t extra);
 ]]
 
@@ -40,15 +35,7 @@ local function try_load(name)
     return ok and lib or nil;
 end
 
-local shell32 = try_load('shell32');
-local user32  = try_load('user32');
-local SW_SHOWNORMAL = 1;
-
-local function open_url(url)
-    if (shell32 ~= nil) then
-        shell32.ShellExecuteA(nil, 'open', url, nil, nil, SW_SHOWNORMAL);
-    end
-end
+local user32 = try_load('user32');
 
 -- The two times of the world, each its own image with its own pixel size.  Map
 -- coordinates - the numbers on every point row and the readout in the corner -
@@ -70,8 +57,7 @@ local TEX_W, TEX_H = 4096, 2048;
 -- The NPCs a warp starts from, as a name pattern and the warp type it begins.
 -- Home Point entities are named 'Home Point #1', 'Home Point #2' and so on,
 -- and Survival Guides carry their own name; the Unity Concord is a person, so
--- those are named one by one.  Use '/ubermap debug' to print the name of every
--- NPC event if a server renames them.
+-- those are named one by one.  A server that renames them is fixed here.
 local WARP_NPC = T{
     { '^Home Point',        'home'  },
     { '^Survival Guide',    'guide' },
@@ -134,6 +120,16 @@ local ZOOM_STEP = 1.15; -- per wheel notch
 -- ImGui packs colours as ABGR, not ARGB.
 local COL_OUTLINE = 0xFF000000;
 
+-- Map text, the stamp behind it, and the fill under a warp row the cursor is
+-- on.  The _DIM pair is the same colours at a quarter alpha, which is what
+-- everything outside the focused group draws at; the stamp fades with the glyph
+-- or it outlives the text it was behind.
+local COL_TEXT      = 0xFF000000;  -- black
+local COL_TEXT_DIM  = 0x40000000;
+local COL_STAMP     = 0x80FFFFFF;  -- white, half alpha
+local COL_STAMP_DIM = 0x20FFFFFF;
+local COL_HOVER     = 0x2EFFFFFF;  -- white, a fifth of an alpha
+
 local READOUT_SCALE = 2.0;
 
 -- Icons are anchored by their centre, in source-image pixels, but drawn at a
@@ -147,10 +143,6 @@ local ICON_HOT     = 1.05;  -- hovered nation icons draw this larger
 local HOT_GROUP    = 'Nations';  -- the only group that grows on hover
 local COL_ICON     = 0xFFFFFFFF;  -- white: tint that leaves the art untouched
 local COL_SELECT   = 0xFF00FFFF;  -- yellow: ring around the point being edited
-
--- Everything outside the focused group draws at a quarter alpha.  The outline
--- fades with the glyph, or the stamp outlives the text it was behind.
-local DIM_ALPHA = 0.25;
 
 -- Labels sit above the icon at a fixed screen size, so they stay readable at
 -- every zoom instead of shrinking away with the art.
@@ -178,15 +170,14 @@ local COL_SEARCH_TEXT = { 0.0, 0.0, 0.0, 1.0 };
 local COL_SEARCH_HINT = { 0.45, 0.45, 0.45, 1.0 };
 
 -- Layer toggles, drawn on the search box's line.  Clicking one dims its icon;
--- the state is kept per file name in ui.toggle (nil = lit).
+-- the state is kept per file name in cfg.toggle (nil = lit).
 -- Maw.png is left out until maw warps are implemented.
 local TOGGLES      = T{ 'Crystal.png', 'Guide.png', 'Unity.png' };
--- What each toggle is called on its tooltip, keyed the way ui.toggle is.
+-- What each toggle is called on its tooltip, keyed the way cfg.toggle is.
 local TOGGLE_NAME  = T{ ['Crystal.png'] = 'Home Points',
                         ['Guide.png']   = 'Survival Guides',
                         ['Unity.png']   = 'Unity Concords' };
 local TOGGLE_GAP   = 6;   -- screen pixels between toggles
-local PICK_LABEL_GAP = 2;  -- screen pixels between a picker's name and its swatch
 local COL_ICON_OFF = 0x40FFFFFF;  -- 25% opacity, i.e. 75% transparent
 
 -- Warp type -> the toggle that lists it, so dimming a toggle drops those rows
@@ -211,41 +202,17 @@ local POPUP_ROW      = 24;  -- row pitch, screen pixels
 local POPUP_ICON     = 24;  -- the box a type icon is fitted into
 local POPUP_GAP      = 6;   -- screen pixels between the marker and the panel
 local COL_POPUP_BG   = 0xE0101010;  -- near black, a little of the map showing through
-local COL_POPUP_TEXT = 0xFFFFFFFF;  -- fixed, not the pickers: the panel has its own ground
+local COL_POPUP_TEXT = 0xFFFFFFFF;  -- the panel has its own ground, so white reads
 local COL_POPUP_OFF  = 0x60FFFFFF;  -- a row whose kind of NPC is not in reach
 
--- Credits, opened by the heart in the viewport's bottom-right corner.  One
--- entry per credit: who, then one or more places to find them.
-local THANKS_HEAD = "This addon wouldn't work or look good without:";
-local THANKS = T{
-    { 'Thorny / Uberwarp / Multisend',
-      'https://github.com/ThornyFFXI/Uberwarp',
-      'https://github.com/ThornyFFXI/Multisend' },
-    { 'FFXI Remapster Project', 'https://remapster.com/' },
-};
-
--- Flattened once into the rows the panel draws, blanks and all, so the draw
--- does not rebuild the layout every frame.  A row carrying a url is clickable.
-local THANKS_ROWS = { { text = THANKS_HEAD }, { text = '' } };
-for i, c in ipairs(THANKS) do
-    if (i > 1) then
-        table.insert(THANKS_ROWS, { text = '' });
-    end
-    table.insert(THANKS_ROWS, { text = c[1] });
-    for j = 2, #c do
-        table.insert(THANKS_ROWS, { text = c[j], url = c[j] });
-    end
-end
-local COL_THANKS_URL = 0xFFB0B0B0;  -- grey: the link reads under the name
-local COL_HEART      = 0x80FFFFFF;  -- 50% opacity: the heart sits over the map
-
--- Multisend, drawn left of the heart.  While it is lit every command the map
--- sends goes out through Thorny's Multisend instead of straight to the client,
--- so all the logged-in characters take the warp together.  Off by default: it
--- is the surprising thing to do, so it has to be asked for.
-local MSS_ICON     = 'multicast.png';
-local MSS_PREFIX   = '/mss ';
-local COL_MSS_OFF  = 0x40FFFFFF;  -- half again the heart's 50%, i.e. dimmed off
+-- Multisend, in the viewport's bottom-right corner.  While it is lit every
+-- command the map sends goes out through Thorny's Multisend instead of straight
+-- to the client, so all the logged-in characters take the warp together.  Off
+-- by default: it is the surprising thing to do, so it has to be asked for.
+local MSS_ICON    = 'multicast.png';
+local MSS_PREFIX  = '/mss ';
+local COL_MSS_ON  = 0x80FFFFFF;  -- 50% opacity: it sits over the map
+local COL_MSS_OFF = 0x40FFFFFF;  -- half that again, i.e. dimmed off
 
 -- The map data lives in lib/points.lua under the addon: the overview groups, in
 -- draw order so later groups land on top of earlier ones where they overlap,
@@ -266,17 +233,18 @@ local OVERVIEW    = T{};
 
 -- What the map remembers between sessions.  Ashita keeps a settings file per
 -- character, under config/addons/UberMap, so two characters can carry their own
--- colours and layers.  Only the choices made by hand are kept: everything else
--- in ui is read from the world each time the map opens.
+-- layers.  Everything else the map needs is read from the world each time it
+-- opens, and lives in ui below.
 local default_settings = T{
-    mss         = false,                     -- send through Multisend
-    toggle      = { },                       -- toggle file name -> true when dimmed off
-    col_text    = { 0.0, 0.0, 0.0, 1.0 },    -- map text, from the corner picker
-    col_outline = { 1.0, 1.0, 1.0, 0.5 },    -- the stamp behind it
-    col_hover   = { 1.0, 1.0, 1.0, 0.18 },   -- warp row under the cursor
+    mss    = false,  -- send through Multisend
+    toggle = T{ },   -- toggle file name -> true when dimmed off
 };
-local SAVED = { 'mss', 'toggle', 'col_text', 'col_outline', 'col_hover' };
-local cfg   = settings.load(default_settings);
+-- Loaded from a copy of the defaults, because the library hands its own default
+-- table back for a key the file has no entry for: without the copy the first
+-- dimmed toggle would edit the table above.  cfg is then written through
+-- directly, and settings.save() called as each change is made rather than at
+-- unload, so nothing is lost if the game goes down first.
+local cfg = settings.load(default_settings:copy(true));
 
 local ui = T{
     is_open     = { false, },
@@ -290,8 +258,6 @@ local ui = T{
     pan_y       = 0,
     search      = { '', },
     search_hot  = false,
-    -- col_text, col_outline, col_hover and toggle are saved settings, filled
-    -- in by apply_settings below along with mss.
     dragging    = false,
     drag_x      = 0,
     drag_y      = 0,
@@ -308,11 +274,7 @@ local ui = T{
     open_z      = nil,       -- nil until the first frame after opening reads it
     warp        = nil,       -- zone point whose warp popup is open
     warp_hot    = false,     -- cursor was inside that popup last frame
-    thanks      = false,     -- credits panel is open
-    col_dirty   = false,     -- a colour picker has been moved this drag
     focus       = nil,       -- group name to keep lit; everything else dims
-    debug       = false,
-    dbg         = nil,
     edit        = false,     -- point editor on
     sel         = nil,       -- the user point being edited
     moving      = false,     -- ctrl-drag in progress
@@ -321,52 +283,9 @@ local ui = T{
     edit_group  = { 'Regions', },
 };
 
---[[
-* A settings value fit to hand to the other side, tables copied so the two never
-* share one.  Sharing would tie the saved settings to whatever ui does next: the
-* library hands back its own default table for a key the file has no entry for,
-* so a colour picker would edit the defaults, and a saved toggle table would
-* carry the proximity filter's later moves out on the following write.
---]]
-local function copy_setting(v)
-    if (type(v) ~= 'table') then
-        return v;
-    end
-    local t = { };
-    for k, tv in pairs(v) do
-        t[k] = tv;
-    end
-    return t;
-end
-
---[[
-* Copies the saved settings onto ui.
---]]
-local function apply_settings(s)
-    for _, k in ipairs(SAVED) do
-        ui[k] = copy_setting(s[k]);
-    end
-end
-
---[[
-* Writes ui's side of the settings back out, as each one is changed rather than
-* at unload, so nothing is lost if the game goes down first.  Only changes made
-* by hand call this: the proximity filter moves the toggles on its own and that
-* is the world talking, not a choice to remember.
---]]
-local function save_settings()
-    for _, k in ipairs(SAVED) do
-        cfg[k] = copy_setting(ui[k]);
-    end
-    settings.save();
-end
-
-apply_settings(cfg);
-
 -- Logging in, or switching characters, hands back that character's own file.
 settings.register('settings', 'settings_update', function (s)
     cfg = s;
-    apply_settings(s);
 end);
 
 local function map_size()
@@ -419,7 +338,7 @@ end
 * remembered at each call site.
 --]]
 local function queue_cmd(cmd)
-    AshitaCore:GetChatManager():QueueCommand(-1, ui.mss and (MSS_PREFIX .. cmd) or cmd);
+    AshitaCore:GetChatManager():QueueCommand(-1, cfg.mss and (MSS_PREFIX .. cmd) or cmd);
     -- sent_at holds off the NPC event the command triggers, which would
     -- otherwise open the map straight back up on top of what was asked for.
     ui.sent_at = os.clock();
@@ -441,11 +360,10 @@ local function send_cmd(cmd)
     else
         queue_cmd(cmd);
     end
-    -- Sending is what the map was opened for, so it goes away whole: window,
-    -- warp popup and credits panel together.
+    -- Sending is what the map was opened for, so it goes away whole: window and
+    -- warp popup together.
     ui.is_open[1] = false;
     ui.warp       = nil;
-    ui.thanks     = false;
 end
 
 --[[
@@ -454,24 +372,14 @@ end
 --]]
 local function warp_lit(w)
     local file = WARP_ICON[w.type];
-    return file ~= nil and not ui.toggle[file];
-end
-
---[[
-* True while a row can actually be taken, i.e. the player is stood at the kind
-* of NPC it travels from.  ui.near_kind is false before the first poll and nil
-* while nothing is in reach, and neither matches a type, so both read as out of
-* reach.
---]]
-local function warp_reachable(w)
-    return w.type == ui.near_kind;
+    return file ~= nil and not cfg.toggle[file];
 end
 
 -- True while a toggle that lists warp rows is dimmed, i.e. the map has been
 -- narrowed to some of the kinds rather than showing all of them.
 local function warps_filtered()
     for _, file in pairs(WARP_ICON) do
-        if (ui.toggle[file]) then
+        if (cfg.toggle[file]) then
             return true;
         end
     end
@@ -533,7 +441,7 @@ end
 --]]
 local function filter_to(kind)
     for t, file in pairs(WARP_ICON) do
-        ui.toggle[file] = (kind ~= nil and t ~= kind) or nil;
+        cfg.toggle[file] = (kind ~= nil and t ~= kind) or nil;
     end
 end
 
@@ -616,12 +524,6 @@ local function icon_dim(ic)
     return not OVERVIEW[ic.group] and warps_filtered() and not warps_lit(ic.label);
 end
 
--- Rows written before the past map existed carry no tag, so an untagged marker
--- is a present-day one.
-local function icon_time(ic)
-    return ic.time or 'present';
-end
-
 -- ui.zoom is nil until the first frame sizes the viewport, so treat that as
 -- hidden rather than comparing against nil.
 local function icon_visible(ic)
@@ -629,7 +531,7 @@ local function icon_visible(ic)
     if (z == nil) then
         return false;
     end
-    if (icon_time(ic) ~= ui.time) then
+    if (ic.time ~= ui.time) then
         return false;
     end
     if (OVERVIEW[ic.group]) then
@@ -677,43 +579,6 @@ local function pump_escape(now)
     if (now - ui.esc_at > ESCAPE_RETRY) then
         press_escape(now);
     end
-end
-
---[[
-* Every named entity within NEAR_DUMP, printed with everything near_warp_type
-* tests it on: the slot, so an NPC outside NPC_FIRST..NPC_LAST shows up as one;
-* the distance, so a radius that is too tight shows up as one; the render flags,
-* whose 0x200 bit a live entity carries; and the type its name matched, so a
-* name the server spells differently shows up as '-'.  The whole array is
-* walked, not just the NPC slice, because the slice is one of the things being
-* checked.  '/ubermap near'.
---]]
-local NEAR_DUMP = 30;  -- yalms
-local DUMP_MAX  = 20;  -- rows, so a crowded zone cannot flood the log
-
-local function near_dump()
-    local ent = AshitaCore:GetMemoryManager():GetEntity();
-    if (ent == nil) then
-        notify('no entity manager - are you logged in?');
-        return;
-    end
-    local shown, found = 0, 0;
-    for i = 0, 2303 do
-        local name = ent:GetName(i);
-        local d    = ent:GetDistance(i);
-        if (name ~= nil and name ~= '' and d < NEAR_DUMP * NEAR_DUMP) then
-            found = found + 1;
-            if (shown < DUMP_MAX) then
-                shown = shown + 1;
-                notify(('%04X %-22s %5.1fy flags %08X %s'):fmt(
-                    i, name, math.sqrt(d), ent:GetRenderFlags0(i),
-                    warp_npc_type(name) or '-'));
-            end
-        end
-    end
-    notify(('%d entity(s) within %dy, %d shown'):fmt(found, NEAR_DUMP, shown));
-    notify(('filter sees: %s (radius %dy, slots %04X-%04X)'):fmt(
-        near_warp_type() or 'nothing', WARP_NPC_NEAR, NPC_FIRST, NPC_LAST));
 end
 
 --[[
@@ -904,29 +769,15 @@ local function delete_point(ic)
 end
 
 --[[
-* Packs a picker's { r, g, b, a } floats into the ABGR word the draw list takes,
-* fading the alpha by 'fade' when given.
---]]
-local function pack_col(c, fade)
-    local function q(v)
-        return math.floor(math.min(math.max(v, 0), 1) * 255 + 0.5);
-    end
-    return q(c[4] * (fade or 1)) * 0x1000000
-         + q(c[3]) * 0x10000 + q(c[2]) * 0x100 + q(c[1]);
-end
-
---[[
-* ImGui has no outlined text, so stamp the string in the outline colour around
-* itself before drawing it.  Keeps it readable over both land and ocean.  Both
-* colours come from the pickers, so every string on the map retints together.
+* ImGui has no outlined text, so stamp the string in the stamp colour around
+* itself before drawing it.  Keeps it readable over both land and ocean.
 --]]
 local function outlined_text(dl, x, y, text, dim)
-    local fade    = dim and DIM_ALPHA or nil;
-    local outline = pack_col(ui.col_outline, fade);
+    local stamp = dim and COL_STAMP_DIM or COL_STAMP;
     for _, o in ipairs({ { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 } }) do
-        dl:AddText({ x + o[1], y + o[2] }, outline, text);
+        dl:AddText({ x + o[1], y + o[2] }, stamp, text);
     end
-    dl:AddText({ x, y }, pack_col(ui.col_text, fade), text);
+    dl:AddText({ x, y }, dim and COL_TEXT_DIM or COL_TEXT, text);
 end
 
 --[[
@@ -1011,6 +862,46 @@ local function icon_texture(file)
     return e.tex, e.w, e.h;
 end
 
+-- The width a piece of art takes when fitted to 'h' by its own aspect, or 0
+-- when it is missing: none of it is square, and the buttons below sit in a row
+-- that has to advance by what each one actually took.
+local function icon_width(file, h)
+    local tex, iw, ih = icon_texture(file);
+    return (tex ~= nil) and (h * iw / ih) or 0;
+end
+
+--[[
+* Art at (x, y) in window coordinates, fitted to 'h', with an InvisibleButton
+* over it: the same widget ImageButton would be, without the version check its
+* argument list has been through - the list moved between the ImGui versions
+* Ashita has shipped.  Returns whether it was pressed, and the width it took.
+*
+* A warp popup lying over one of these eats the press: this row is submitted
+* before the popup, and ImGui hands hover to the first item that claims it, so
+* a panel over a toggle would otherwise flip it from underneath.  Read a frame
+* late, which is harmless - the panel does not move while it is open.  Missing
+* art draws nothing and takes no press.
+--]]
+local function icon_button(id, file, x, y, h, tint, tip)
+    local w = icon_width(file, h);
+    if (w == 0) then
+        return false, 0;
+    end
+    local tex = icon_texture(file);
+    imgui.SetCursorPos({ x, y });
+    local sx, sy = imgui.GetCursorScreenPos();
+    imgui.GetWindowDrawList():AddImage(tonumber(ffi.cast('uint32_t', tex)),
+                                       { sx, sy }, { sx + w, sy + h },
+                                       { 0, 0 }, { 1, 1 }, tint);
+    local hit = imgui.InvisibleButton('##ubermap_' .. id, { w, h }) and not ui.warp_hot;
+    if (tip ~= nil) then
+        item_tip(tip);
+    end
+    -- Feeding search_hot keeps the map from panning or zooming underneath.
+    ui.search_hot = ui.search_hot or imgui.IsItemHovered();
+    return hit, w;
+end
+
 --[[
 * Draws every icon centred on its map coordinate, with a rounded black border
 * unless the entry sets border = false.  A hovered icon swaps to its _1 art
@@ -1091,7 +982,7 @@ local ZOOM_PAD = 100;  -- map pixels of margin around the framed group
 local function zoom_to_group(name, view_w, view_h)
     local x0, y0, x1, y1;
     for _, ic in ipairs(ICONS) do
-        if (ic.group == name and icon_time(ic) == ui.time) then
+        if (ic.group == name and ic.time == ui.time) then
             x0 = math.min(x0 or ic.x, ic.x);
             y0 = math.min(y0 or ic.y, ic.y);
             x1 = math.max(x1 or ic.x, ic.x);
@@ -1130,23 +1021,6 @@ local function show()
 end
 
 local function draw_map(view_w, view_h)
-    if (ui.debug) then
-        imgui.Text(ui.dbg or '');
-        -- What the auto-filter is acting on, live: the kind in reach, when it
-        -- was last read, and the toggle each kind was left at.
-        imgui.Text(('near=%s polled %.1fs ago | crystal=%s guide=%s unity=%s warp=%s'):fmt(
-            tostring(ui.near_kind), os.clock() - ui.near_at,
-            tostring(ui.toggle['Crystal.png']), tostring(ui.toggle['Guide.png']),
-            tostring(ui.toggle['Unity.png']), tostring(ui.has_warp)));
-        -- What the menu escape is doing: whether the game says we are in one,
-        -- the command waiting on it, and whether a press is still held.
-        imgui.Text(('event=%s pending=%s held=%d user32=%s'):fmt(
-            tostring(in_event()), tostring(ui.pending), ui.esc_frames,
-            tostring(user32 ~= nil)));
-        local _, avail_h = imgui.GetContentRegionAvail();
-        view_h = avail_h;
-    end
-
     -- The minimum zoom covers the viewport, so the map never letterboxes.
     -- Re-applied every frame because growing the window raises the floor.
     local map_w, map_h = map_size();
@@ -1262,34 +1136,24 @@ local function draw_map(view_w, view_h)
 
         local row_h = imgui.GetFrameHeight() * SEARCH_H_MULT;
 
+        -- Every widget on the row below ORs into search_hot, which is what
+        -- keeps the map from panning or zooming underneath one.  Cleared here
+        -- rather than assigned by whichever widget happens to be first.  Read a
+        -- frame late by over_map above, which is fine: a click focuses a widget
+        -- before the drag threshold is ever crossed.
+        ui.search_hot = false;
+
         -- Past/present switch, first on the search row.  The art names the map
         -- you are on, not the one the press takes you to.  The switch is
         -- recorded and applied after the frame, because set_time clears the
-        -- zoom that the rest of this frame still reads.  Drawn by hand for the
-        -- same reason the toggles below are, and falling back to a text button
-        -- if the art fails to load, so the other map stays reachable.
+        -- zoom that the rest of this frame still reads.
         local other = (ui.time == 'present') and 'past' or 'present';
-        local ttex, tiw, tih = icon_texture(ui.time .. '.png');
-        local time_w = (ttex ~= nil) and (row_h * tiw / tih)
-                                     or (imgui.CalcTextSize('Present') + 2);
-        imgui.SetCursorPos({ SEARCH_MARGIN, SEARCH_MARGIN });
-        if (ttex ~= nil) then
-            local sx, sy = imgui.GetCursorScreenPos();
-            imgui.GetWindowDrawList():AddImage(tonumber(ffi.cast('uint32_t', ttex)),
-                                               { sx, sy }, { sx + time_w, sy + row_h },
-                                               { 0, 0 }, { 1, 1 }, COL_ICON);
-            -- Vetoed by a warp popup lying over it, for the reason spelled out
-            -- on the toggles below.
-            if (imgui.InvisibleButton('##ubermap_time', { time_w, row_h })
-                and not ui.warp_hot) then
-                ui.next_time = other;
-            end
-        elseif (imgui.Button(ui.time == 'past' and 'Past' or 'Present', { time_w, row_h })
-                and not ui.warp_hot) then
+        local time_hit, time_w = icon_button('time', ui.time .. '.png',
+                                             SEARCH_MARGIN, SEARCH_MARGIN, row_h, COL_ICON,
+                                             'Switch to a map of the ' .. other);
+        if (time_hit) then
             ui.next_time = other;
         end
-        local time_hot = imgui.IsItemHovered();
-        item_tip('Switch to a map of the ' .. other);
         local search_x = SEARCH_MARGIN + time_w + TOGGLE_GAP;
 
         imgui.PushStyleVar(ImGuiStyleVar_FramePadding,
@@ -1304,115 +1168,34 @@ local function draw_map(view_w, view_h)
         imgui.InputTextWithHint('##ubermap_search', 'Search', ui.search, SEARCH_MAX);
         imgui.PopStyleColor(5);
         imgui.PopStyleVar();
-        -- Read a frame late by over_map above, which is fine: a click focuses
-        -- the box before the drag threshold is ever crossed.
-        ui.search_hot = imgui.IsItemActive() or imgui.IsItemHovered() or time_hot;
+        ui.search_hot = ui.search_hot or imgui.IsItemActive() or imgui.IsItemHovered();
 
-        -- Toggle icons, sharing the search box's line.  Drawn by hand rather
-        -- than with ImageButton, whose argument list moved between the ImGui
-        -- versions Ashita has shipped; an InvisibleButton over an AddImage is
-        -- the same widget without the version check.
-        local tdl   = imgui.GetWindowDrawList();
-        local tsize = row_h;
+        -- Toggle icons, sharing the search box's line.
         local tx_at = search_x + SEARCH_W + TOGGLE_GAP;
         for _, file in ipairs(TOGGLES) do
-            local tex, iw, ih = icon_texture(file);
-            if (tex ~= nil) then
-                -- The art is not square, so fit it into a tsize box by its own
-                -- aspect and advance by the width it actually took.
-                local tw = tsize * iw / ih;
-                imgui.SetCursorPos({ tx_at, SEARCH_MARGIN });
-                local sx, sy = imgui.GetCursorScreenPos();
-                tdl:AddImage(tonumber(ffi.cast('uint32_t', tex)),
-                             { sx, sy }, { sx + tw, sy + tsize }, { 0, 0 }, { 1, 1 },
-                             ui.toggle[file] and COL_ICON_OFF or COL_ICON);
-                -- ui.warp_hot vetoes the press: this row is submitted before the
-                -- warp popup, and ImGui gives hover to the first item that
-                -- claims it, so a panel lying over a toggle would otherwise flip
-                -- it from underneath.  A frame late, which is harmless - the
-                -- panel does not move while it is open.
-                if (imgui.InvisibleButton('##ubermap_toggle_' .. file, { tw, tsize })
-                    and not ui.warp_hot) then
-                    ui.toggle[file] = not ui.toggle[file];
-                    save_settings();
-                end
-                item_tip((ui.toggle[file] and 'Show ' or 'Hide ')
-                         .. (TOGGLE_NAME[file] or file));
-                ui.search_hot = ui.search_hot or imgui.IsItemHovered();
+            local hit, tw = icon_button('toggle_' .. file, file,
+                                        tx_at, SEARCH_MARGIN, row_h,
+                                        cfg.toggle[file] and COL_ICON_OFF or COL_ICON,
+                                        (cfg.toggle[file] and 'Show ' or 'Hide ')
+                                        .. (TOGGLE_NAME[file] or file));
+            if (hit) then
+                cfg.toggle[file] = not cfg.toggle[file];
+                settings.save();
+            end
+            if (tw > 0) then
                 tx_at = tx_at + tw + TOGGLE_GAP;
             end
         end
 
         -- Instant Warp, last on that line.  It uses the scroll instead of
         -- filtering the map, so it is drawn dim and takes no press while none
-        -- is carried.  The press is vetoed by a warp popup lying over it for
-        -- the same reason the toggles above are.
-        local wtex, wiw, wih = icon_texture(WARP_ITEM_ICON);
-        if (wtex ~= nil) then
-            local tw = tsize * wiw / wih;
-            imgui.SetCursorPos({ tx_at, SEARCH_MARGIN });
-            local sx, sy = imgui.GetCursorScreenPos();
-            tdl:AddImage(tonumber(ffi.cast('uint32_t', wtex)),
-                         { sx, sy }, { sx + tw, sy + tsize }, { 0, 0 }, { 1, 1 },
-                         ui.has_warp and COL_ICON or COL_ICON_OFF);
-            if (imgui.InvisibleButton('##ubermap_warpitem', { tw, tsize })
-                and not ui.warp_hot and ui.has_warp) then
-                send_cmd(WARP_ITEM_CMD);
-            end
-            item_tip(ui.has_warp and 'Use Instant Warp scroll'
-                                  or 'No Instant Warp scroll in inventory');
-            ui.search_hot = ui.search_hot or imgui.IsItemHovered();
-        end
-
-        -- Colour pickers, pinned to the viewport's top-right corner and
-        -- sharing the search row's height.  ImGui writes into the tables
-        -- outlined_text packs from, so the map retints as they move.
-        -- NoInputs leaves only the swatch, which opens the picker on click;
-        -- NoLabel forwards the name to that popup; the name is stamped over
-        -- the swatch by hand instead, outlined because it sits on the map.
-        -- Editor-only, like the coordinate readout: retinting is authoring.
-        if (ui.edit) then
-            local pick_flags = bit.bor(ImGuiColorEditFlags_NoInputs,
-                                       ImGuiColorEditFlags_NoLabel,
-                                       ImGuiColorEditFlags_AlphaBar,
-                                       ImGuiColorEditFlags_AlphaPreview);
-            imgui.PushStyleVar(ImGuiStyleVar_FramePadding,
-                               { 6, (row_h - imgui.GetFontSize()) / 2 });
-            local picks = { { 'Text',    ui.col_text },
-                            { 'Outline', ui.col_outline },
-                            { 'Hover',   ui.col_hover } };
-            -- A label wider than its swatch widens that column rather than
-            -- running into its neighbour, so the strip stays right-anchored.
-            local total, lbl_h = 0, 0;
-            for _, pick in ipairs(picks) do
-                local lw, lh = imgui.CalcTextSize(pick[1]);
-                pick[3] = math.max(row_h, lw);
-                total   = total + pick[3];
-                lbl_h   = math.max(lbl_h, lh);
-            end
-            local ldl    = imgui.GetWindowDrawList();
-            local pick_x = view_w - SEARCH_MARGIN
-                           - total - (#picks - 1) * TOGGLE_GAP;
-            for _, pick in ipairs(picks) do
-                local lw = imgui.CalcTextSize(pick[1]);
-                outlined_text(ldl, origin_x + pick_x + (pick[3] - lw) / 2,
-                              origin_y + SEARCH_MARGIN, pick[1]);
-                imgui.SetCursorPos({ pick_x + (pick[3] - row_h) / 2,
-                                     SEARCH_MARGIN + lbl_h + PICK_LABEL_GAP });
-                if (imgui.ColorEdit4(pick[1], pick[2], pick_flags)) then
-                    ui.col_dirty = true;
-                end
-                ui.search_hot = ui.search_hot
-                                or imgui.IsItemActive() or imgui.IsItemHovered();
-                pick_x = pick_x + pick[3] + TOGGLE_GAP;
-            end
-            -- One write per drag rather than one per frame of it: the picker
-            -- reports a change on every frame the mouse moves inside it.
-            if (ui.col_dirty and not imgui.IsMouseDown(0)) then
-                ui.col_dirty = false;
-                save_settings();
-            end
-            imgui.PopStyleVar();
+        -- is carried.
+        if (icon_button('warpitem', WARP_ITEM_ICON, tx_at, SEARCH_MARGIN, row_h,
+                        ui.has_warp and COL_ICON or COL_ICON_OFF,
+                        ui.has_warp and 'Use Instant Warp scroll'
+                                     or 'No Instant Warp scroll in inventory')
+            and ui.has_warp) then
+            send_cmd(WARP_ITEM_CMD);
         end
 
         -- Everything below the search row stacks from here.
@@ -1468,109 +1251,17 @@ local function draw_map(view_w, view_h)
             imgui.SetWindowFontScale(1.0);
         end
 
-        -- Credits, pinned to the viewport's bottom-right corner.  Drawn by hand
-        -- for the same reason the toggles are, and falling back to a text
-        -- button so the credits stay reachable if the art is missing.
-        local htex, hiw, hih = icon_texture('heart.png');
-        local heart_w = (htex ~= nil) and (row_h * hiw / hih)
-                                      or (imgui.CalcTextSize('Thanks') + 12);
-        local heart_x = view_w - SEARCH_MARGIN - heart_w;
-        local heart_y = view_h - SEARCH_MARGIN - row_h;
-
-        -- Multisend, sat left of the heart on the same line.  Art only: with no
-        -- icon there is nothing to press and the map keeps sending the way it
-        -- always did, rather than growing a second text button in the corner.
-        local mtex, miw, mih = icon_texture(MSS_ICON);
-        if (mtex ~= nil) then
-            local mss_w = row_h * miw / mih;
-            imgui.SetCursorPos({ heart_x - TOGGLE_GAP - mss_w, heart_y });
-            local sx, sy = imgui.GetCursorScreenPos();
-            imgui.GetWindowDrawList():AddImage(tonumber(ffi.cast('uint32_t', mtex)),
-                                               { sx, sy }, { sx + mss_w, sy + row_h },
-                                               { 0, 0 }, { 1, 1 },
-                                               ui.mss and COL_HEART or COL_MSS_OFF);
-            if (imgui.InvisibleButton('##ubermap_mss', { mss_w, row_h })
-                and not ui.warp_hot) then
-                ui.mss = not ui.mss;
-                save_settings();
-            end
-            item_tip(ui.mss and 'Multisend on: warps go to every character'
-                             or 'Multisend off: warps go to this character only');
-            ui.search_hot = ui.search_hot or imgui.IsItemHovered();
-        end
-
-        imgui.SetCursorPos({ heart_x, heart_y });
-        if (htex ~= nil) then
-            local sx, sy = imgui.GetCursorScreenPos();
-            imgui.GetWindowDrawList():AddImage(tonumber(ffi.cast('uint32_t', htex)),
-                                               { sx, sy }, { sx + heart_w, sy + row_h },
-                                               { 0, 0 }, { 1, 1 }, COL_HEART);
-            if (imgui.InvisibleButton('##ubermap_thanks', { heart_w, row_h })
-                and not ui.warp_hot) then
-                ui.thanks = not ui.thanks;
-            end
-        elseif (imgui.Button('Thanks', { heart_w, row_h }) and not ui.warp_hot) then
-            ui.thanks = not ui.thanks;
-        end
-        local heart_hot = imgui.IsItemHovered();
-        ui.search_hot = ui.search_hot or heart_hot;
-
-        -- Credits panel, hung above the heart on the same corner.  One row per
-        -- THANKS_ROWS entry; a link row hands its url to the browser, and a
-        -- click anywhere else shuts the panel.
-        if (ui.thanks) then
-            local kdl   = imgui.GetWindowDrawList();
-            local _, th = imgui.CalcTextSize('X');
-            local w     = 0;
-            for _, r in ipairs(THANKS_ROWS) do
-                w = math.max(w, imgui.CalcTextSize(r.text));
-            end
-            w = w + POPUP_PAD * 2;
-            local h = POPUP_PAD * 2 + POPUP_ROW * #THANKS_ROWS;
-            local px = origin_x + view_w - SEARCH_MARGIN - w;
-            local py = mm.clamp_box(origin_y + heart_y - POPUP_GAP - h,
-                                    h, origin_y, view_h);
-
-            kdl:AddRectFilled({ px, py }, { px + w, py + h }, COL_POPUP_BG,
-                              0, ImDrawCornerFlags_All);
-            kdl:AddRect({ px, py }, { px + w, py + h }, COL_OUTLINE,
-                        0, ImDrawCornerFlags_All, ICON_BORDER);
-            local hot_link = nil;
-            for i, r in ipairs(THANKS_ROWS) do
-                local ry = py + POPUP_PAD + POPUP_ROW * (i - 1);
-                -- Only a link row lights up, so the blanks and the heading do
-                -- not read as things you can press.
-                if (r.url ~= nil
-                    and mouse_x >= px and mouse_x <= px + w
-                    and mouse_y >= ry and mouse_y < ry + POPUP_ROW) then
-                    hot_link = r.url;
-                    kdl:AddRectFilled({ px + ICON_BORDER, ry },
-                                      { px + w - ICON_BORDER, ry + POPUP_ROW },
-                                      pack_col(ui.col_hover),
-                                      0, ImDrawCornerFlags_All);
-                end
-                kdl:AddText({ px + POPUP_PAD, ry + (POPUP_ROW - th) / 2 },
-                            (r.url ~= nil) and COL_THANKS_URL or COL_POPUP_TEXT,
-                            r.text);
-            end
-
-            -- An InvisibleButton over the panel takes the press, so it neither
-            -- falls through to the map nor starts a window move; the hover is
-            -- tested by rect for the reason the warp panel below spells out.
-            imgui.SetCursorPos({ px - origin_x, py - origin_y });
-            imgui.InvisibleButton('##ubermap_thanks_panel', { w, h });
-            local thanks_hot = mouse_x >= px and mouse_x <= px + w
-                               and mouse_y >= py and mouse_y <= py + h;
-            ui.search_hot = ui.search_hot or thanks_hot;
-            -- heart_hot vetoes the close: the button that just opened the panel
-            -- reports the same click this test sees.
-            if (imgui.IsMouseClicked(0)) then
-                if (hot_link ~= nil) then
-                    open_url(hot_link);
-                elseif (not thanks_hot and not heart_hot) then
-                    ui.thanks = false;
-                end
-            end
+        -- Multisend, pinned to the viewport's bottom-right corner.  Art only:
+        -- with no icon there is nothing to press and the map keeps sending the
+        -- way it always did.
+        local mss_w = icon_width(MSS_ICON, row_h);
+        if (icon_button('mss', MSS_ICON, view_w - SEARCH_MARGIN - mss_w,
+                        view_h - SEARCH_MARGIN - row_h, row_h,
+                        cfg.mss and COL_MSS_ON or COL_MSS_OFF,
+                        cfg.mss and 'Multisend on: warps go to every character'
+                                 or 'Multisend off: warps go to this character only')) then
+            cfg.mss = not cfg.mss;
+            settings.save();
         end
 
         -- Warp list for the zone point that was clicked, drawn after everything
@@ -1620,7 +1311,10 @@ local function draw_map(view_w, view_h)
                     -- stood at, so one of another kind is drawn dim and takes
                     -- no hover or press.  Listed rather than dropped: the row
                     -- says the destination exists and what to walk up to.
-                    local live = warp_reachable(r);
+                    -- ui.near_kind is false before the first poll and nil while
+                    -- nothing is in reach; neither is a type, so both read as
+                    -- out of reach.
+                    local live = r.type == ui.near_kind;
                     -- The hover is drawn straight into the list rather than
                     -- coming off an ImGui item, for the same reason the click
                     -- below is tested by hand: the panel is one InvisibleButton.
@@ -1629,8 +1323,7 @@ local function draw_map(view_w, view_h)
                         hot_row = r;
                         pdl:AddRectFilled({ px + ICON_BORDER, ry },
                                           { px + w - ICON_BORDER, ry + POPUP_ROW },
-                                          pack_col(ui.col_hover),
-                                          0, ImDrawCornerFlags_All);
+                                          COL_HOVER, 0, ImDrawCornerFlags_All);
                     end
                     local tex, iw, ih = icon_texture(WARP_ICON[r.type]);
                     if (tex ~= nil) then
@@ -1692,13 +1385,6 @@ local function draw_map(view_w, view_h)
     if (ui.dirty and not ui.moving) then
         save_points();
         ui.dirty = false;
-    end
-
-    if (ui.debug) then
-        ui.dbg = ('hovered=%s over_map=%s shift=%s wheel=%.2f drag=%s | mouse %.0f,%.0f origin %.0f,%.0f view %.0fx%.0f | zoom %.4f (cover %.4f) pan %.0f,%.0f'):fmt(
-            tostring(hovered), tostring(over_map), tostring(shift), wheel, tostring(ui.dragging),
-            mouse_x, mouse_y, origin_x, origin_y, view_w, view_h,
-            ui.zoom, cover, ui.pan_x, ui.pan_y);
     end
 end
 
@@ -1770,10 +1456,6 @@ ashita.events.register('packet_in', 'ubermap_packet_in', function (e)
         return false;
     end
 
-    if (ui.debug) then
-        notify(('NPC event %04X: %s'):fmt(e.id, name));
-    end
-
     -- A talk the map's own command started is not a reason to reopen it: the
     -- send closed it on purpose.
     if (warp_npc_type(name) ~= nil and os.clock() - ui.sent_at > SEND_QUIET) then
@@ -1806,17 +1488,6 @@ ashita.events.register('command', 'ubermap_command', function (e)
             ui.sel = nil;
         end
         notify(('point editor: %s'):fmt(ui.edit and 'on, ctrl+click the map' or 'off'));
-        return;
-    end
-
-    if (sub == 'debug') then
-        ui.debug = not ui.debug;
-        notify(('NPC event debug: %s'):fmt(ui.debug and 'on' or 'off'));
-        return;
-    end
-
-    if (sub == 'near') then
-        near_dump();
         return;
     end
 
