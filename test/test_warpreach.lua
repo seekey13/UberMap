@@ -4,7 +4,7 @@
 * takes no press on it: the destination still reads, it just is not reachable
 * from here.  Mirrors warp_reachable and the row's hover and click gates in
 * ubermap.lua.  Run with any Lua 5.1+:
-*     lua test_warpreach.lua
+*     lua test/test_warpreach.lua
 --]]
 
 -- warp_reachable, with ui.near_kind passed in rather than read off the addon.

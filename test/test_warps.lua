@@ -3,13 +3,13 @@
 * how to draw and a label to print, each zone offers at most one Unity Concord, and
 * a zone's Home Points are numbered 1..n with no gaps or repeats, so a bad merge
 * fails here instead of drawing a blank row in game.  Run with any Lua 5.1+:
-*     lua test_warps.lua
+*     lua test/test_warps.lua
 --]]
 
 local TYPES = { home = true, guide = true, unity = true };
 local UW    = { home = 'hp', guide = 'sg', unity = 'uc' };
 
-local data = assert(loadfile('warps.lua'))();
+local data = assert(loadfile('lib/warps.lua'))();
 assert(type(data) == 'table', 'warps.lua did not return a table');
 
 local zones, rows, byType, noGrid, cmds = 0, 0, { home = 0, guide = 0, unity = 0 }, {}, {};

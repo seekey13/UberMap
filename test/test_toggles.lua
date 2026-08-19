@@ -4,13 +4,13 @@
 * row at all -- so filtering down to Home Points leaves only the zones that have
 * one lit.  Mirrors warp_lit/warps_filtered/warps_lit/icon_dim in ubermap.lua
 * against the real data.  Run with any Lua 5.1+:
-*     lua test_toggles.lua
+*     lua test/test_toggles.lua
 --]]
 
 local WARP_ICON = { home = 'Crystal.png', guide = 'Guide.png', unity = 'Unity.png' };
 
-local WARPS  = assert(loadfile('warps.lua'))();
-local POINTS = assert(loadfile('points.lua'))();
+local WARPS  = assert(loadfile('lib/warps.lua'))();
+local POINTS = assert(loadfile('lib/points.lua'))();
 
 local toggle = {};  -- stands in for ui.toggle: file name -> true when dimmed
 

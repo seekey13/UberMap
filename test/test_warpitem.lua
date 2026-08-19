@@ -4,7 +4,7 @@
 * inventory reads as "not carried" rather than throwing, and the icon only
 * sends its command while one is carried.  Mirrors have_warp_item and the
 * icon's press gate in ubermap.lua.  Run with any Lua 5.1+:
-*     lua test_warpitem.lua
+*     lua test/test_warpitem.lua
 --]]
 
 local WARP_ITEM_ID   = 4181;

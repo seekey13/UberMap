@@ -3,7 +3,7 @@
 * player has walked MOVE_CLOSE from where it was opened, measured against that
 * spot rather than the last frame so a slow walk still adds up.  Mirrors
 * player_moved in ubermap.lua against a stubbed position.  Run with any Lua 5.1+:
-*     lua test_move.lua
+*     lua test/test_move.lua
 --]]
 
 local MOVE_CLOSE = 1.0;

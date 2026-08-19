@@ -80,8 +80,8 @@ marker with no row left to show fades back the way an unfocused group does, and
 stops taking the cursor. Dimming **Guide** and **Unity** so leaves only the
 zones with a Home Point lit. With all three lit the map reads plain again.
 
-The data lives in `warps.lua` beside the addon, keyed by the zone name, which is
-the point's `label` in `points.lua`. A row whose key is not the game's own name
+The data lives in `lib/warps.lua` under the addon, keyed by the zone name, which is
+the point's `label` in `lib/points.lua`. A row whose key is not the game's own name
 for the zone - `Delkfutt Tower`, the two halves of Windurst Waters - carries a
 `zone` field with the name `/uw` wants; `(S)` keys are sent as `[S]`. Rows are listed in the order the file gives
 them:
@@ -94,7 +94,7 @@ them:
 ```
 
 `type` is `home`, `guide` or `unity`, picking `assets/Crystal.png`,
-`assets/Guide.png` or `assets/Unity.png`. Unlike `points.lua` the file is an
+`assets/Guide.png` or `assets/Unity.png`. Unlike `lib/points.lua` the file is an
 overlay: if it is missing or broken the addon says so once and runs on without
 the panels.
 
@@ -121,7 +121,7 @@ point, or to grab one already there; keep the button held to drag it. The panel
 under the search box renames it, sets its group, and deletes it. Plain drag
 still pans, so only ctrl-drag moves points.
 
-Every change is written to `points.lua` beside the addon, which is loaded back
+Every change is written to `lib/points.lua` under the addon, which is loaded back
 at startup - reloading the addon or the game does not lose the work. That file
 holds all the map data: `groups` for the overview tiers drawn when zoomed out,
 `points` for the zone markers drawn when zoomed in. Every marker carries a
@@ -130,7 +130,7 @@ only while that map is up. Points dropped with the editor take the map on screen
 at the time; an untagged row counts as present.
 
 Only the rows under `points` are editable. The `groups` icons are drawn but
-cannot be selected, moved, or deleted; edit those in `points.lua` by hand.
+cannot be selected, moved, or deleted; edit those in `lib/points.lua` by hand.
 
 If Home Points do not trigger it on your server, run `/ubermap debug`, talk to
 one, and check the name it prints against `WARP_NPC` in `ubermap.lua` - the same
@@ -142,10 +142,10 @@ that line says which gate is refusing the input.
 
 ## Development
 
-`mapmath.lua` holds the view math with no game dependencies:
+`lib/mapmath.lua` holds the view math with no game dependencies:
 
 ```
-lua test_zoom.lua
+lua test/test_zoom.lua
 ```
 
 ## License

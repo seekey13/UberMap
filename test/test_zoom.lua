@@ -1,9 +1,9 @@
 --[[
 * Self-check for UberMap's view math.  Run with any Lua 5.1+ / LuaJIT:
-*     lua test_zoom.lua
+*     lua test/test_zoom.lua
 --]]
 
-local m = require('mapmath');
+local m = assert(loadfile('lib/mapmath.lua'))();
 
 local function near(a, b)
     return math.abs(a - b) < 1e-6;

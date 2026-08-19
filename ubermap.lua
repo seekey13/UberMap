@@ -16,7 +16,7 @@ local chat  = require('chat');
 local imgui = require('imgui');
 local ffi   = require('ffi');
 local d3d   = require('d3d8');
-local mm    = require('mapmath');
+local mm    = require('lib.mapmath');
 
 local C       = ffi.C;
 local d3d8dev = d3d.get_device();
@@ -111,7 +111,7 @@ local LABEL_SCALE = 1;
 local LABEL_GAP   = 1;  -- screen pixels between the label and the icon
 
 -- Two detail tiers, swapping at ZOOM_POINTS: below it the world overview (the
--- groups declared in points.lua), at or above it the zone points that come
+-- groups declared in lib/points.lua), at or above it the zone points that come
 -- from the same file and the editor.  One tier replaces the other, so the
 -- overview never sits underneath the points.
 local ZOOM_POINTS = 1.0;
@@ -188,14 +188,14 @@ end
 local COL_THANKS_URL = 0xFFB0B0B0;  -- grey: the link reads under the name
 local COL_HEART      = 0x80FFFFFF;  -- 50% opacity: the heart sits over the map
 
--- The map data lives in points.lua beside the addon: the overview groups, in
+-- The map data lives in lib/points.lua under the addon: the overview groups, in
 -- draw order so later groups land on top of earlier ones where they overlap,
 -- and the zone points placed with /um edit.  Editing writes the file back out.
-local POINTS_FILE = ('%s/points.lua'):fmt(addon.path);
+local POINTS_FILE = ('%s/lib/points.lua'):fmt(addon.path);
 
--- Warp destinations keyed by a point's label, in warps.lua beside the addon.
+-- Warp destinations keyed by a point's label, in lib/warps.lua under the addon.
 -- An overlay on the map rather than map data, so it is loaded softly.
-local WARPS_FILE = ('%s/warps.lua'):fmt(addon.path);
+local WARPS_FILE = ('%s/lib/warps.lua'):fmt(addon.path);
 local WARPS      = T{};
 
 -- One flat list for drawing, each entry tagged with its group name, plus the
@@ -239,7 +239,7 @@ local ui = T{
     edit        = false,     -- point editor on
     sel         = nil,       -- the user point being edited
     moving      = false,     -- ctrl-drag in progress
-    dirty       = false,     -- an edit is waiting to be written to points.lua
+    dirty       = false,     -- an edit is waiting to be written to lib/points.lua
     edit_name   = { '', },
     edit_group  = { 'Regions', },
 };
@@ -492,7 +492,7 @@ local function near_dump()
 end
 
 --[[
-* Points placed in game go back to points.lua, so the work survives a reload.
+* Points placed in game go back to lib/points.lua, so the work survives a reload.
 * Group blocks are re-emitted as they were loaded: only the points list and the
 * labels and positions in it are editable in game.
 --]]
@@ -575,7 +575,7 @@ end
 load_points();
 
 --[[
-* Unlike points.lua this file is an overlay: the map draws without it, so a
+* Unlike lib/points.lua this file is an overlay: the map draws without it, so a
 * missing or broken one costs the popups and nothing else.
 --]]
 local function load_warps()
