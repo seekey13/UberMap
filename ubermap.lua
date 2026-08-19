@@ -47,9 +47,7 @@ local MAX_ZOOM  = 2.0;  -- two screen pixels per source map pixel
 local ZOOM_STEP = 1.15; -- per wheel notch
 
 -- ImGui packs colours as ABGR, not ARGB.
-local COL_READOUT = 0xFF000000;
 local COL_OUTLINE = 0xFF000000;
-local COL_TEXT_OUTLINE = 0x80FFFFFF;
 
 local READOUT_SCALE = 2.0;
 
@@ -63,13 +61,11 @@ local ICON_BORDER  = 2.0;   -- screen pixels
 local ICON_HOT     = 1.05;  -- hovered nation icons draw this much larger
 local HOT_GROUP    = 'Nations';  -- the only group that grows on hover
 local COL_ICON     = 0xFFFFFFFF;  -- white: tint that leaves the art untouched
-local COL_LABEL    = 0xFF000000;
 local COL_SELECT   = 0xFF00FFFF;  -- yellow: ring around the point being edited
 
--- Faded versions, used for everything outside the focused group.  The label
--- needs its outline faded to match, or the white stamp outlives the glyph.
-local COL_LABEL_OFF        = 0x40000000;
-local COL_TEXT_OUTLINE_OFF = 0x20FFFFFF;
+-- Everything outside the focused group draws at a quarter alpha.  The outline
+-- fades with the glyph, or the stamp outlives the text it was behind.
+local DIM_ALPHA = 0.25;
 
 -- Labels sit above the icon at a fixed screen size, so they stay readable at
 -- every zoom instead of shrinking away with the art.
@@ -126,6 +122,8 @@ local ui = T{
     pan_y       = 0,
     search      = { '', },
     search_hot  = false,
+    col_text    = { 0.0, 0.0, 0.0, 1.0 },  -- map text, from the corner picker
+    col_outline = { 1.0, 1.0, 1.0, 0.5 },  -- the stamp behind it
     toggle      = T{},   -- toggle file name -> true when dimmed off
     dragging    = false,
     drag_x      = 0,
@@ -304,14 +302,29 @@ local function delete_point(ic)
 end
 
 --[[
-* ImGui has no outlined text, so stamp the string in white around itself before
-* drawing it.  Keeps it readable over both land and ocean.
+* Packs a picker's { r, g, b, a } floats into the ABGR word the draw list takes,
+* fading the alpha by 'fade' when given.
 --]]
-local function outlined_text(dl, x, y, text, col, outline)
-    for _, o in ipairs({ { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 } }) do
-        dl:AddText({ x + o[1], y + o[2] }, outline or COL_TEXT_OUTLINE, text);
+local function pack_col(c, fade)
+    local function q(v)
+        return math.floor(math.min(math.max(v, 0), 1) * 255 + 0.5);
     end
-    dl:AddText({ x, y }, col, text);
+    return q(c[4] * (fade or 1)) * 0x1000000
+         + q(c[3]) * 0x10000 + q(c[2]) * 0x100 + q(c[1]);
+end
+
+--[[
+* ImGui has no outlined text, so stamp the string in the outline colour around
+* itself before drawing it.  Keeps it readable over both land and ocean.  Both
+* colours come from the pickers, so every string on the map retints together.
+--]]
+local function outlined_text(dl, x, y, text, dim)
+    local fade    = dim and DIM_ALPHA or nil;
+    local outline = pack_col(ui.col_outline, fade);
+    for _, o in ipairs({ { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 } }) do
+        dl:AddText({ x + o[1], y + o[2] }, outline, text);
+    end
+    dl:AddText({ x, y }, pack_col(ui.col_text, fade), text);
 end
 
 --[[
@@ -454,9 +467,7 @@ local function draw_icons(origin_x, origin_y, view_w, view_h, over_map)
                     imgui.SetWindowFontScale(LABEL_SCALE);
                     local tw, th = imgui.CalcTextSize(ic.label);
                     outlined_text(dl, cx - tw / 2, cy - grow - th - LABEL_GAP,
-                                  ic.label,
-                                  dim and COL_LABEL_OFF or COL_LABEL,
-                                  dim and COL_TEXT_OUTLINE_OFF or nil);
+                                  ic.label, dim);
                     imgui.SetWindowFontScale(1.0);
                 end
             end
@@ -678,6 +689,27 @@ local function draw_map(view_w, view_h)
             end
         end
 
+        -- Text and outline colour pickers, pinned to the viewport's top-right
+        -- corner and sharing the search row's height.  ImGui writes into the
+        -- tables outlined_text packs from, so the map retints as they move.
+        -- NoInputs leaves only the swatch, which opens the picker on click;
+        -- NoLabel forwards the name to that popup instead of printing it.
+        local pick_flags = bit.bor(ImGuiColorEditFlags_NoInputs,
+                                   ImGuiColorEditFlags_NoLabel,
+                                   ImGuiColorEditFlags_AlphaBar,
+                                   ImGuiColorEditFlags_AlphaPreview);
+        imgui.PushStyleVar(ImGuiStyleVar_FramePadding,
+                           { 6, (row_h - imgui.GetFontSize()) / 2 });
+        local pick_x = view_w - SEARCH_MARGIN - row_h * 2 - TOGGLE_GAP;
+        for _, pick in ipairs({ { 'Text', ui.col_text }, { 'Outline', ui.col_outline } }) do
+            imgui.SetCursorPos({ pick_x, SEARCH_MARGIN });
+            imgui.ColorEdit4(pick[1], pick[2], pick_flags);
+            ui.search_hot = ui.search_hot
+                            or imgui.IsItemActive() or imgui.IsItemHovered();
+            pick_x = pick_x + row_h + TOGGLE_GAP;
+        end
+        imgui.PopStyleVar();
+
         -- Everything below the search row stacks from here.
         local edit_y = SEARCH_MARGIN + row_h + TOGGLE_GAP;
 
@@ -687,7 +719,7 @@ local function draw_map(view_w, view_h)
             if (ui.sel == nil) then
                 outlined_text(imgui.GetWindowDrawList(),
                               origin_x + SEARCH_MARGIN, origin_y + edit_y,
-                              'ctrl+click the map to add or grab a point', COL_READOUT);
+                              'ctrl+click the map to add or grab a point');
             else
                 -- Rows are placed by hand rather than by flow, so the panel does
                 -- not depend on the child's cursor advancing a particular amount.
@@ -726,7 +758,7 @@ local function draw_map(view_w, view_h)
             -- the white stamps as well as the text itself.
             imgui.SetWindowFontScale(READOUT_SCALE);
             outlined_text(imgui.GetWindowDrawList(), origin_x + 6, origin_y + view_h - 30,
-                          ('%d, %d'):fmt(mx, my), COL_READOUT);
+                          ('%d, %d'):fmt(mx, my));
             imgui.SetWindowFontScale(1.0);
         end
     end
