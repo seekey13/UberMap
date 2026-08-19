@@ -1,8 +1,15 @@
 --[[
 * UberMap - by Seekey
 *
-* Shows the server map, automatically whenever you interact with a Home Point.
-* Mouse wheel zooms, left-drag pans.  /ubermap or /um toggles it by hand.
+* A zoomable world map that opens itself when you talk to a Home Point,
+* Survival Guide or Unity Concord NPC, and closes again when you walk away.
+* Clicking a zone point sends the warp for you, backing out of the NPC's menu
+* first.  Present and past Vana'diel are separate maps, toggled in the corner
+* alongside a Warp Ring button and a Multisend toggle that warps every
+* logged-in character at once.
+*
+* Mouse wheel zooms, left-drag pans, Escape closes.  /ubermap or /um toggles
+* the map by hand; /um edit turns on the point editor (ctrl+click to place).
 --]]
 
 addon.name    = 'UberMap';
