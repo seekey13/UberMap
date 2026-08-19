@@ -21,6 +21,20 @@ local mm    = require('mapmath');
 local C       = ffi.C;
 local d3d8dev = d3d.get_device();
 
+-- Opening a link hands it to the shell, which sends it to the default browser.
+-- ShellExecute rather than os.execute: the latter flashes a console window over
+-- the game.  Typed as void* so this needs none of the Windows typedefs.
+ffi.cdef[[
+    void* ShellExecuteA(void* hwnd, const char* op, const char* file,
+                        const char* params, const char* dir, int show);
+]]
+local shell32 = ffi.load('shell32');
+local SW_SHOWNORMAL = 1;
+
+local function open_url(url)
+    shell32.ShellExecuteA(nil, 'open', url, nil, nil, SW_SHOWNORMAL);
+end
+
 -- The two times of the world, each its own image with its own pixel size.  Map
 -- coordinates - the numbers on every point row and the readout in the corner -
 -- are in the source image's own pixels, so they mean different places on
@@ -114,10 +128,22 @@ local COL_POPUP_TEXT = 0xFFFFFFFF;  -- fixed, not the pickers: the panel has its
 
 -- Credits, opened by the heart in the viewport's bottom-right corner.  One
 -- entry per credit: who, then where to find them.
+local THANKS_HEAD = "This addon wouldn't work or look good without.";
 local THANKS = T{
     { 'Thorny & Uberwarp',      'https://github.com/ThornyFFXI/Uberwarp' },
     { 'FFXI Remapster Project', 'https://remapster.com/' },
 };
+
+-- Flattened once into the rows the panel draws, blanks and all, so the draw
+-- does not rebuild the layout every frame.  A row carrying a url is clickable.
+local THANKS_ROWS = { { text = THANKS_HEAD }, { text = '' } };
+for i, c in ipairs(THANKS) do
+    if (i > 1) then
+        table.insert(THANKS_ROWS, { text = '' });
+    end
+    table.insert(THANKS_ROWS, { text = c[1] });
+    table.insert(THANKS_ROWS, { text = c[2], url = c[2] });
+end
 local COL_THANKS_URL = 0xFFB0B0B0;  -- grey: the link reads under the name
 local COL_HEART      = 0x80FFFFFF;  -- 50% opacity: the heart sits over the map
 
@@ -928,17 +954,18 @@ local function draw_map(view_w, view_h)
         local heart_hot = imgui.IsItemHovered();
         ui.search_hot = ui.search_hot or heart_hot;
 
-        -- Credits panel, hung above the heart on the same corner.  Two rows per
-        -- entry, the name over its link; a click anywhere else shuts it.
+        -- Credits panel, hung above the heart on the same corner.  One row per
+        -- THANKS_ROWS entry; a link row hands its url to the browser, and a
+        -- click anywhere else shuts the panel.
         if (ui.thanks) then
             local kdl   = imgui.GetWindowDrawList();
             local _, th = imgui.CalcTextSize('X');
             local w     = 0;
-            for _, c in ipairs(THANKS) do
-                w = math.max(w, imgui.CalcTextSize(c[1]), imgui.CalcTextSize(c[2]));
+            for _, r in ipairs(THANKS_ROWS) do
+                w = math.max(w, imgui.CalcTextSize(r.text));
             end
             w = w + POPUP_PAD * 2;
-            local h = POPUP_PAD * 2 + POPUP_ROW * #THANKS * 2;
+            local h = POPUP_PAD * 2 + POPUP_ROW * #THANKS_ROWS;
             local px = origin_x + view_w - SEARCH_MARGIN - w;
             local py = mm.clamp_box(origin_y + heart_y - POPUP_GAP - h,
                                     h, origin_y, view_h);
@@ -947,12 +974,23 @@ local function draw_map(view_w, view_h)
                               0, ImDrawCornerFlags_All);
             kdl:AddRect({ px, py }, { px + w, py + h }, COL_OUTLINE,
                         0, ImDrawCornerFlags_All, ICON_BORDER);
-            for i, c in ipairs(THANKS) do
-                local ry = py + POPUP_PAD + POPUP_ROW * (i - 1) * 2;
+            local hot_link = nil;
+            for i, r in ipairs(THANKS_ROWS) do
+                local ry = py + POPUP_PAD + POPUP_ROW * (i - 1);
+                -- Only a link row lights up, so the blanks and the heading do
+                -- not read as things you can press.
+                if (r.url ~= nil
+                    and mouse_x >= px and mouse_x <= px + w
+                    and mouse_y >= ry and mouse_y < ry + POPUP_ROW) then
+                    hot_link = r.url;
+                    kdl:AddRectFilled({ px + ICON_BORDER, ry },
+                                      { px + w - ICON_BORDER, ry + POPUP_ROW },
+                                      pack_col(ui.col_hover),
+                                      0, ImDrawCornerFlags_All);
+                end
                 kdl:AddText({ px + POPUP_PAD, ry + (POPUP_ROW - th) / 2 },
-                            COL_POPUP_TEXT, c[1]);
-                kdl:AddText({ px + POPUP_PAD, ry + POPUP_ROW + (POPUP_ROW - th) / 2 },
-                            COL_THANKS_URL, c[2]);
+                            (r.url ~= nil) and COL_THANKS_URL or COL_POPUP_TEXT,
+                            r.text);
             end
 
             -- An InvisibleButton over the panel takes the press, so it neither
@@ -965,8 +1003,12 @@ local function draw_map(view_w, view_h)
             ui.search_hot = ui.search_hot or thanks_hot;
             -- heart_hot vetoes the close: the button that just opened the panel
             -- reports the same click this test sees.
-            if (imgui.IsMouseClicked(0) and not thanks_hot and not heart_hot) then
-                ui.thanks = false;
+            if (imgui.IsMouseClicked(0)) then
+                if (hot_link ~= nil) then
+                    open_url(hot_link);
+                elseif (not thanks_hot and not heart_hot) then
+                    ui.thanks = false;
+                end
             end
         end
 
