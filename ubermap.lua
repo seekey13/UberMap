@@ -60,6 +60,8 @@ local ICON_SIZE    = 50;    -- screen pixels; the source art is square, 214x214
 local POINT_SIZE   = 30;    -- screen pixels for point markers (entries with size = POINT_SIZE)
 local ICON_ROUND   = 0.0625;  -- corner radius, as a fraction of the drawn size
 local ICON_BORDER  = 2.0;   -- screen pixels
+local ICON_HOT     = 1.05;  -- hovered nation icons draw this much larger
+local HOT_GROUP    = 'Nations';  -- the only group that grows on hover
 local COL_ICON     = 0xFFFFFFFF;  -- white: tint that leaves the art untouched
 local COL_LABEL    = 0xFF000000;
 local COL_SELECT   = 0xFF00FFFF;  -- yellow: ring around the point being edited
@@ -397,6 +399,8 @@ end
 * Draws every icon centred on its map coordinate, with a rounded black border
 * unless the entry sets border = false.  A hovered icon swaps to its _1 art
 * (Point_0.png -> Point_1.png); entries without one keep the art they have.
+* The nation art has no such pair, so those icons instead draw ICON_HOT larger
+* while hovered.
 *
 * Returns the icon under the cursor, or nil.  Later icons win where they
 * overlap, matching the draw order.
@@ -426,10 +430,15 @@ local function draw_icons(origin_x, origin_y, view_w, view_h, over_map)
             end
             tex = tex or icon_texture(ic.file);
             if (tex ~= nil) then
+                -- Grown only for the draw: the hit test above keeps the plain
+                -- size, so the icon cannot swell out from under the cursor and
+                -- flicker between the two states.
+                local grow  = (hot and ic.group == HOT_GROUP)
+                              and half * ICON_HOT or half;
                 local id    = tonumber(ffi.cast('uint32_t', tex));
-                local p0    = { cx - half, cy - half };
-                local p1    = { cx + half, cy + half };
-                local round = half * 2 * ICON_ROUND;
+                local p0    = { cx - grow, cy - grow };
+                local p1    = { cx + grow, cy + grow };
+                local round = grow * 2 * ICON_ROUND;
                 dl:AddImageRounded(id, p0, p1, { 0, 0 }, { 1, 1 },
                                    dim and COL_ICON_OFF or COL_ICON,
                                    round, ImDrawCornerFlags_All);
@@ -444,7 +453,7 @@ local function draw_icons(origin_x, origin_y, view_w, view_h, over_map)
                 if (ic.label ~= nil) then
                     imgui.SetWindowFontScale(LABEL_SCALE);
                     local tw, th = imgui.CalcTextSize(ic.label);
-                    outlined_text(dl, cx - tw / 2, cy - half - th - LABEL_GAP,
+                    outlined_text(dl, cx - tw / 2, cy - grow - th - LABEL_GAP,
                                   ic.label,
                                   dim and COL_LABEL_OFF or COL_LABEL,
                                   dim and COL_TEXT_OUTLINE_OFF or nil);
@@ -612,6 +621,21 @@ local function draw_map(view_w, view_h)
         end
 
         local row_h = imgui.GetFrameHeight() * SEARCH_H_MULT;
+
+        -- Past/present switch, first on the search row.  The label names the
+        -- map it takes you to, not the one you are on.  The switch is recorded
+        -- and applied after the frame, because set_time clears the zoom that
+        -- the rest of this frame still reads.  Both labels share the width of
+        -- the longer one so the row does not shift when the map flips.
+        local other    = (ui.time == 'present') and 'past' or 'present';
+        local time_w   = imgui.CalcTextSize('Present') + 2;
+        imgui.SetCursorPos({ SEARCH_MARGIN, SEARCH_MARGIN });
+        if (imgui.Button(other == 'past' and 'Past' or 'Present', { time_w, row_h })) then
+            ui.next_time = other;
+        end
+        local time_hot = imgui.IsItemHovered();
+        local search_x = SEARCH_MARGIN + time_w + TOGGLE_GAP;
+
         imgui.PushStyleVar(ImGuiStyleVar_FramePadding,
                            { 6, (row_h - imgui.GetFontSize()) / 2 });
         imgui.PushStyleColor(ImGuiCol_FrameBg, COL_SEARCH_BG);
@@ -619,14 +643,14 @@ local function draw_map(view_w, view_h)
         imgui.PushStyleColor(ImGuiCol_FrameBgActive, COL_SEARCH_BG);
         imgui.PushStyleColor(ImGuiCol_Text, COL_SEARCH_TEXT);
         imgui.PushStyleColor(ImGuiCol_TextDisabled, COL_SEARCH_HINT);
-        imgui.SetCursorPos({ SEARCH_MARGIN, SEARCH_MARGIN });
+        imgui.SetCursorPos({ search_x, SEARCH_MARGIN });
         imgui.SetNextItemWidth(SEARCH_W);
         imgui.InputTextWithHint('##ubermap_search', 'Search', ui.search, SEARCH_MAX);
         imgui.PopStyleColor(5);
         imgui.PopStyleVar();
         -- Read a frame late by over_map above, which is fine: a click focuses
         -- the box before the drag threshold is ever crossed.
-        ui.search_hot = imgui.IsItemActive() or imgui.IsItemHovered();
+        ui.search_hot = imgui.IsItemActive() or imgui.IsItemHovered() or time_hot;
 
         -- Toggle icons, sharing the search box's line.  Drawn by hand rather
         -- than with ImageButton, whose argument list moved between the ImGui
@@ -634,7 +658,7 @@ local function draw_map(view_w, view_h)
         -- the same widget without the version check.
         local tdl   = imgui.GetWindowDrawList();
         local tsize = row_h;
-        local tx_at = SEARCH_MARGIN + SEARCH_W + TOGGLE_GAP;
+        local tx_at = search_x + SEARCH_W + TOGGLE_GAP;
         for _, file in ipairs(TOGGLES) do
             local tex, iw, ih = icon_texture(file);
             if (tex ~= nil) then
@@ -653,17 +677,6 @@ local function draw_map(view_w, view_h)
                 tx_at = tx_at + tw + TOGGLE_GAP;
             end
         end
-
-        -- Past/present switch, last on the search row.  The label names the
-        -- map it takes you to, not the one you are on.  The switch is recorded
-        -- and applied after the frame, because set_time clears the zoom that
-        -- the rest of this frame still reads.
-        local other = (ui.time == 'present') and 'past' or 'present';
-        imgui.SetCursorPos({ tx_at, SEARCH_MARGIN });
-        if (imgui.Button(other == 'past' and 'Past' or 'Present', { 0, tsize })) then
-            ui.next_time = other;
-        end
-        ui.search_hot = ui.search_hot or imgui.IsItemHovered();
 
         -- Everything below the search row stacks from here.
         local edit_y = SEARCH_MARGIN + row_h + TOGGLE_GAP;
