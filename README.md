@@ -34,7 +34,7 @@ to a Home Point; if it is already open your current view is left alone.
 
 Left-click a zone point - the markers that appear once the view is zoomed past
 the overview - and a panel opens on it listing that zone's warp destinations:
-its Home Points, Survival Guide and Unity Warp, each with the icon of its kind.
+its Home Points, Survival Guide and Unity Concord, each with the icon of its kind.
 It is a read-out, not a travel menu; clicking a row does nothing yet. Clicking
 anywhere else closes it, as does zooming, panning, or switching past/present,
 and clicking another point replaces it. While the cursor is over the panel the

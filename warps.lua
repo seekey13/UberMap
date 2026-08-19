@@ -3,7 +3,7 @@
 *
 * The key matches a point's 'label' in points.lua.  Each row is one place the
 * player can warp to, in the order the popup lists them: Home Points, then
-* Survival Guides, then the Unity Warp.  'type' picks the icon - 'home' is
+* Survival Guides, then the Unity Concord.  'type' picks the icon - 'home' is
 * Crystal.png, 'guide' is Guide.png, 'unity' is Unity.png.
 --]]
 
@@ -30,18 +30,18 @@ return {
         { type = 'home',  label = 'Home Point #3 (L-6)' },
     },
     ["Alzadaal Undersea Ruins"] = {
-        { type = 'unity', label = 'Unity Warp (G-9)' },
+        { type = 'unity', label = 'Unity Concord (G-9)' },
     },
     ["Arrapago Reef"] = {
         { type = 'guide', label = 'Survival Guide (H-11)' },
     },
     ["Attohwa Chasm"] = {
         { type = 'home',  label = 'Home Point #1 (G-6)' },
-        { type = 'unity', label = 'Unity Warp (F-7)' },
+        { type = 'unity', label = 'Unity Concord (F-7)' },
     },
     ["Aydeewa Subterrane"] = {
         { type = 'guide', label = 'Survival Guide (H-10)' },
-        { type = 'unity', label = 'Unity Warp (H-10)' },
+        { type = 'unity', label = 'Unity Concord (H-10)' },
     },
     ["Bastok Markets"] = {
         { type = 'home',  label = 'Home Point #1 (E) (F-9)' },
@@ -61,7 +61,7 @@ return {
     },
     ["Batallia Downs"] = {
         { type = 'guide', label = 'Survival Guide (H-5)' },
-        { type = 'unity', label = 'Unity Warp (K-8)' },
+        { type = 'unity', label = 'Unity Concord (K-8)' },
     },
     ["Batallia Downs (S)"] = {
         { type = 'guide', label = 'Survival Guide (F-9)' },
@@ -71,43 +71,43 @@ return {
     },
     ["Beaucedine Glacier"] = {
         { type = 'guide', label = 'Survival Guide (H-9)' },
-        { type = 'unity', label = 'Unity Warp (I-9)' },
+        { type = 'unity', label = 'Unity Concord (I-9)' },
     },
     ["Beaucedine Glacier (S)"] = {
         { type = 'guide', label = 'Survival Guide (G-7)' },
     },
     ["Behemoth's Dominion"] = {
         { type = 'guide', label = 'Survival Guide (L-9)' },
-        { type = 'unity', label = 'Unity Warp (F-7)' },
+        { type = 'unity', label = 'Unity Concord (F-7)' },
     },
     ["Bhaflau Thickets"] = {
         { type = 'home',  label = 'Home Point #1 (I-9)' },
     },
     ["Bibiki Bay"] = {
         { type = 'guide', label = 'Survival Guide (H-7)' },
-        { type = 'unity', label = 'Unity Warp (I-6)' },
+        { type = 'unity', label = 'Unity Concord (I-6)' },
     },
     ["Bostaunieux Oubliette"] = {
         { type = 'guide', label = 'Survival Guide (I-6)' },
-        { type = 'unity', label = 'Unity Warp (D-9)' },
+        { type = 'unity', label = 'Unity Concord (D-9)' },
     },
     ["Buburimu Peninsula"] = {
         { type = 'guide', label = 'Survival Guide (E-7)' },
-        { type = 'unity', label = 'Unity Warp (F-6)' },
+        { type = 'unity', label = 'Unity Concord (F-6)' },
     },
     ["Caedarva Mire"] = {
         { type = 'home',  label = 'Home Point #1 (E-9)' },
         { type = 'guide', label = 'Survival Guide (G-6)' },
-        { type = 'unity', label = 'Unity Warp (H-9)' },
+        { type = 'unity', label = 'Unity Concord (H-9)' },
     },
     ["Cape Teriggan"] = {
         { type = 'home',  label = 'Home Point #1 (F-5)' },
         { type = 'guide', label = 'Survival Guide (G-8)' },
-        { type = 'unity', label = 'Unity Warp (H-7)' },
+        { type = 'unity', label = 'Unity Concord (H-7)' },
     },
     ["Carpenters' Landing"] = {
         { type = 'guide', label = 'Survival Guide (J-10)' },
-        { type = 'unity', label = 'Unity Warp (I-11)' },
+        { type = 'unity', label = 'Unity Concord (I-11)' },
     },
     ["Castle Oztroja"] = {
         { type = 'guide', label = 'Survival Guide (F-8)' },
@@ -142,19 +142,19 @@ return {
     ["Den of Rancor"] = {
         { type = 'home',  label = 'Home Point #1 (E-4)' },
         { type = 'home',  label = 'Home Point #2 (I-8)' },
-        { type = 'unity', label = 'Unity Warp (G-12)' },
+        { type = 'unity', label = 'Unity Concord (G-12)' },
     },
     ["Dragon's Aery"] = {
         { type = 'guide', label = 'Survival Guide (F-9)' },
     },
     ["East Ronfaure"] = {
-        { type = 'unity', label = 'Unity Warp (G-9)' },
+        { type = 'unity', label = 'Unity Concord (G-9)' },
     },
     ["East Ronfaure (S)"] = {
         { type = 'guide', label = 'Survival Guide (J-11)' },
     },
     ["East Sarutabaruta"] = {
-        { type = 'unity', label = 'Unity Warp (J-8)' },
+        { type = 'unity', label = 'Unity Concord (J-8)' },
     },
     ["Eastern Adoulin"] = {
         { type = 'home',  label = 'Home Point #1 (G-6)' },
@@ -163,12 +163,12 @@ return {
     },
     ["Eastern Altepa Desert"] = {
         { type = 'guide', label = 'Survival Guide (F-10)' },
-        { type = 'unity', label = 'Unity Warp (J-8)' },
+        { type = 'unity', label = 'Unity Concord (J-8)' },
     },
     ["Fei'Yin"] = {
         { type = 'home',  label = 'Home Point #1 (K-8)' },
         { type = 'home',  label = 'Home Point #2 (I-5)' },
-        { type = 'unity', label = 'Unity Warp (F-11)' },
+        { type = 'unity', label = 'Unity Concord (F-11)' },
     },
     ["Foret de Hennetiel"] = {
         { type = 'home',  label = 'Home Point #1 (F-10)' },
@@ -181,7 +181,7 @@ return {
     },
     ["Garlaige Citadel"] = {
         { type = 'guide', label = 'Survival Guide (G-7)' },
-        { type = 'unity', label = 'Unity Warp (G-6)' },
+        { type = 'unity', label = 'Unity Concord (G-6)' },
     },
     ["Garlaige Citadel (S)"] = {
         { type = 'guide', label = 'Survival Guide (G-7)' },
@@ -200,7 +200,7 @@ return {
     },
     ["Gustav Tunnel"] = {
         { type = 'guide', label = 'Survival Guide (K-7)' },
-        { type = 'unity', label = 'Unity Warp (H-10)' },
+        { type = 'unity', label = 'Unity Concord (H-10)' },
     },
     ["Halvung"] = {
         { type = 'guide', label = 'Survival Guide (N-5)' },
@@ -208,14 +208,14 @@ return {
     ["Ifrit's Cauldron"] = {
         { type = 'home',  label = 'Home Point #1 (G-6)' },
         { type = 'guide', label = 'Survival Guide (K-9)' },
-        { type = 'unity', label = 'Unity Warp (K-7)' },
+        { type = 'unity', label = 'Unity Concord (K-7)' },
     },
     ["Inner Horutoto Ruins"] = {
         { type = 'guide', label = 'Survival Guide (I-7)' },
     },
     ["Jugner Forest"] = {
         { type = 'guide', label = 'Survival Guide (I-8)' },
-        { type = 'unity', label = 'Unity Warp (I-8)' },
+        { type = 'unity', label = 'Unity Concord (I-8)' },
     },
     ["Jugner Forest (S)"] = {
         { type = 'guide', label = 'Survival Guide (G-11)' },
@@ -232,22 +232,22 @@ return {
     },
     ["Konschtat Highlands"] = {
         { type = 'guide', label = 'Survival Guide (G-3)' },
-        { type = 'unity', label = 'Unity Warp (G-7)' },
+        { type = 'unity', label = 'Unity Concord (G-7)' },
     },
     ["Korroloka Tunnel"] = {
         { type = 'guide', label = 'Survival Guide (C-9)' },
     },
     ["Kuftal Tunnel"] = {
         { type = 'guide', label = 'Survival Guide (H-9)' },
-        { type = 'unity', label = 'Unity Warp (G-3)' },
+        { type = 'unity', label = 'Unity Concord (G-3)' },
     },
     ["La Theine Plateau"] = {
         { type = 'guide', label = 'Survival Guide (M-8)' },
-        { type = 'unity', label = 'Unity Warp (H-8)' },
+        { type = 'unity', label = 'Unity Concord (H-8)' },
     },
     ["Labyrinth of Onzozo"] = {
         { type = 'guide', label = 'Survival Guide (G-11)' },
-        { type = 'unity', label = 'Unity Warp (G-6)' },
+        { type = 'unity', label = 'Unity Concord (G-6)' },
     },
     ["Leafallia"] = {
         { type = 'home',  label = 'Home Point #1 (H-8)' },
@@ -261,7 +261,7 @@ return {
     },
     ["Lufaise Meadows"] = {
         { type = 'guide', label = 'Survival Guide (E-8)' },
-        { type = 'unity', label = 'Unity Warp (K-8)' },
+        { type = 'unity', label = 'Unity Concord (K-8)' },
     },
     ["Mamook"] = {
         { type = 'guide', label = 'Survival Guide (J-7)' },
@@ -274,7 +274,7 @@ return {
     },
     ["Meriphataud Mountains"] = {
         { type = 'guide', label = 'Survival Guide (E-5)' },
-        { type = 'unity', label = 'Unity Warp (F-11)' },
+        { type = 'unity', label = 'Unity Concord (F-11)' },
     },
     ["Meriphataud Mountains (S)"] = {
         { type = 'guide', label = 'Survival Guide (L-8)' },
@@ -289,14 +289,14 @@ return {
     ["Misareaux Coast"] = {
         { type = 'home',  label = 'Home Point #1 (G-5)' },
         { type = 'guide', label = 'Survival Guide (G-7)' },
-        { type = 'unity', label = 'Unity Warp (F-7)' },
+        { type = 'unity', label = 'Unity Concord (F-7)' },
     },
     ["Morimar Basalt Fields"] = {
         { type = 'home',  label = 'Home Point #1 (E-5)' },
     },
     ["Mount Zhayolm"] = {
         { type = 'home',  label = 'Home Point #1 (D-8)' },
-        { type = 'unity', label = 'Unity Warp (C-7)' },
+        { type = 'unity', label = 'Unity Concord (C-7)' },
     },
     ["Nashmau"] = {
         { type = 'home',  label = 'Home Point #1 (G-8)' },
@@ -334,7 +334,7 @@ return {
     },
     ["Pashhow Marshlands"] = {
         { type = 'guide', label = 'Survival Guide (K-6)' },
-        { type = 'unity', label = 'Unity Warp (E-12)' },
+        { type = 'unity', label = 'Unity Concord (E-12)' },
     },
     ["Pashhow Marshlands (S)"] = {
         { type = 'guide', label = 'Survival Guide (K-11)' },
@@ -368,12 +368,12 @@ return {
     ["Qufim Island"] = {
         { type = 'home',  label = 'Home Point #1 (G-7)' },
         { type = 'guide', label = 'Survival Guide (G-6)' },
-        { type = 'unity', label = 'Unity Warp (I-8)' },
+        { type = 'unity', label = 'Unity Concord (I-8)' },
     },
     ["Quicksand Caves"] = {
         { type = 'home',  label = 'Home Point #1 (D-5)' },
         { type = 'home',  label = 'Home Point #2 (C-8)' },
-        { type = 'unity', label = 'Unity Warp (J-5)' },
+        { type = 'unity', label = 'Unity Concord (J-5)' },
     },
     ["Ra'Kaznar Inner Court"] = {
         { type = 'home',  label = 'Home Point #1 (I-8)' },
@@ -394,11 +394,11 @@ return {
     },
     ["Ro'Maeve"] = {
         { type = 'guide', label = 'Survival Guide (H-6)' },
-        { type = 'unity', label = 'Unity Warp (H-11)' },
+        { type = 'unity', label = 'Unity Concord (H-11)' },
     },
     ["Rolanberry Fields"] = {
         { type = 'guide', label = 'Survival Guide (G-6)' },
-        { type = 'unity', label = 'Unity Warp (D-11)' },
+        { type = 'unity', label = 'Unity Concord (D-11)' },
     },
     ["Rolanberry Fields (S)"] = {
         { type = 'guide', label = 'Survival Guide (I-14)' },
@@ -422,20 +422,20 @@ return {
     },
     ["Sauromugue Champaign"] = {
         { type = 'guide', label = 'Survival Guide (J-10)' },
-        { type = 'unity', label = 'Unity Warp (J-6)' },
+        { type = 'unity', label = 'Unity Concord (J-6)' },
     },
     ["Sauromugue Champaign (S)"] = {
         { type = 'guide', label = 'Survival Guide (K-11)' },
     },
     ["Sea Serpent Grotto"] = {
         { type = 'guide', label = 'Survival Guide (M-3)' },
-        { type = 'unity', label = 'Unity Warp (L-5)' },
+        { type = 'unity', label = 'Unity Concord (L-5)' },
     },
     ["Selbina"] = {
         { type = 'home',  label = 'Home Point #1 (I-8)' },
     },
     ["South Gustaberg"] = {
-        { type = 'unity', label = 'Unity Warp (E-7)' },
+        { type = 'unity', label = 'Unity Concord (E-7)' },
     },
     ["Southern San d'Oria"] = {
         { type = 'home',  label = 'Home Point #1 (E) (G-10)' },
@@ -449,7 +449,7 @@ return {
     },
     ["Tahrongi Canyon"] = {
         { type = 'guide', label = 'Survival Guide (G-4)' },
-        { type = 'unity', label = 'Unity Warp (J-8)' },
+        { type = 'unity', label = 'Unity Concord (J-8)' },
     },
     ["Tavnazian Safehold"] = {
         { type = 'home',  label = 'Home Point #1 (I-6)' },
@@ -459,11 +459,11 @@ return {
     },
     ["Temple of Uggalepih"] = {
         { type = 'guide', label = 'Survival Guide (F-6)' },
-        { type = 'unity', label = 'Unity Warp (I-5)' },
+        { type = 'unity', label = 'Unity Concord (I-5)' },
     },
     ["The Boyahda Tree"] = {
         { type = 'home',  label = 'Home Point #1 (J-12)' },
-        { type = 'unity', label = 'Unity Warp (F-6)' },
+        { type = 'unity', label = 'Unity Concord (F-6)' },
     },
     ["The Eldieme Necropolis"] = {
         { type = 'guide', label = 'Survival Guide (J-9)' },
@@ -476,7 +476,7 @@ return {
     },
     ["The Sanctuary of Zi'Tah"] = {
         { type = 'guide', label = 'Survival Guide (H-9)' },
-        { type = 'unity', label = 'Unity Warp (K-12)' },
+        { type = 'unity', label = 'Unity Concord (K-12)' },
     },
     ["The Shrine of Ru'Avitau"] = {
         { type = 'home',  label = 'Home Point #1 (H-7)' },
@@ -491,7 +491,7 @@ return {
         { type = 'home',  label = 'Home Point #3 (K-7)' },
         { type = 'home',  label = 'Home Point #4 (H-5)' },
         { type = 'home',  label = 'Home Point #5 (G-9)' },
-        { type = 'unity', label = 'Unity Warp (E-9)' },
+        { type = 'unity', label = 'Unity Concord (E-9)' },
     },
     ["Upper Delkfutt's Tower"] = {
         { type = 'home',  label = 'Home Point #1 (F-9)' },
@@ -503,18 +503,18 @@ return {
     },
     ["Valkurm Dunes"] = {
         { type = 'guide', label = 'Survival Guide (H-7)' },
-        { type = 'unity', label = 'Unity Warp (G-8)' },
+        { type = 'unity', label = 'Unity Concord (G-8)' },
     },
     ["Valley of Sorrows"] = {
         { type = 'guide', label = 'Survival Guide (F-8)' },
-        { type = 'unity', label = 'Unity Warp (F-8)' },
+        { type = 'unity', label = 'Unity Concord (F-8)' },
     },
     ["Vunkerl Inlet (S)"] = {
         { type = 'guide', label = 'Survival Guide (E-7)' },
     },
     ["Wajaom Woodlands"] = {
         { type = 'guide', label = 'Survival Guide (C-8)' },
-        { type = 'unity', label = 'Unity Warp (I-10)' },
+        { type = 'unity', label = 'Unity Concord (I-10)' },
     },
     ["West Ronfaure"] = {
         { type = 'guide', label = 'Survival Guide (G-9)' },
@@ -531,7 +531,7 @@ return {
     },
     ["Western Altepa Desert"] = {
         { type = 'guide', label = 'Survival Guide (K-7)' },
-        { type = 'unity', label = 'Unity Warp (I-7)' },
+        { type = 'unity', label = 'Unity Concord (I-7)' },
     },
     ["Windurst Walls"] = {
         { type = 'home',  label = 'Home Point #1 (F-7)' },
@@ -552,14 +552,14 @@ return {
     },
     ["Xarcabard"] = {
         { type = 'guide', label = 'Survival Guide (H-9)' },
-        { type = 'unity', label = 'Unity Warp (J-9)' },
+        { type = 'unity', label = 'Unity Concord (J-9)' },
     },
     ["Xarcabard (S)"] = {
         { type = 'home',  label = 'Home Point #1 (H-9)' },
     },
     ["Yhoator Jungle"] = {
         { type = 'guide', label = 'Survival Guide (I-8)' },
-        { type = 'unity', label = 'Unity Warp (J-7)' },
+        { type = 'unity', label = 'Unity Concord (J-7)' },
     },
     ["Yorcia Weald"] = {
         { type = 'home',  label = 'Home Point #1 (E-9)' },
@@ -569,7 +569,7 @@ return {
     },
     ["Yuhtunga Jungle"] = {
         { type = 'guide', label = 'Survival Guide (G-11)' },
-        { type = 'unity', label = 'Unity Warp (F-11)' },
+        { type = 'unity', label = 'Unity Concord (F-11)' },
     },
     ["Zeruhn Mines"] = {
         { type = 'guide', label = 'Survival Guide (I-7)' },

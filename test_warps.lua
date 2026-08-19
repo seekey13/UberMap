@@ -1,6 +1,6 @@
 --[[
 * Self-check for the warp data.  Every row carries an icon type the popup knows
-* how to draw and a label to print, each zone offers at most one Unity Warp, and
+* how to draw and a label to print, each zone offers at most one Unity Concord, and
 * a zone's Home Points are numbered 1..n with no gaps or repeats, so a bad merge
 * fails here instead of drawing a blank row in game.  Run with any Lua 5.1+:
 *     lua test_warps.lua
