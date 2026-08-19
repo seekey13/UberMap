@@ -142,6 +142,7 @@ local ui = T{
     search_hot  = false,
     col_text    = { 0.0, 0.0, 0.0, 1.0 },  -- map text, from the corner picker
     col_outline = { 1.0, 1.0, 1.0, 0.5 },  -- the stamp behind it
+    col_hover   = { 1.0, 1.0, 1.0, 0.18 },  -- warp row under the cursor
     toggle      = T{},   -- toggle file name -> true when dimmed off
     dragging    = false,
     drag_x      = 0,
@@ -306,6 +307,23 @@ local function warp_rows(label)
         end
     end
     return (#rows > 0) and rows or nil;
+end
+
+--[[
+* The /uw line a row travels on.  The zone comes from the popup's key, which is
+* the marker's label, except where a marker is not one zone: those rows carry a
+* 'zone' of their own.  Home Points take their number straight off the label,
+* the way the command wants it -- '/uw hp Aht Urhgan Whitegate3'.
+--]]
+local UW_TYPE = T{ home = 'hp', guide = 'sg', unity = 'uc' };
+
+local function warp_cmd(label, row)
+    local kind = UW_TYPE[row.type];
+    if (kind == nil) then
+        return nil;
+    end
+    local n = (row.type == 'home') and row.label:match('^Home Point #(%d+)') or nil;
+    return ('/uw %s %s%s'):fmt(kind, row.zone or label, n or '');
 end
 
 local function point_at(mx, my)
@@ -788,8 +806,12 @@ local function draw_map(view_w, view_h)
                                        ImGuiColorEditFlags_AlphaPreview);
             imgui.PushStyleVar(ImGuiStyleVar_FramePadding,
                                { 6, (row_h - imgui.GetFontSize()) / 2 });
-            local pick_x = view_w - SEARCH_MARGIN - row_h * 2 - TOGGLE_GAP;
-            for _, pick in ipairs({ { 'Text', ui.col_text }, { 'Outline', ui.col_outline } }) do
+            local picks = { { 'Text',  ui.col_text },
+                            { 'Outline', ui.col_outline },
+                            { 'Hover', ui.col_hover } };
+            local pick_x = view_w - SEARCH_MARGIN
+                           - #picks * row_h - (#picks - 1) * TOGGLE_GAP;
+            for _, pick in ipairs(picks) do
                 imgui.SetCursorPos({ pick_x, SEARCH_MARGIN });
                 imgui.ColorEdit4(pick[1], pick[2], pick_flags);
                 ui.search_hot = ui.search_hot
@@ -854,19 +876,21 @@ local function draw_map(view_w, view_h)
 
         -- Warp list for the zone point that was clicked, drawn after everything
         -- else so it lands on top of it.  Rows are read out in the order the
-        -- data gives them; they are not travel buttons.
+        -- data gives them, and clicking one sends its /uw.  No title row: the
+        -- marker it hangs off already names the zone.
         if (ui.warp ~= nil) then
             local rows = warp_rows(ui.warp.label);
             if (rows == nil) then
                 ui.warp = nil;  -- the toggles emptied it while it was open
             else
                 local pdl    = imgui.GetWindowDrawList();
-                local w, th  = imgui.CalcTextSize(ui.warp.label);
+                local _, th  = imgui.CalcTextSize(ui.warp.label);
+                local w      = 0;
                 for _, r in ipairs(rows) do
                     w = math.max(w, POPUP_ICON + POPUP_PAD + imgui.CalcTextSize(r.label));
                 end
                 w = w + POPUP_PAD * 2;
-                local h = POPUP_PAD * 2 + POPUP_ROW * (#rows + 1);
+                local h = POPUP_PAD * 2 + POPUP_ROW * #rows;
 
                 -- Hung under the marker and clamped both ways, so a point near
                 -- an edge does not push the panel off the viewport.
@@ -882,10 +906,20 @@ local function draw_map(view_w, view_h)
                                   0, ImDrawCornerFlags_All);
                 pdl:AddRect({ px, py }, { px + w, py + h }, COL_OUTLINE,
                             0, ImDrawCornerFlags_All, ICON_BORDER);
-                pdl:AddText({ px + POPUP_PAD, py + POPUP_PAD + (POPUP_ROW - th) / 2 },
-                            COL_POPUP_TEXT, ui.warp.label);
+                local hot_row = nil;
                 for i, r in ipairs(rows) do
-                    local ry = py + POPUP_PAD + POPUP_ROW * i;
+                    local ry = py + POPUP_PAD + POPUP_ROW * (i - 1);
+                    -- The hover is drawn straight into the list rather than
+                    -- coming off an ImGui item, for the same reason the click
+                    -- below is tested by hand: the panel is one InvisibleButton.
+                    if (mouse_x >= px and mouse_x <= px + w
+                        and mouse_y >= ry and mouse_y < ry + POPUP_ROW) then
+                        hot_row = r;
+                        pdl:AddRectFilled({ px + ICON_BORDER, ry },
+                                          { px + w - ICON_BORDER, ry + POPUP_ROW },
+                                          pack_col(ui.col_hover),
+                                          0, ImDrawCornerFlags_All);
+                    end
                     local tex, iw, ih = icon_texture(WARP_ICON[r.type]);
                     if (tex ~= nil) then
                         -- The art is not square, so fit it into the icon column
@@ -914,8 +948,16 @@ local function draw_map(view_w, view_h)
                                  and mouse_y >= py and mouse_y <= py + h;
                 ui.search_hot = ui.search_hot or warp_hot;
                 ui.warp_hot   = warp_hot;
-                if (not warp_hot and imgui.IsMouseClicked(0)) then
-                    ui.warp = nil;
+                if (imgui.IsMouseClicked(0)) then
+                    if (not warp_hot) then
+                        ui.warp = nil;
+                    elseif (hot_row ~= nil) then
+                        local cmd = warp_cmd(ui.warp.label, hot_row);
+                        if (cmd ~= nil) then
+                            AshitaCore:GetChatManager():QueueCommand(-1, cmd);
+                            ui.warp = nil;
+                        end
+                    end
                 end
             end
         end
