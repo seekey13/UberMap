@@ -70,9 +70,19 @@ Instant Warp scroll (item 4181) out of your bag, sending
 carried and takes no click while it is not; the bag is re-read twice a second on
 the same beat as the check below.
 
+A fifth icon, **Warp Ring**, sits after that one and works in two steps, because
+a ring has to be worn before it can be used. It looks for the ring (item 28540)
+in your bag and in the eight Mog Wardrobes - the mog house storage the client
+will equip out of - on the same twice-a-second beat. Carrying none leaves it
+dimmed and dead. Carrying one you are not wearing leaves it dimmed, and clicking
+it sends `/equip ring1 "Warp Ring" <container>` and keeps the map open, dead for
+nine seconds while the ring lands. Wearing one lights it, and clicking it sends
+`/item "Warp Ring" <me>` and closes the map. Hovering any of those steps says
+which one it is on.
+
 In the bottom-right corner, **Multisend** sends for your whole party of
 characters: while it is lit every command the map sends - warp rows and the
-Instant Warp scroll alike - goes out with a `/mss ` prefix, so
+Instant Warp scroll and the Warp Ring alike - goes out with a `/mss ` prefix, so
 [Multisend](https://github.com/ThornyFFXI/Multisend) repeats it on every
 logged-in character. It is off, and drawn dimmed, until clicked.
 
@@ -162,6 +172,7 @@ lua test/test_zoom.lua      # lib/mapmath.lua, the view math
 lua test/test_points.lua    # every marker sits on a map that exists
 lua test/test_warps.lua     # every warp row builds a /uw the game takes
 lua test/test_toggles.lua   # the layer toggles against the real points
+lua test/test_ring.lua      # the Warp Ring icon's equip-then-use steps
 ```
 
 ## Credits

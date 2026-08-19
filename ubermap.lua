@@ -195,6 +195,26 @@ local WARP_ITEM_CMD  = '/item "Instant Warp" <me>';
 -- at 1.
 local BAG, BAG_SLOTS = 0, 80;
 
+-- The Warp Ring, drawn after the scroll.  Unlike the scroll it has to be worn
+-- before it can be used, so the icon walks the player through that: it looks
+-- for a ring held anywhere the client will equip out of - the bag and the eight
+-- Mog Wardrobes, which is the mog house storage a ring can actually be worn
+-- from - then equips it to ring1 and only then uses it.
+local RING_ITEM_ICON  = 'warp_ring.png';
+local RING_ITEM_ID    = 28540;
+local RING_ITEM_NAME  = 'Warp Ring';
+local RING_ITEM_CMD   = '/item "Warp Ring" <me>';
+local RING_SLOT       = 13;  -- equipment slot index of ring1
+-- How long the icon stays dead after an equip is asked for, in seconds: the
+-- ring lands on the finger a moment after the command goes out, and a second
+-- press in that gap would only ask for the same equip again.
+local RING_EQUIP_WAIT = 9;
+-- Containers a ring can be equipped out of: the bag plus Mog Wardrobe 1-8.
+local RING_BAGS = T{ 0, 8, 10, 11, 12, 13, 14, 15, 16 };
+-- Ashita's container id -> the number the /equip command names it by.
+local RING_BAG_NUM = { [0] = 0, [8] = 1, [10] = 2, [11] = 3, [12] = 4,
+                       [13] = 5, [14] = 6, [15] = 7, [16] = 8 };
+
 -- Warp popup: a header row and one row per destination, hung off the zone
 -- point that opened it.
 local POPUP_PAD      = 8;   -- screen pixels of margin inside the panel
@@ -264,6 +284,12 @@ local ui = T{
     press       = nil,       -- marker the left button went down on
     near_kind   = false,     -- warp type last seen in reach; false until checked
     has_warp    = false,     -- an Instant Warp scroll was in the bag last poll
+    ring        = 'none',    -- Warp Ring step: none, equip or use, as of last poll
+    ring_bag    = nil,       -- /equip container number the ring was found in
+    -- os.clock() an equip was asked for, for the wait.  Starts a whole wait in
+    -- the past rather than at 0, since os.clock() reads the process's own time
+    -- and would otherwise sit inside the wait for the first seconds of a run.
+    ring_at     = -RING_EQUIP_WAIT,
     near_at     = 0,         -- os.clock() of that check
     sent_at     = 0,         -- os.clock() the map last sent a command
     pending     = nil,       -- command held back until the NPC's menu closes
@@ -466,6 +492,60 @@ local function have_warp_item()
 end
 
 --[[
+* The /equip container number a Warp Ring is held in, or nil when none is held
+* anywhere it could be worn from.  Matched by item id for the same reason the
+* scroll is, and pcall'd whole because the inventory is not readable while
+* zoning.  Slot 0 of a container is not an item, so the walk starts at 1.
+--]]
+local function ring_bag()
+    local ok, num = pcall(function()
+        local inv = AshitaCore:GetMemoryManager():GetInventory();
+        for _, c in ipairs(RING_BAGS) do
+            for i = 1, inv:GetContainerCountMax(c) do
+                local it = inv:GetContainerItem(c, i);
+                if (it ~= nil and it.Id == RING_ITEM_ID and it.Count > 0) then
+                    return RING_BAG_NUM[c];
+                end
+            end
+        end
+        return nil;
+    end);
+    return ok and num or nil;
+end
+
+--[[
+* True while a Warp Ring is worn in ring1.  The worn item is read back out of
+* the container it came from: GetEquippedItem hands over an index packing the
+* container in its high byte and the slot in its low one.
+--]]
+local function ring_worn()
+    local ok, worn = pcall(function()
+        local inv = AshitaCore:GetMemoryManager():GetInventory();
+        local eq  = inv:GetEquippedItem(RING_SLOT);
+        if (eq == nil or eq.Index == nil or eq.Index == 0) then
+            return false;
+        end
+        local it = inv:GetContainerItem(math.floor(eq.Index / 256), eq.Index % 256);
+        return it ~= nil and it.Id == RING_ITEM_ID;
+    end);
+    return ok and worn;
+end
+
+--[[
+* The step the ring icon is on, from what the poll found and whether an equip
+* is still landing: 'none' when none is held, 'use' when one is worn, 'equip'
+* otherwise.  Only 'use' and 'equip' take a press.
+--]]
+local function ring_step(held, worn, waiting)
+    if (not held) then
+        return 'none';
+    elseif (waiting) then
+        return 'wait';
+    end
+    return worn and 'use' or 'equip';
+end
+
+--[[
 * Re-read what is in reach while the map is up and narrow to it.  Only when the
 * answer has changed, so a toggle clicked by hand stands until the player walks
 * off the NPC or up to a different kind.  Polled rather than done per frame:
@@ -478,6 +558,9 @@ local function poll_near(now)
     end
     ui.near_at = now;
     ui.has_warp = have_warp_item();
+    ui.ring_bag = ring_bag();
+    ui.ring     = ring_step(ui.ring_bag ~= nil, ring_worn(),
+                            now - ui.ring_at < RING_EQUIP_WAIT);
     local kind = near_warp_type();
     if (kind ~= ui.near_kind) then
         ui.near_kind = kind;
@@ -1190,12 +1273,36 @@ local function draw_map(view_w, view_h)
         -- Instant Warp, last on that line.  It uses the scroll instead of
         -- filtering the map, so it is drawn dim and takes no press while none
         -- is carried.
-        if (icon_button('warpitem', WARP_ITEM_ICON, tx_at, SEARCH_MARGIN, row_h,
+        local warp_hit, warp_w =
+            icon_button('warpitem', WARP_ITEM_ICON, tx_at, SEARCH_MARGIN, row_h,
                         ui.has_warp and COL_ICON or COL_ICON_OFF,
                         ui.has_warp and 'Use Instant Warp scroll'
-                                     or 'No Instant Warp scroll in inventory')
-            and ui.has_warp) then
+                                     or 'No Instant Warp scroll in inventory');
+        if (warp_hit and ui.has_warp) then
             send_cmd(WARP_ITEM_CMD);
+        end
+        if (warp_w > 0) then
+            tx_at = tx_at + warp_w + TOGGLE_GAP;
+        end
+
+        -- Warp Ring, after the scroll.  It takes two presses from cold - one to
+        -- put the ring on, one to use it - so the icon is lit only on the step
+        -- that warps, and the tooltip says which step it is on.  Equipping is
+        -- queued rather than sent, so the map stays up for the second press.
+        local left = RING_EQUIP_WAIT - (os.clock() - ui.ring_at);
+        local ring_tip = ui.ring == 'use'   and 'Use Warp Ring'
+                      or ui.ring == 'equip' and 'Equip Warp Ring to ring1'
+                      or ui.ring == 'wait'  and ('Equipping Warp Ring (%ds)'):fmt(math.max(math.ceil(left), 0))
+                      or 'No Warp Ring in inventory or Mog Wardrobe';
+        if (icon_button('warpring', RING_ITEM_ICON, tx_at, SEARCH_MARGIN, row_h,
+                        ui.ring == 'use' and COL_ICON or COL_ICON_OFF, ring_tip)) then
+            if (ui.ring == 'use') then
+                send_cmd(RING_ITEM_CMD);
+            elseif (ui.ring == 'equip') then
+                queue_cmd(('/equip ring1 "%s" %d'):fmt(RING_ITEM_NAME, ui.ring_bag or 0));
+                ui.ring_at = os.clock();
+                ui.ring    = 'wait';  -- held here until the next poll reads it back
+            end
         end
 
         -- Everything below the search row stacks from here.
