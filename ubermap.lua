@@ -126,13 +126,14 @@ local COL_SEARCH_HINT = { 0.45, 0.45, 0.45, 1.0 };
 
 -- Layer toggles, drawn on the search box's line.  Clicking one dims its icon;
 -- the state is kept per file name in ui.toggle (nil = lit).
-local TOGGLES      = T{ 'Crystal.png', 'Guide.png', 'Maw.png', 'Unity.png' };
+-- Maw.png is left out until maw warps are implemented.
+local TOGGLES      = T{ 'Crystal.png', 'Guide.png', 'Unity.png' };
 local TOGGLE_GAP   = 6;   -- screen pixels between toggles
 local PICK_LABEL_GAP = 2;  -- screen pixels between a picker's name and its swatch
 local COL_ICON_OFF = 0x40FFFFFF;  -- 25% opacity, i.e. 75% transparent
 
 -- Warp type -> the toggle that lists it, so dimming a toggle drops those rows
--- from the popup.  Maw.png names no type, which is why it toggles nothing.
+-- from the popup.  A type no toggle names never shows.
 local WARP_ICON = T{ home = 'Crystal.png', guide = 'Guide.png', unity = 'Unity.png' };
 
 -- Warp popup: a header row and one row per destination, hung off the zone
@@ -224,8 +225,8 @@ local function map_size()
 end
 
 --[[
-* A warp row shows while the toggle its type names is still lit.  Maw.png names
-* no type, which is why it toggles nothing.
+* A warp row shows while the toggle its type names is still lit.  A type no
+* toggle names never shows.
 --]]
 local function warp_lit(w)
     local file = WARP_ICON[w.type];

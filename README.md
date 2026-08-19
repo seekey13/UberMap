@@ -44,10 +44,10 @@ anywhere else closes it, as does zooming, panning, or switching past/present,
 and clicking another point replaces it. While the cursor is over the panel the
 map underneath neither pans nor zooms.
 
-The four icons at the right of the search row filter it: dimming **Crystal**
+The three icons at the right of the search row filter it: dimming **Crystal**
 drops the Home Point rows, **Guide** the Survival Guides and **Unity** the Unity
-Warps. **Maw** names no warp type and so filters nothing. A zone whose every row
-is filtered out - or that has no warps at all - does not open a panel.
+Warps. A zone whose every row is filtered out - or that has no warps at all -
+does not open a panel.
 
 The map sets those toggles for you, from what you are standing next to: within
 10 yalms of a Home Point, a Survival Guide or a Unity Concord NPC - Igsli in
