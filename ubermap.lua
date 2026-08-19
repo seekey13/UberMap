@@ -12,7 +12,8 @@ addon.desc    = 'Displays the server map, automatically on Home Point interactio
 
 require('common');
 
-local chat  = require('chat');
+local chat     = require('chat');
+local settings = require('settings');
 local imgui = require('imgui');
 local ffi   = require('ffi');
 local d3d   = require('d3d8');
@@ -74,7 +75,7 @@ local NPC_EVENT = T{ [0x032] = 0x08, [0x033] = 0x08, [0x034] = 0x28 };
 
 -- How close one of those has to be to count as being stood at, in yalms, and
 -- how often the map re-checks while it is open, in seconds.
-local WARP_NPC_NEAR = 10;
+local WARP_NPC_NEAR = 7;
 local NEAR_POLL     = 0.5;
 
 -- How far the player has to travel from where the map went up before it closes
@@ -229,6 +230,20 @@ local ICON_GROUPS = T{};
 local ICONS       = T{};
 local OVERVIEW    = T{};
 
+-- What the map remembers between sessions.  Ashita keeps a settings file per
+-- character, under config/addons/UberMap, so two characters can carry their own
+-- colours and layers.  Only the choices made by hand are kept: everything else
+-- in ui is read from the world each time the map opens.
+local default_settings = T{
+    mss         = false,                     -- send through Multisend
+    toggle      = { },                       -- toggle file name -> true when dimmed off
+    col_text    = { 0.0, 0.0, 0.0, 1.0 },    -- map text, from the corner picker
+    col_outline = { 1.0, 1.0, 1.0, 0.5 },    -- the stamp behind it
+    col_hover   = { 1.0, 1.0, 1.0, 0.18 },   -- warp row under the cursor
+};
+local SAVED = { 'mss', 'toggle', 'col_text', 'col_outline', 'col_hover' };
+local cfg   = settings.load(default_settings);
+
 local ui = T{
     is_open     = { false, },
     time        = 'present',  -- which map of TIMES is on screen
@@ -241,10 +256,8 @@ local ui = T{
     pan_y       = 0,
     search      = { '', },
     search_hot  = false,
-    col_text    = { 0.0, 0.0, 0.0, 1.0 },  -- map text, from the corner picker
-    col_outline = { 1.0, 1.0, 1.0, 0.5 },  -- the stamp behind it
-    col_hover   = { 1.0, 1.0, 1.0, 0.18 },  -- warp row under the cursor
-    toggle      = T{},   -- toggle file name -> true when dimmed off
+    -- col_text, col_outline, col_hover and toggle are saved settings, filled
+    -- in by apply_settings below along with mss.
     dragging    = false,
     drag_x      = 0,
     drag_y      = 0,
@@ -258,7 +271,7 @@ local ui = T{
     warp        = nil,       -- zone point whose warp popup is open
     warp_hot    = false,     -- cursor was inside that popup last frame
     thanks      = false,     -- credits panel is open
-    mss         = false,     -- send through Multisend, i.e. to every character
+    col_dirty   = false,     -- a colour picker has been moved this drag
     focus       = nil,       -- group name to keep lit; everything else dims
     debug       = false,
     dbg         = nil,
@@ -269,6 +282,54 @@ local ui = T{
     edit_name   = { '', },
     edit_group  = { 'Regions', },
 };
+
+--[[
+* A settings value fit to hand to the other side, tables copied so the two never
+* share one.  Sharing would tie the saved settings to whatever ui does next: the
+* library hands back its own default table for a key the file has no entry for,
+* so a colour picker would edit the defaults, and a saved toggle table would
+* carry the proximity filter's later moves out on the following write.
+--]]
+local function copy_setting(v)
+    if (type(v) ~= 'table') then
+        return v;
+    end
+    local t = { };
+    for k, tv in pairs(v) do
+        t[k] = tv;
+    end
+    return t;
+end
+
+--[[
+* Copies the saved settings onto ui.
+--]]
+local function apply_settings(s)
+    for _, k in ipairs(SAVED) do
+        ui[k] = copy_setting(s[k]);
+    end
+end
+
+--[[
+* Writes ui's side of the settings back out, as each one is changed rather than
+* at unload, so nothing is lost if the game goes down first.  Only changes made
+* by hand call this: the proximity filter moves the toggles on its own and that
+* is the world talking, not a choice to remember.
+--]]
+local function save_settings()
+    for _, k in ipairs(SAVED) do
+        cfg[k] = copy_setting(ui[k]);
+    end
+    settings.save();
+end
+
+apply_settings(cfg);
+
+-- Logging in, or switching characters, hands back that character's own file.
+settings.register('settings', 'settings_update', function (s)
+    cfg = s;
+    apply_settings(s);
+end);
 
 local function map_size()
     local m = TIMES[ui.time];
@@ -1145,6 +1206,7 @@ local function draw_map(view_w, view_h)
                 if (imgui.InvisibleButton('##ubermap_toggle_' .. file, { tw, tsize })
                     and not ui.warp_hot) then
                     ui.toggle[file] = not ui.toggle[file];
+                    save_settings();
                 end
                 item_tip((ui.toggle[file] and 'Show ' or 'Hide ')
                          .. (TOGGLE_NAME[file] or file));
@@ -1209,10 +1271,18 @@ local function draw_map(view_w, view_h)
                               origin_y + SEARCH_MARGIN, pick[1]);
                 imgui.SetCursorPos({ pick_x + (pick[3] - row_h) / 2,
                                      SEARCH_MARGIN + lbl_h + PICK_LABEL_GAP });
-                imgui.ColorEdit4(pick[1], pick[2], pick_flags);
+                if (imgui.ColorEdit4(pick[1], pick[2], pick_flags)) then
+                    ui.col_dirty = true;
+                end
                 ui.search_hot = ui.search_hot
                                 or imgui.IsItemActive() or imgui.IsItemHovered();
                 pick_x = pick_x + pick[3] + TOGGLE_GAP;
+            end
+            -- One write per drag rather than one per frame of it: the picker
+            -- reports a change on every frame the mouse moves inside it.
+            if (ui.col_dirty and not imgui.IsMouseDown(0)) then
+                ui.col_dirty = false;
+                save_settings();
             end
             imgui.PopStyleVar();
         end
@@ -1294,6 +1364,7 @@ local function draw_map(view_w, view_h)
             if (imgui.InvisibleButton('##ubermap_mss', { mss_w, row_h })
                 and not ui.warp_hot) then
                 ui.mss = not ui.mss;
+                save_settings();
             end
             item_tip(ui.mss and 'Multisend on: warps go to every character'
                              or 'Multisend off: warps go to this character only');

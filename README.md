@@ -86,6 +86,12 @@ marker with no row left to show fades back the way an unfocused group does, and
 stops taking the cursor. Dimming **Guide** and **Unity** so leaves only the
 zones with a Home Point lit. With all three lit the map reads plain again.
 
+The Multisend gate, those three toggles and the editor's three colours are
+remembered per character, in
+`config/addons/UberMap/<name>_<server id>/settings.lua`, written the moment you
+change one. Only what you set by hand is kept - the auto-filter's own toggling
+is not - so your choices stand the next time you log in.
+
 The data lives in `lib/warps.lua` under the addon, keyed by the zone name, which is
 the point's `label` in `lib/points.lua`. A row whose key is not the game's own name
 for the zone - `Delkfutt Tower`, the two halves of Windurst Waters - carries a
