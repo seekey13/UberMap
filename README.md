@@ -64,6 +64,12 @@ Instant Warp scroll (item 4181) out of your bag, sending
 carried and takes no click while it is not; the bag is re-read twice a second on
 the same beat as the check below.
 
+In the bottom-right corner, left of the heart, **Multisend** sends for your whole
+party of characters: while it is lit every command the map sends - warp rows and
+the Instant Warp scroll alike - goes out with a `/mss ` prefix, so
+[Multisend](https://github.com/ThornyFFXI/Multisend) repeats it on every
+logged-in character. It is off, and drawn dimmer than the heart, until clicked.
+
 The map sets those toggles for you, from what you are standing next to: within
 10 yalms of a Home Point, a Survival Guide or a Unity Concord NPC - Igsli in
 Bastok Markets, Urbiolaine in Southern San d'Oria, Teldro-Kesdrodo or Yonolala

@@ -66,6 +66,12 @@ local WARP_NPC = T{
     { '^Yonolala$',         'unity' },  -- Windurst Woods (J-10)
 };
 
+-- The NPC interaction packets, and the offset each carries the NPC's target
+-- index at.  0x034 puts 32 bytes of menu parameters ahead of its index, so it
+-- does not share the offset the other two use.  Which one a talk arrives as is
+-- the server's choice, so all three are watched.
+local NPC_EVENT = T{ [0x032] = 0x08, [0x033] = 0x08, [0x034] = 0x28 };
+
 -- How close one of those has to be to count as being stood at, in yalms, and
 -- how often the map re-checks while it is open, in seconds.
 local WARP_NPC_NEAR = 10;
@@ -168,10 +174,12 @@ local COL_POPUP_TEXT = 0xFFFFFFFF;  -- fixed, not the pickers: the panel has its
 local COL_POPUP_OFF  = 0x60FFFFFF;  -- a row whose kind of NPC is not in reach
 
 -- Credits, opened by the heart in the viewport's bottom-right corner.  One
--- entry per credit: who, then where to find them.
+-- entry per credit: who, then one or more places to find them.
 local THANKS_HEAD = "This addon wouldn't work or look good without.";
 local THANKS = T{
-    { 'Thorny & Uberwarp',      'https://github.com/ThornyFFXI/Uberwarp' },
+    { 'Thorny / Uberwarp / Multisend',
+      'https://github.com/ThornyFFXI/Uberwarp',
+      'https://github.com/ThornyFFXI/Multisend' },
     { 'FFXI Remapster Project', 'https://remapster.com/' },
 };
 
@@ -183,10 +191,20 @@ for i, c in ipairs(THANKS) do
         table.insert(THANKS_ROWS, { text = '' });
     end
     table.insert(THANKS_ROWS, { text = c[1] });
-    table.insert(THANKS_ROWS, { text = c[2], url = c[2] });
+    for j = 2, #c do
+        table.insert(THANKS_ROWS, { text = c[j], url = c[j] });
+    end
 end
 local COL_THANKS_URL = 0xFFB0B0B0;  -- grey: the link reads under the name
 local COL_HEART      = 0x80FFFFFF;  -- 50% opacity: the heart sits over the map
+
+-- Multisend, drawn left of the heart.  While it is lit every command the map
+-- sends goes out through Thorny's Multisend instead of straight to the client,
+-- so all the logged-in characters take the warp together.  Off by default: it
+-- is the surprising thing to do, so it has to be asked for.
+local MSS_ICON     = 'multicast.png';
+local MSS_PREFIX   = '/mss ';
+local COL_MSS_OFF  = 0x40FFFFFF;  -- half again the heart's 50%, i.e. dimmed off
 
 -- The map data lives in lib/points.lua under the addon: the overview groups, in
 -- draw order so later groups land on top of earlier ones where they overlap,
@@ -233,6 +251,7 @@ local ui = T{
     warp        = nil,       -- zone point whose warp popup is open
     warp_hot    = false,     -- cursor was inside that popup last frame
     thanks      = false,     -- credits panel is open
+    mss         = false,     -- send through Multisend, i.e. to every character
     focus       = nil,       -- group name to keep lit; everything else dims
     debug       = false,
     dbg         = nil,
@@ -258,6 +277,14 @@ local function item_tip(text)
     if (imgui.IsItemHovered() and not ui.warp_hot) then
         imgui.SetTooltip(text);
     end
+end
+
+--[[
+* Every command the map sends goes out here, so Multisend is one gate rather
+* than a prefix remembered at each call site.
+--]]
+local function send_cmd(cmd)
+    AshitaCore:GetChatManager():QueueCommand(-1, ui.mss and (MSS_PREFIX .. cmd) or cmd);
 end
 
 --[[
@@ -1126,7 +1153,7 @@ local function draw_map(view_w, view_h)
                          ui.has_warp and COL_ICON or COL_ICON_OFF);
             if (imgui.InvisibleButton('##ubermap_warpitem', { tw, tsize })
                 and not ui.warp_hot and ui.has_warp) then
-                AshitaCore:GetChatManager():QueueCommand(-1, WARP_ITEM_CMD);
+                send_cmd(WARP_ITEM_CMD);
                 -- Reading the scroll is what the map was opened for, so it puts
                 -- the map away the way clicking a warp row does.
                 ui.is_open[1] = false;
@@ -1240,6 +1267,28 @@ local function draw_map(view_w, view_h)
                                       or (imgui.CalcTextSize('Thanks') + 12);
         local heart_x = view_w - SEARCH_MARGIN - heart_w;
         local heart_y = view_h - SEARCH_MARGIN - row_h;
+
+        -- Multisend, sat left of the heart on the same line.  Art only: with no
+        -- icon there is nothing to press and the map keeps sending the way it
+        -- always did, rather than growing a second text button in the corner.
+        local mtex, miw, mih = icon_texture(MSS_ICON);
+        if (mtex ~= nil) then
+            local mss_w = row_h * miw / mih;
+            imgui.SetCursorPos({ heart_x - TOGGLE_GAP - mss_w, heart_y });
+            local sx, sy = imgui.GetCursorScreenPos();
+            imgui.GetWindowDrawList():AddImage(tonumber(ffi.cast('uint32_t', mtex)),
+                                               { sx, sy }, { sx + mss_w, sy + row_h },
+                                               { 0, 0 }, { 1, 1 },
+                                               ui.mss and COL_HEART or COL_MSS_OFF);
+            if (imgui.InvisibleButton('##ubermap_mss', { mss_w, row_h })
+                and not ui.warp_hot) then
+                ui.mss = not ui.mss;
+            end
+            item_tip(ui.mss and 'Multisend on: warps go to every character'
+                             or 'Multisend off: warps go to this character only');
+            ui.search_hot = ui.search_hot or imgui.IsItemHovered();
+        end
+
         imgui.SetCursorPos({ heart_x, heart_y });
         if (htex ~= nil) then
             local sx, sy = imgui.GetCursorScreenPos();
@@ -1412,7 +1461,7 @@ local function draw_map(view_w, view_h)
                     elseif (hot_row ~= nil) then
                         local cmd = warp_cmd(ui.warp.label, hot_row);
                         if (cmd ~= nil) then
-                            AshitaCore:GetChatManager():QueueCommand(-1, cmd);
+                            send_cmd(cmd);
                             -- The row was the thing the map was opened for, so
                             -- sending it puts both the popup and the map away.
                             ui.warp       = nil;
@@ -1493,20 +1542,28 @@ ashita.events.register('d3d_present', 'ubermap_present', function ()
 end);
 
 ashita.events.register('packet_in', 'ubermap_packet_in', function (e)
-    -- 0x032 and 0x034 are the NPC interaction events; both carry the NPC's
-    -- target index at offset 0x08.
-    if (e.id ~= 0x032 and e.id ~= 0x034) then
+    local at = NPC_EVENT[e.id];
+    if (at == nil) then
         return false;
     end
 
-    local index = struct.unpack('H', e.data, 0x08 + 1);
+    -- Read as two bytes rather than through struct: Ashita ships that library
+    -- but nothing here requires it, and a little-endian short is two bytes.
+    -- e.data carries the 4 byte header, so a packet offset is a 1-based string
+    -- index already; a short packet leaves the bytes nil instead of throwing.
+    local lo, hi = e.data:byte(at + 1), e.data:byte(at + 2);
+    if (lo == nil or hi == nil) then
+        return false;
+    end
+
+    local index = lo + hi * 256;
     local name  = AshitaCore:GetMemoryManager():GetEntity():GetName(index);
     if (name == nil or name == '') then
         return false;
     end
 
     if (ui.debug) then
-        notify(('NPC event: %s'):fmt(name));
+        notify(('NPC event %04X: %s'):fmt(e.id, name));
     end
 
     if (warp_npc_type(name) ~= nil) then
