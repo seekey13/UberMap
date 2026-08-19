@@ -96,6 +96,7 @@ local COL_SEARCH_HINT = { 0.45, 0.45, 0.45, 1.0 };
 -- the state is kept per file name in ui.toggle (nil = lit).
 local TOGGLES      = T{ 'Crystal.png', 'Guide.png', 'Maw.png', 'Unity.png' };
 local TOGGLE_GAP   = 6;   -- screen pixels between toggles
+local PICK_LABEL_GAP = 2;  -- screen pixels between a picker's name and its swatch
 local COL_ICON_OFF = 0x40FFFFFF;  -- 25% opacity, i.e. 75% transparent
 
 -- Warp type -> the toggle that lists it, so dimming a toggle drops those rows
@@ -322,8 +323,10 @@ local function warp_cmd(label, row)
     if (kind == nil) then
         return nil;
     end
+    -- The map writes the Campaign zones '(S)', the game calls them '[S]'.
+    local zone = (row.zone or label):gsub('%(S%)$', '[S]');
     local n = (row.type == 'home') and row.label:match('^Home Point #(%d+)') or nil;
-    return ('/uw %s %s%s'):fmt(kind, row.zone or label, n or '');
+    return ('/uw %s %s%s'):fmt(kind, zone, n or '');
 end
 
 local function point_at(mx, my)
@@ -793,11 +796,12 @@ local function draw_map(view_w, view_h)
             end
         end
 
-        -- Text and outline colour pickers, pinned to the viewport's top-right
-        -- corner and sharing the search row's height.  ImGui writes into the
-        -- tables outlined_text packs from, so the map retints as they move.
+        -- Colour pickers, pinned to the viewport's top-right corner and
+        -- sharing the search row's height.  ImGui writes into the tables
+        -- outlined_text packs from, so the map retints as they move.
         -- NoInputs leaves only the swatch, which opens the picker on click;
-        -- NoLabel forwards the name to that popup instead of printing it.
+        -- NoLabel forwards the name to that popup; the name is stamped over
+        -- the swatch by hand instead, outlined because it sits on the map.
         -- Editor-only, like the coordinate readout: retinting is authoring.
         if (ui.edit) then
             local pick_flags = bit.bor(ImGuiColorEditFlags_NoInputs,
@@ -806,17 +810,31 @@ local function draw_map(view_w, view_h)
                                        ImGuiColorEditFlags_AlphaPreview);
             imgui.PushStyleVar(ImGuiStyleVar_FramePadding,
                                { 6, (row_h - imgui.GetFontSize()) / 2 });
-            local picks = { { 'Text',  ui.col_text },
+            local picks = { { 'Text',    ui.col_text },
                             { 'Outline', ui.col_outline },
-                            { 'Hover', ui.col_hover } };
-            local pick_x = view_w - SEARCH_MARGIN
-                           - #picks * row_h - (#picks - 1) * TOGGLE_GAP;
+                            { 'Hover',   ui.col_hover } };
+            -- A label wider than its swatch widens that column rather than
+            -- running into its neighbour, so the strip stays right-anchored.
+            local total, lbl_h = 0, 0;
             for _, pick in ipairs(picks) do
-                imgui.SetCursorPos({ pick_x, SEARCH_MARGIN });
+                local lw, lh = imgui.CalcTextSize(pick[1]);
+                pick[3] = math.max(row_h, lw);
+                total   = total + pick[3];
+                lbl_h   = math.max(lbl_h, lh);
+            end
+            local ldl    = imgui.GetWindowDrawList();
+            local pick_x = view_w - SEARCH_MARGIN
+                           - total - (#picks - 1) * TOGGLE_GAP;
+            for _, pick in ipairs(picks) do
+                local lw = imgui.CalcTextSize(pick[1]);
+                outlined_text(ldl, origin_x + pick_x + (pick[3] - lw) / 2,
+                              origin_y + SEARCH_MARGIN, pick[1]);
+                imgui.SetCursorPos({ pick_x + (pick[3] - row_h) / 2,
+                                     SEARCH_MARGIN + lbl_h + PICK_LABEL_GAP });
                 imgui.ColorEdit4(pick[1], pick[2], pick_flags);
                 ui.search_hot = ui.search_hot
                                 or imgui.IsItemActive() or imgui.IsItemHovered();
-                pick_x = pick_x + row_h + TOGGLE_GAP;
+                pick_x = pick_x + pick[3] + TOGGLE_GAP;
             end
             imgui.PopStyleVar();
         end

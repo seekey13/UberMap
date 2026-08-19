@@ -5,15 +5,20 @@
 * player can warp to, in the order the popup lists them: Home Points, then
 * Survival Guides, then the Unity Concord.  'type' picks the icon - 'home' is
 * Crystal.png, 'guide' is Guide.png, 'unity' is Unity.png.
+*
+* Clicking a row sends '/uw <hp|sg|uc> <zone><number>', with the zone taken from
+* the key.  A row whose key is not the game's own name for the zone - a marker
+* covering two zones, or a name the map spells differently - carries a 'zone' of
+* its own for the command to use.
 --]]
 
 -- Windurst Waters is one zone in game, but points.lua draws its north and south
 -- halves as separate markers.  Held aside so both can point at the same rows.
 local windurst_waters = {
-    { type = 'home',  label = 'Home Point #1 (E) (G-7)' },
-    { type = 'home',  label = 'Home Point #2 (M) (K-11)' },
-    { type = 'home',  label = 'Home Point #3 (J-8)' },
-    { type = 'home',  label = 'Home Point #4 (E-9)' },
+    { type = 'home',  label = 'Home Point #1 (E) (G-7)',  zone = 'Windurst Waters' },
+    { type = 'home',  label = 'Home Point #2 (M) (K-11)', zone = 'Windurst Waters' },
+    { type = 'home',  label = 'Home Point #3 (J-8)',      zone = 'Windurst Waters' },
+    { type = 'home',  label = 'Home Point #4 (E-9)',      zone = 'Windurst Waters' },
 };
 
 return {
@@ -387,10 +392,10 @@ return {
         { type = 'guide', label = 'Survival Guide (F-11)' },
     },
     ["Riverne - Site A01"] = {
-        { type = 'home',  label = 'Home Point #1 (I-9)' },
+        { type = 'home',  label = 'Home Point #1 (I-9)', zone = 'Riverne - Site #A01' },
     },
     ["Riverne - Site B01"] = {
-        { type = 'home',  label = 'Home Point #1 (E-8)' },
+        { type = 'home',  label = 'Home Point #1 (E-8)', zone = 'Riverne - Site #B01' },
     },
     ["Ro'Maeve"] = {
         { type = 'guide', label = 'Survival Guide (H-6)' },
@@ -582,7 +587,7 @@ return {
     ["North Windurst Waters"] = windurst_waters,
     ["South Windurst Waters"] = windurst_waters,
     ["Delkfutt Tower"] = {
-        { type = 'home',  label = 'Home Point #1 (Upper) (F-9)' },
-        { type = 'guide', label = 'Survival Guide (Lower) (H-10)' },
+        { type = 'home',  label = 'Home Point #1 (Upper) (F-9)',    zone = "Upper Delkfutt's Tower" },
+        { type = 'guide', label = 'Survival Guide (Lower) (H-10)', zone = "Lower Delkfutt's Tower" },
     },
 };

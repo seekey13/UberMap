@@ -7,11 +7,12 @@
 --]]
 
 local TYPES = { home = true, guide = true, unity = true };
+local UW    = { home = 'hp', guide = 'sg', unity = 'uc' };
 
 local data = assert(loadfile('warps.lua'))();
 assert(type(data) == 'table', 'warps.lua did not return a table');
 
-local zones, rows, byType, noGrid = 0, 0, { home = 0, guide = 0, unity = 0 }, {};
+local zones, rows, byType, noGrid, cmds = 0, 0, { home = 0, guide = 0, unity = 0 }, {}, {};
 
 for zone, list in pairs(data) do
     assert(type(zone) == 'string' and zone ~= '', 'zone key must be a non-empty string');
@@ -24,6 +25,16 @@ for zone, list in pairs(data) do
         assert(TYPES[row.type], ('%s[%d]: bad type %q'):format(zone, i, tostring(row.type)));
         assert(type(row.label) == 'string' and row.label ~= '',
                ('%s[%d]: label must be a non-empty string'):format(zone, i));
+        assert(row.zone == nil or (type(row.zone) == 'string' and row.zone ~= ''),
+               ('%s[%d]: zone override must be a non-empty string'):format(zone, i));
+
+        -- The /uw line the popup sends, built the way ubermap.lua builds it.
+        local cmd = ('/uw %s %s%s'):format(
+            UW[row.type], (row.zone or zone):gsub('%(S%)$', '[S]'),
+            row.label:match('^Home Point #(%d+)') or '');
+        assert(cmd:match('^/uw %a%a %S.*%S$'),
+               ('%s[%d]: bad command %q'):format(zone, i, cmd));
+        cmds[#cmds + 1] = cmd;
 
         -- Rows are grouped home, then guide, then unity.
         local rank = (row.type == 'home' and 1) or (row.type == 'guide' and 2) or 3;
@@ -58,3 +69,8 @@ end
 print(('warps OK: %d zones, %d rows (%d home, %d guide, %d unity)')
       :format(zones, rows, byType.home, byType.guide, byType.unity));
 for _, s in ipairs(noGrid) do print('  no grid reference -> ' .. s); end
+
+-- Two commands the popup would send, so a change to the format is visible here.
+table.sort(cmds);
+print('  e.g. ' .. cmds[1]);
+print('  e.g. ' .. cmds[#cmds]);

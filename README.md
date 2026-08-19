@@ -35,7 +35,9 @@ to a Home Point; if it is already open your current view is left alone.
 Left-click a zone point - the markers that appear once the view is zoomed past
 the overview - and a panel opens on it listing that zone's warp destinations:
 its Home Points, Survival Guide and Unity Concord, each with the icon of its kind.
-It is a read-out, not a travel menu; clicking a row does nothing yet. Clicking
+Clicking a row sends its `/uw` command - `/uw hp Aht Urhgan Whitegate3` for that
+zone's third Home Point, `/uw sg <zone>` for a Survival Guide and `/uw uc <zone>`
+for a Unity Concord - and closes the panel. Clicking
 anywhere else closes it, as does zooming, panning, or switching past/present,
 and clicking another point replaces it. While the cursor is over the panel the
 map underneath neither pans nor zooms.
@@ -46,7 +48,9 @@ Warps. **Maw** names no warp type and so filters nothing. A zone whose every row
 is filtered out - or that has no warps at all - does not open a panel.
 
 The data lives in `warps.lua` beside the addon, keyed by the zone name, which is
-the point's `label` in `points.lua`. Rows are listed in the order the file gives
+the point's `label` in `points.lua`. A row whose key is not the game's own name
+for the zone - `Delkfutt Tower`, the two halves of Windurst Waters - carries a
+`zone` field with the name `/uw` wants; `(S)` keys are sent as `[S]`. Rows are listed in the order the file gives
 them:
 
 ```lua
