@@ -48,6 +48,14 @@ anywhere else closes it, as does zooming, panning, or switching past/present,
 and clicking another point replaces it. While the cursor is over the panel the
 map underneath neither pans nor zooms.
 
+Because the map opens when you talk to the NPC, the click lands while its menu
+is still up, and Uberwarp cannot start its own conversation with one already
+open. So the command waits: Escape is pressed for you, and it goes out once the
+game reports the event over. A menu more than one level deep gets another press
+every half second, and after two seconds the map gives up and says so rather
+than holding the command. Nothing is injected at the packet level - the client
+sends its own cancel, exactly as if you had pressed Escape yourself.
+
 A row only travels from the kind of NPC you are stood at, so rows of any other
 kind are drawn greyed out and take no click: the panel still lists the
 destination and its icon says what to walk up to. Stand away from every warp NPC

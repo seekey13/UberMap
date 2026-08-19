@@ -25,15 +25,29 @@ local d3d8dev = d3d.get_device();
 -- Opening a link hands it to the shell, which sends it to the default browser.
 -- ShellExecute rather than os.execute: the latter flashes a console window over
 -- the game.  Typed as void* so this needs none of the Windows typedefs.
+-- keybd_event presses Escape for the map: Ashita's IKeyboard binds keys but
+-- cannot send them, so leaving an NPC's menu goes through user32, the same way
+-- MapBind does.
 ffi.cdef[[
     void* ShellExecuteA(void* hwnd, const char* op, const char* file,
                         const char* params, const char* dir, int show);
+    void __stdcall keybd_event(uint8_t vk, uint8_t scan, uint32_t flags, uintptr_t extra);
 ]]
-local shell32 = ffi.load('shell32');
+
+-- A library that will not load leaves its feature off rather than the addon.
+local function try_load(name)
+    local ok, lib = pcall(ffi.load, name);
+    return ok and lib or nil;
+end
+
+local shell32 = try_load('shell32');
+local user32  = try_load('user32');
 local SW_SHOWNORMAL = 1;
 
 local function open_url(url)
-    shell32.ShellExecuteA(nil, 'open', url, nil, nil, SW_SHOWNORMAL);
+    if (shell32 ~= nil) then
+        shell32.ShellExecuteA(nil, 'open', url, nil, nil, SW_SHOWNORMAL);
+    end
 end
 
 -- The two times of the world, each its own image with its own pixel size.  Map
@@ -89,6 +103,26 @@ local MOVE_CLOSE = 1.0;
 -- open the map straight back up on top of what was asked for.
 -- ponytail: a fixed window; a reply-aware gate if the server ever lags past it.
 local SEND_QUIET = 3.0;
+
+-- Leaving an NPC's menu, as the Escape key rather than as the packet the key
+-- sends: the client builds that packet with the event's own fields, which this
+-- would otherwise have to read back out of the interaction packet and guess the
+-- layout of.  The scan code is Escape's; the flag is the release.
+local VK_ESCAPE, ESCAPE_SCAN, KEYEVENTF_KEYUP = 0x1B, 0x01, 0x02;
+
+-- How many frames the press is held for.  The client reads the keyboard once a
+-- frame, so a press and release inside one frame is never seen at all.
+local ESCAPE_HOLD = 3;
+
+-- The player is in an event, i.e. talking to something, at this server status.
+local STATUS_EVENT = 4;
+
+-- How long to wait between presses while a command waits on the menu closing,
+-- and how long to wait for it in total, both in seconds.  Presses repeat
+-- because a menu can be more than one deep and each press backs out one level;
+-- the total is a give-up, so a menu that will not close cannot strand the
+-- command until the next one replaces it.
+local ESCAPE_RETRY, ESCAPE_WAIT = 0.5, 2.0;
 
 -- NPCs and mobs occupy the bottom of the entity array; players start at 0x400
 -- and pets and trusts above them, so the walk stops before either.
@@ -182,7 +216,7 @@ local COL_POPUP_OFF  = 0x60FFFFFF;  -- a row whose kind of NPC is not in reach
 
 -- Credits, opened by the heart in the viewport's bottom-right corner.  One
 -- entry per credit: who, then one or more places to find them.
-local THANKS_HEAD = "This addon wouldn't work or look good without.";
+local THANKS_HEAD = "This addon wouldn't work or look good without:";
 local THANKS = T{
     { 'Thorny / Uberwarp / Multisend',
       'https://github.com/ThornyFFXI/Uberwarp',
@@ -266,6 +300,10 @@ local ui = T{
     has_warp    = false,     -- an Instant Warp scroll was in the bag last poll
     near_at     = 0,         -- os.clock() of that check
     sent_at     = 0,         -- os.clock() the map last sent a command
+    pending     = nil,       -- command held back until the NPC's menu closes
+    pend_at     = 0,         -- os.clock() it started waiting, for the give-up
+    esc_at      = 0,         -- os.clock() of the last Escape press
+    esc_frames  = 0,         -- frames left before that press is released
     open_x      = nil,       -- where the player stood when the map went up;
     open_z      = nil,       -- nil until the first frame after opening reads it
     warp        = nil,       -- zone point whose warp popup is open
@@ -348,18 +386,66 @@ local function item_tip(text)
 end
 
 --[[
-* Every command the map sends goes out here, so Multisend is one gate rather
-* than a prefix remembered at each call site.
+* True while the player is in an event: talking to an NPC, or watching a scene.
+* Uberwarp holds its own conversation with the NPC, so a warp asked for from
+* inside one collides with the menu already up and does nothing.
+--]]
+local function in_event()
+    local ent = AshitaCore:GetMemoryManager():GetEntity();
+    if (ent == nil) then
+        return false;
+    end
+    local index = AshitaCore:GetMemoryManager():GetParty():GetMemberTargetIndex(0);
+    return ent:GetStatusServer(index) == STATUS_EVENT;
+end
+
+--[[
+* Press Escape, to be released ESCAPE_HOLD frames later.  Refuses to start a
+* second press while one is still held: a repeat would keep resetting the frame
+* count, the release would never fire, and Escape would be left down for the
+* whole system.
+--]]
+local function press_escape(now)
+    if (user32 == nil or ui.esc_frames > 0) then
+        return;
+    end
+    user32.keybd_event(VK_ESCAPE, ESCAPE_SCAN, 0, 0);
+    ui.esc_frames = ESCAPE_HOLD;
+    ui.esc_at     = now;
+end
+
+--[[
+* Hand a command to the game.  Multisend is one gate here rather than a prefix
+* remembered at each call site.
+--]]
+local function queue_cmd(cmd)
+    AshitaCore:GetChatManager():QueueCommand(-1, ui.mss and (MSS_PREFIX .. cmd) or cmd);
+    -- sent_at holds off the NPC event the command triggers, which would
+    -- otherwise open the map straight back up on top of what was asked for.
+    ui.sent_at = os.clock();
+end
+
+--[[
+* Every command the map sends goes out here.  A command asked for from inside an
+* NPC's menu is held until Escape has closed it, since Uberwarp starts its own
+* conversation and cannot while one is already up.  Without user32 there is no
+* way to press Escape, so the command goes out as it always did and the player
+* closes the menu themselves.
 --]]
 local function send_cmd(cmd)
-    AshitaCore:GetChatManager():QueueCommand(-1, ui.mss and (MSS_PREFIX .. cmd) or cmd);
+    if (user32 ~= nil and in_event()) then
+        ui.pending = cmd;
+        ui.pend_at = os.clock();
+        ui.sent_at = ui.pend_at;
+        press_escape(ui.pend_at);
+    else
+        queue_cmd(cmd);
+    end
     -- Sending is what the map was opened for, so it goes away whole: window,
-    -- warp popup and credits panel together.  sent_at holds the NPC event the
-    -- command triggers off, which would otherwise reopen it.
+    -- warp popup and credits panel together.
     ui.is_open[1] = false;
     ui.warp       = nil;
     ui.thanks     = false;
-    ui.sent_at    = os.clock();
 end
 
 --[[
@@ -554,6 +640,43 @@ end
 
 local function notify(msg)
     print(chat.header(addon.name):append(chat.message(msg)));
+end
+
+--[[
+* Release a held Escape, and send a command that was waiting on the menu it
+* closed.  Runs every frame whether the map is up or not: sending closes the
+* map, so by the time the menu is gone there is no map left to run it from.
+--]]
+local function pump_escape(now)
+    if (ui.esc_frames > 0) then
+        ui.esc_frames = ui.esc_frames - 1;
+        if (ui.esc_frames == 0) then
+            user32.keybd_event(VK_ESCAPE, ESCAPE_SCAN, KEYEVENTF_KEYUP, 0);
+        end
+        return;
+    end
+
+    if (ui.pending == nil) then
+        return;
+    end
+
+    -- The menu is gone, so the command can go.
+    if (not in_event()) then
+        queue_cmd(ui.pending);
+        ui.pending = nil;
+        return;
+    end
+
+    if (now - ui.pend_at > ESCAPE_WAIT) then
+        ui.pending = nil;
+        notify('could not leave the menu; close it and click again');
+        return;
+    end
+
+    -- Still in it, so back out another level.
+    if (now - ui.esc_at > ESCAPE_RETRY) then
+        press_escape(now);
+    end
 end
 
 --[[
@@ -1015,6 +1138,11 @@ local function draw_map(view_w, view_h)
             tostring(ui.near_kind), os.clock() - ui.near_at,
             tostring(ui.toggle['Crystal.png']), tostring(ui.toggle['Guide.png']),
             tostring(ui.toggle['Unity.png']), tostring(ui.has_warp)));
+        -- What the menu escape is doing: whether the game says we are in one,
+        -- the command waiting on it, and whether a press is still held.
+        imgui.Text(('event=%s pending=%s held=%d user32=%s'):fmt(
+            tostring(in_event()), tostring(ui.pending), ui.esc_frames,
+            tostring(user32 ~= nil)));
         local _, avail_h = imgui.GetContentRegionAvail();
         view_h = avail_h;
     end
@@ -1575,6 +1703,8 @@ local function draw_map(view_w, view_h)
 end
 
 ashita.events.register('d3d_present', 'ubermap_present', function ()
+    pump_escape(os.clock());
+
     if (not ui.is_open[1]) then
         return;
     end
@@ -1699,6 +1829,12 @@ ashita.events.register('command', 'ubermap_command', function (e)
 end);
 
 ashita.events.register('unload', 'ubermap_unload', function ()
+    -- Unloading mid-press would leave Escape held down for the whole system,
+    -- since nothing is left to run the frame that releases it.
+    if (user32 ~= nil and ui.esc_frames > 0) then
+        user32.keybd_event(VK_ESCAPE, ESCAPE_SCAN, KEYEVENTF_KEYUP, 0);
+        ui.esc_frames = 0;
+    end
     ui.texture = nil;
     icon_tex = T{};
 end);
