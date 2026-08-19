@@ -1131,7 +1131,7 @@ local function draw_map(view_w, view_h)
                 -- the map away the way clicking a warp row does.
                 ui.is_open[1] = false;
             end
-            item_tip(ui.has_warp and 'Use an Instant Warp scroll'
+            item_tip(ui.has_warp and 'Use Instant Warp scroll'
                                   or 'No Instant Warp scroll in inventory');
             ui.search_hot = ui.search_hot or imgui.IsItemHovered();
         end
