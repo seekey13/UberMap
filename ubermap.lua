@@ -58,7 +58,7 @@ local ICON_SIZE    = 50;    -- screen pixels; the source art is square, 214x214
 local POINT_SIZE   = 30;    -- screen pixels for point markers (entries with size = POINT_SIZE)
 local ICON_ROUND   = 0.0625;  -- corner radius, as a fraction of the drawn size
 local ICON_BORDER  = 2.0;   -- screen pixels
-local ICON_HOT     = 1.05;  -- hovered nation icons draw this much larger
+local ICON_HOT     = 1.05;  -- hovered nation icons draw this larger
 local HOT_GROUP    = 'Nations';  -- the only group that grows on hover
 local COL_ICON     = 0xFFFFFFFF;  -- white: tint that leaves the art untouched
 local COL_SELECT   = 0xFF00FFFF;  -- yellow: ring around the point being edited
@@ -633,15 +633,26 @@ local function draw_map(view_w, view_h)
 
         local row_h = imgui.GetFrameHeight() * SEARCH_H_MULT;
 
-        -- Past/present switch, first on the search row.  The label names the
-        -- map it takes you to, not the one you are on.  The switch is recorded
-        -- and applied after the frame, because set_time clears the zoom that
-        -- the rest of this frame still reads.  Both labels share the width of
-        -- the longer one so the row does not shift when the map flips.
-        local other    = (ui.time == 'present') and 'past' or 'present';
-        local time_w   = imgui.CalcTextSize('Present') + 2;
+        -- Past/present switch, first on the search row.  The art names the map
+        -- you are on, not the one the press takes you to.  The switch is
+        -- recorded and applied after the frame, because set_time clears the
+        -- zoom that the rest of this frame still reads.  Drawn by hand for the
+        -- same reason the toggles below are, and falling back to a text button
+        -- if the art fails to load, so the other map stays reachable.
+        local other = (ui.time == 'present') and 'past' or 'present';
+        local ttex, tiw, tih = icon_texture(ui.time .. '.png');
+        local time_w = (ttex ~= nil) and (row_h * tiw / tih)
+                                     or (imgui.CalcTextSize('Present') + 2);
         imgui.SetCursorPos({ SEARCH_MARGIN, SEARCH_MARGIN });
-        if (imgui.Button(other == 'past' and 'Past' or 'Present', { time_w, row_h })) then
+        if (ttex ~= nil) then
+            local sx, sy = imgui.GetCursorScreenPos();
+            imgui.GetWindowDrawList():AddImage(tonumber(ffi.cast('uint32_t', ttex)),
+                                               { sx, sy }, { sx + time_w, sy + row_h },
+                                               { 0, 0 }, { 1, 1 }, COL_ICON);
+            if (imgui.InvisibleButton('##ubermap_time', { time_w, row_h })) then
+                ui.next_time = other;
+            end
+        elseif (imgui.Button(ui.time == 'past' and 'Past' or 'Present', { time_w, row_h })) then
             ui.next_time = other;
         end
         local time_hot = imgui.IsItemHovered();
