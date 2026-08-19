@@ -112,6 +112,15 @@ local POPUP_GAP      = 6;   -- screen pixels between the marker and the panel
 local COL_POPUP_BG   = 0xE0101010;  -- near black, a little of the map showing through
 local COL_POPUP_TEXT = 0xFFFFFFFF;  -- fixed, not the pickers: the panel has its own ground
 
+-- Credits, opened by the heart in the viewport's bottom-right corner.  One
+-- entry per credit: who, then where to find them.
+local THANKS = T{
+    { 'Thorny & Uberwarp',      'https://github.com/ThornyFFXI/Uberwarp' },
+    { 'FFXI Remapster Project', 'https://remapster.com/' },
+};
+local COL_THANKS_URL = 0xFFB0B0B0;  -- grey: the link reads under the name
+local COL_HEART      = 0x80FFFFFF;  -- 50% opacity: the heart sits over the map
+
 -- The map data lives in points.lua beside the addon: the overview groups, in
 -- draw order so later groups land on top of earlier ones where they overlap,
 -- and the zone points placed with /um edit.  Editing writes the file back out.
@@ -151,6 +160,7 @@ local ui = T{
     press       = nil,       -- marker the left button went down on
     warp        = nil,       -- zone point whose warp popup is open
     warp_hot    = false,     -- cursor was inside that popup last frame
+    thanks      = false,     -- credits panel is open
     focus       = nil,       -- group name to keep lit; everything else dims
     debug       = false,
     dbg         = nil,
@@ -892,6 +902,72 @@ local function draw_map(view_w, view_h)
             outlined_text(imgui.GetWindowDrawList(), origin_x + 6, origin_y + view_h - 30,
                           ('%d, %d'):fmt(mx, my));
             imgui.SetWindowFontScale(1.0);
+        end
+
+        -- Credits, pinned to the viewport's bottom-right corner.  Drawn by hand
+        -- for the same reason the toggles are, and falling back to a text
+        -- button so the credits stay reachable if the art is missing.
+        local htex, hiw, hih = icon_texture('heart.png');
+        local heart_w = (htex ~= nil) and (row_h * hiw / hih)
+                                      or (imgui.CalcTextSize('Thanks') + 12);
+        local heart_x = view_w - SEARCH_MARGIN - heart_w;
+        local heart_y = view_h - SEARCH_MARGIN - row_h;
+        imgui.SetCursorPos({ heart_x, heart_y });
+        if (htex ~= nil) then
+            local sx, sy = imgui.GetCursorScreenPos();
+            imgui.GetWindowDrawList():AddImage(tonumber(ffi.cast('uint32_t', htex)),
+                                               { sx, sy }, { sx + heart_w, sy + row_h },
+                                               { 0, 0 }, { 1, 1 }, COL_HEART);
+            if (imgui.InvisibleButton('##ubermap_thanks', { heart_w, row_h })
+                and not ui.warp_hot) then
+                ui.thanks = not ui.thanks;
+            end
+        elseif (imgui.Button('Thanks', { heart_w, row_h }) and not ui.warp_hot) then
+            ui.thanks = not ui.thanks;
+        end
+        local heart_hot = imgui.IsItemHovered();
+        ui.search_hot = ui.search_hot or heart_hot;
+
+        -- Credits panel, hung above the heart on the same corner.  Two rows per
+        -- entry, the name over its link; a click anywhere else shuts it.
+        if (ui.thanks) then
+            local kdl   = imgui.GetWindowDrawList();
+            local _, th = imgui.CalcTextSize('X');
+            local w     = 0;
+            for _, c in ipairs(THANKS) do
+                w = math.max(w, imgui.CalcTextSize(c[1]), imgui.CalcTextSize(c[2]));
+            end
+            w = w + POPUP_PAD * 2;
+            local h = POPUP_PAD * 2 + POPUP_ROW * #THANKS * 2;
+            local px = origin_x + view_w - SEARCH_MARGIN - w;
+            local py = mm.clamp_box(origin_y + heart_y - POPUP_GAP - h,
+                                    h, origin_y, view_h);
+
+            kdl:AddRectFilled({ px, py }, { px + w, py + h }, COL_POPUP_BG,
+                              0, ImDrawCornerFlags_All);
+            kdl:AddRect({ px, py }, { px + w, py + h }, COL_OUTLINE,
+                        0, ImDrawCornerFlags_All, ICON_BORDER);
+            for i, c in ipairs(THANKS) do
+                local ry = py + POPUP_PAD + POPUP_ROW * (i - 1) * 2;
+                kdl:AddText({ px + POPUP_PAD, ry + (POPUP_ROW - th) / 2 },
+                            COL_POPUP_TEXT, c[1]);
+                kdl:AddText({ px + POPUP_PAD, ry + POPUP_ROW + (POPUP_ROW - th) / 2 },
+                            COL_THANKS_URL, c[2]);
+            end
+
+            -- An InvisibleButton over the panel takes the press, so it neither
+            -- falls through to the map nor starts a window move; the hover is
+            -- tested by rect for the reason the warp panel below spells out.
+            imgui.SetCursorPos({ px - origin_x, py - origin_y });
+            imgui.InvisibleButton('##ubermap_thanks_panel', { w, h });
+            local thanks_hot = mouse_x >= px and mouse_x <= px + w
+                               and mouse_y >= py and mouse_y <= py + h;
+            ui.search_hot = ui.search_hot or thanks_hot;
+            -- heart_hot vetoes the close: the button that just opened the panel
+            -- reports the same click this test sees.
+            if (imgui.IsMouseClicked(0) and not thanks_hot and not heart_hot) then
+                ui.thanks = false;
+            end
         end
 
         -- Warp list for the zone point that was clicked, drawn after everything
