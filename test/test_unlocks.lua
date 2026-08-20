@@ -1,5 +1,5 @@
 --[[
-* Self-check for lib/unlocks.lua, the bit test behind a purple warp row.
+* Self-check for lib/unlocks.lua, the bit test behind a red warp row.
 *
 * Two things can go wrong quietly here.  The bit maths can land on the wrong
 * byte, which reads back somebody else's destination; and an alias in

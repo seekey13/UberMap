@@ -243,12 +243,13 @@ local POPUP_GAP      = 6;   -- screen pixels between the marker and the panel
 local COL_POPUP_BG   = 0xE0101010;  -- near black, a little of the map showing through
 local COL_POPUP_TEXT = 0xFFFFFFFF;  -- the panel has its own ground, so white reads
 local COL_POPUP_OFF  = 0x60FFFFFF;  -- a row whose kind of NPC is not in reach
--- Purple, held apart from the dim above: not being in front of the right NPC is
--- a thing the player can walk off and fix, while a destination they have never
--- stood at is not, so the two do not read the same.
-local COL_POPUP_LOCK = 0xFFFF60C0;
-local COL_ICON_LOCK  = 0xC0FF60C0;  -- the same hue, at the tint the icons take
--- What a purple row says when the cursor stops on it.
+-- Dim red, held apart from the grey above: not being in front of the right NPC
+-- is a thing the player can walk off and fix, while a destination they have
+-- never stood at is not, so the two do not read the same.  Text only - the icon
+-- still says which kind of NPC the row travels from, which is worth reading
+-- whether or not the destination is registered.
+local COL_POPUP_LOCK = 0xA04040FF;
+-- What a red row says when the cursor stops on it.
 local LOCK_TIP = T{
     home  = 'Not registered - interact with this Home Point once to unlock it',
     guide = 'Not registered - interact with this Survival Guide once to unlock it',
@@ -920,7 +921,7 @@ end
 
 --[[
 * Whether the row's destination is one the player has stood at.  One that is
-* not draws purple and takes no press: the /uw for it would be turned down at
+* not draws red and takes no press: the /uw for it would be turned down at
 * the NPC, and a row that looks live but does nothing reads as a broken map.
 --]]
 local function warp_known(label, row)
@@ -1428,8 +1429,7 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
                 fdl:AddImage(tonumber(ffi.cast('uint32_t', tex)),
                              { ix, iy }, { ix + iw * sc, iy + ih * sc },
                              { 0, 0 }, { 1, 1 },
-                             (not known) and COL_ICON_LOCK
-                             or live and COL_ICON or COL_ICON_OFF);
+                             live and COL_ICON or COL_ICON_OFF);
             end
             local col = (not known) and COL_POPUP_LOCK
                         or live and COL_POPUP_TEXT or COL_POPUP_OFF;
@@ -1455,7 +1455,7 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
         -- the ends of the list puts the cursor outside the panel, which would
         -- otherwise hand the same press to the map and pan it.
         ui.search_hot = ui.search_hot or fav_hot or ui.fav_drag ~= nil;
-        -- Why a purple favorite does not travel.  Vetoed by a warp popup over
+        -- Why a red favorite does not travel.  Vetoed by a warp popup over
         -- this panel, the same way item_tip vetoes: the popup is anchored on a
         -- marker and can land in this corner.
         if (hot_lock ~= nil and not ui.warp_hot and LOCK_TIP[hot_lock] ~= nil) then
@@ -1562,7 +1562,7 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
             -- it is live or not, which is what the right-click menu goes
             -- on - a destination can be favorited from anywhere, not only
             -- from in front of the NPC that travels to it.
-            -- hot_lock is the warp type of a purple row under the cursor, so
+            -- hot_lock is the warp type of a red row under the cursor, so
             -- the tooltip below can say why that row will not travel.
             local hot_row, hot_any, hot_lock = nil, nil, nil;
             for i, r in ipairs(rows) do
@@ -1577,7 +1577,7 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                 local live = r.type == ui.near_kind;
                 -- A destination the player has never stood at is refused at
                 -- the NPC whether or not they are in front of one, so it is
-                -- drawn purple and takes no press either.
+                -- drawn red and takes no press either.
                 local known = warp_known(ui.warp.label, r);
                 -- The hover is drawn straight into the list rather than
                 -- coming off an ImGui item, for the same reason the click
@@ -1608,8 +1608,7 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                     pdl:AddImage(tonumber(ffi.cast('uint32_t', tex)),
                                  { ix, iy }, { ix + iw * sc, iy + ih * sc },
                                  { 0, 0 }, { 1, 1 },
-                                 (not known) and COL_ICON_LOCK
-                                 or live and COL_ICON or COL_ICON_OFF);
+                                 live and COL_ICON or COL_ICON_OFF);
                 end
                 local ty  = ry + (POPUP_ROW - th) / 2;
                 local col = (not known) and COL_POPUP_LOCK
@@ -2134,7 +2133,7 @@ ashita.events.register('command', 'ubermap_command', function (e)
     end
 
     --[[
-    * '/um unlocks [destination]' prints what the purple-row test is working
+    * '/um unlocks [destination]' prints what the red-row test is working
     * from: where Uberwarp's data was read, how many names came back, and the
     * two mask blocks as they arrived.  Given a destination - the name the /uw
     * carries, e.g. 'Xarcabard [S]' - it also says how that one reads.

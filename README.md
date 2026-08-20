@@ -59,18 +59,21 @@ kind are drawn greyed out and take no click: the panel still lists the
 destination and its icon says what to walk up to. Stand away from every warp NPC
 and the whole panel reads grey.
 
-A destination you have never stood at is a separate state: it is drawn
-**purple**, takes no click from anywhere, and hovering it says why. Home Points
-and Survival Guides have to be registered in person before they will travel to,
-which the game records as a bit per destination and sends on zoning in, as
-packet `0x63` type 6. The map reads that packet off the wire and pairs it with
+A destination you have never stood at is a separate state: its label is drawn
+**red**, it takes no click from anywhere, and hovering it says why. The icon is
+left alone, since which kind of NPC the row travels from is worth reading either
+way.
+
+Home Points and Survival Guides have to be registered in person before they will
+travel to, which the game records as a bit per destination and sends as packet
+`0x63` type 6. The map reads that packet off the wire and pairs it with
 Uberwarp's destination list, so the row and the `/uw` it would send agree.
-Opening the map asks for a fresh one - the same `0x114` marker request the
-client makes when you open the in-game map - so registering a destination and
-opening the map again shows it unlocked without zoning. Unity Concords are open to every member, so they are never purple. If
-either piece is missing - no unlock data back from the client, a destination
-Uberwarp does not list - the row stays clickable rather than being locked out on
-a guess.
+Opening the map asks for a fresh one - the same `0x114` marker request the client
+makes when you open the in-game map - so registering a destination and opening
+the map again shows it unlocked without zoning. Unity Concords are open to every
+member, so they are never red. If either piece is missing - no masks back from
+the server, a destination Uberwarp does not list - the row stays clickable rather
+than being locked out on a guess.
 
 The three icons at the right of the search row filter it: dimming **Crystal**
 drops the Home Point rows, **Guide** the Survival Guides and **Unity** the Unity
@@ -108,7 +111,8 @@ e.g. `Windurst Woods - Home Point #2`.
 
 Clicking a favourite sends its warp, exactly as clicking the row it came from
 would; one you cannot use from where you stand is drawn dim and takes no press,
-and one you have not registered yet is purple, the same way a popup row is. The `^` and `v` on the left of each row move it up
+and one you have not registered yet reads red, the same way a popup row does.
+The `^` and `v` on the left of each row move it up
 and down the list, and right-clicking a favourite offers *Remove point from
 favorites list*. The list and its order are saved with the rest of your
 settings.
