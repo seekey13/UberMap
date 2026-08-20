@@ -241,19 +241,12 @@ local MSS_PREFIX  = '/mss ';
 local COL_MSS_ON  = 0x80FFFFFF;  -- 50% opacity: it sits over the map
 local COL_MSS_OFF = 0x40FFFFFF;  -- half that again, i.e. dimmed off
 
--- Favourites, in the viewport's bottom-left corner, mirroring Multisend.  The
+-- Favorites, in the viewport's bottom-left corner, mirroring Multisend.  The
 -- heart opens a panel of warp rows saved out of the zone popups, in the order
--- they were put in and moved to; clicking one sends its warp the same way the
--- popup row it came from does.
+-- they were put in and dragged to; clicking one sends its warp the same way
+-- the popup row it came from does.
 local FAV_ICON     = 'heart.png';
--- The reorder arrows, as a column each on the left of a row.  Drawn as text
--- rather than art: two glyphs against nine files to ship and load.
-local FAV_ARROW_W  = 14;   -- screen pixels per arrow column
-local FAV_UP       = '^';
-local FAV_DOWN     = 'v';
-local COL_FAV_ARROW = 0xFFFFFFFF;
-local COL_FAV_END   = 0x40FFFFFF;  -- an arrow at the end of the list, which does nothing
-local FAV_EMPTY     = 'Right-click a warp to add it here';
+local FAV_EMPTY    = 'Right-click a warp to add it here';
 
 -- The map data lives in lib/points.lua under the addon: the overview groups, in
 -- draw order so later groups land on top of earlier ones where they overlap,
@@ -290,7 +283,7 @@ local cfg = settings.load(default_settings:copy(true));
 
 -- A settings file written before a key existed is handed back as it was saved,
 -- without the new default filled in, so a character who used the map before
--- favourites would otherwise index a nil table.
+-- favorites would otherwise index a nil table.
 local function fill_defaults()
     cfg.toggle = cfg.toggle or T{};
     cfg.favs   = cfg.favs   or T{};
@@ -331,7 +324,11 @@ local ui = T{
     open_z      = nil,       -- nil until the first frame after opening reads it
     warp        = nil,       -- zone point whose warp popup is open
     warp_hot    = false,     -- cursor was inside that popup last frame
-    favs_open   = false,     -- favourites panel is up
+    favs_open   = false,     -- favorites panel is up
+    -- The favorite being dragged, as { i, live, moved } of the row that was
+    -- pressed: i follows the cursor as the list reorders under it, live is
+    -- whether it can travel, and moved tells a reorder from a plain click.
+    fav_drag    = nil,
     -- The right-click menu, as { x, y, key, row } of the warp row it was opened
     -- on, or nil while it is shut.  The row is carried rather than looked up
     -- again, since the panel it came from may be gone by the time it is picked.
@@ -342,7 +339,7 @@ local ui = T{
     moving      = false,     -- ctrl-drag in progress
     dirty       = false,     -- an edit is waiting to be written to lib/points.lua
     edit_name   = { '', },
-    edit_group  = { 'Regions', },
+    edit_group  = { '', },
 };
 
 -- Logging in, or switching characters, hands back that character's own file.
@@ -871,7 +868,7 @@ local function warp_cmd(label, row)
 end
 
 --[[
-* Favourites are saved flat rather than as a reference to a warp row: the row
+* Favorites are saved flat rather than as a reference to a warp row: the row
 * tables are rebuilt from lib/warps.lua on every load, so a saved reference
 * would not survive that file being edited.  'key' is the marker label the row
 * hung off, which is what warp_cmd wants alongside the row's own fields - and
@@ -903,23 +900,37 @@ local function fav_toggle(key, row)
 end
 
 --[[
-* Moves a favourite one place up (d = -1) or down (d = 1).  A move off either
-* end does nothing rather than wrapping, so the arrows on the first and last
-* rows are dead ends the way they look.
+* Takes the favorite at i out and puts it back in at j, which is what dragging
+* a row past its neighbours means: everything between the two shifts along by
+* one, rather than i and j trading places.  Neither end runs off the list,
+* since the slot a drag reads is clamped to it, so j is trusted.  Saving is
+* left to the caller: one drag lands on a run of these, one per row crossed.
 --]]
-local function fav_move(i, d)
-    local j = i + d;
-    if (j < 1 or j > #cfg.favs) then
-        return;
-    end
-    cfg.favs[i], cfg.favs[j] = cfg.favs[j], cfg.favs[i];
-    settings.save();
+local function fav_reorder(i, j)
+    table.insert(cfg.favs, j, table.remove(cfg.favs, i));
 end
 
--- What a favourite reads as: the zone the row hung off, then the row itself,
+-- What a favorite reads as: the zone the row hung off, then the row itself,
 -- e.g. 'Windurst Woods - Home Point #2'.
 local function fav_text(f)
     return ('%s - %s'):fmt(f.key, f.label);
+end
+
+--[[
+* The grid reference the favorite's row carries, e.g. '(F-11)', or nil for a
+* row with none.  Looked up rather than saved with the entry: lib/warps.lua is
+* where it comes from, so an edit there corrects favorites already listed, and
+* ones saved before this column existed get theirs without a migration.  WARPS
+* is read straight rather than through warp_rows, since a favorite is listed
+* whether or not its type's toggle is lit.
+--]]
+local function fav_pos(f)
+    for _, r in ipairs(WARPS[f.key] or {}) do
+        if (r.type == f.type and r.label == f.label) then
+            return r.pos;
+        end
+    end
+    return nil;
 end
 
 local function point_at(mx, my)
@@ -1237,13 +1248,13 @@ end
 --]]
 
 local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, row_h)
-    -- Favourites, pinned to the bottom-left corner opposite Multisend.  The
+    -- Favorites, pinned to the bottom-left corner opposite Multisend.  The
     -- heart opens and shuts the list; the list itself grows upwards from it,
     -- so the heart stays where it was put however long the list gets.
     local fav_y = view_h - SEARCH_MARGIN - row_h;
     if (icon_button('favs', FAV_ICON, SEARCH_MARGIN, fav_y, row_h,
                     ui.favs_open and COL_MSS_ON or COL_MSS_OFF,
-                    ui.favs_open and 'Hide favourites' or 'Show favourites')) then
+                    ui.favs_open and 'Hide favorites' or 'Show favorites')) then
         ui.favs_open = not ui.favs_open;
     end
 
@@ -1252,18 +1263,26 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
         local _, th = imgui.CalcTextSize(FAV_EMPTY);
         local n     = #cfg.favs;
 
-        -- Columns: two arrows, the warp type's icon, then the text.  An
-        -- empty list is one row of instructions with neither of the first
-        -- two, since there is nothing to reorder or travel on yet.
-        local arrow_x = POPUP_PAD;
-        local lab_x   = (n > 0)
-            and (arrow_x + FAV_ARROW_W * 2 + POPUP_PAD + POPUP_ICON + POPUP_PAD)
-            or POPUP_PAD;
+        -- Columns: the warp type's icon, then the text.  An empty list is
+        -- one row of instructions with neither, since there is nothing to
+        -- travel on yet.
+        local lab_x = (n > 0) and (POPUP_PAD + POPUP_ICON + POPUP_PAD)
+                              or POPUP_PAD;
+        -- The grid reference is a column of its own, the way the warp popup
+        -- lays it out, so every row's '(F-11)' lines up whatever it is hung
+        -- off.  A list where no row carries one has no column at all.
         local textw = (n > 0) and 0 or imgui.CalcTextSize(FAV_EMPTY);
+        local posw  = 0;
         for _, f in ipairs(cfg.favs) do
             textw = math.max(textw, imgui.CalcTextSize(fav_text(f)));
+            local p = fav_pos(f);
+            if (p ~= nil) then
+                posw = math.max(posw, imgui.CalcTextSize(p));
+            end
         end
-        local w = lab_x + textw + POPUP_PAD;
+        local pos_x = lab_x + textw + POPUP_PAD;
+        local w     = ((posw > 0) and (pos_x + posw) or (lab_x + textw))
+                      + POPUP_PAD;
         local h = POPUP_ROW * math.max(n, 1);
 
         local px = origin_x + SEARCH_MARGIN;
@@ -1277,32 +1296,24 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
         fdl:AddRect({ px, py }, { px + w, py + h }, COL_OUTLINE,
                     0, ImDrawCornerFlags_All, ICON_BORDER);
 
-        -- What the press this frame lands on, decided while drawing and
-        -- acted on after: fav_move reorders the list the loop is walking.
-        local up_i, down_i, go_i, ctx_i = nil, nil, nil, nil;
+        -- Which row the cursor is on, read while drawing and acted on after:
+        -- a drag reorders the list the loop is walking.
+        local hot_i, hot_live = nil, false;
+        local drag = ui.fav_drag;
         for i, f in ipairs(cfg.favs) do
             local ry   = py + POPUP_ROW * (i - 1);
-            -- The same reach test the popup rows use: a favourite only
+            -- The same reach test the popup rows use: a favorite only
             -- travels from the kind of NPC it was saved off.
             local live = f.type == ui.near_kind;
             local over = mouse_x >= px and mouse_x <= px + w
                          and mouse_y >= ry and mouse_y < ry + POPUP_ROW;
-            local ax   = px + arrow_x;
-            local on_up   = over and mouse_x < ax + FAV_ARROW_W;
-            local on_down = over and not on_up
-                            and mouse_x < ax + FAV_ARROW_W * 2;
-
             if (over) then
-                ctx_i = i;
-                if (on_up and i > 1) then
-                    up_i = i;
-                elseif (on_down and i < n) then
-                    down_i = i;
-                elseif (not on_up and not on_down and live) then
-                    go_i = i;
-                end
+                hot_i, hot_live = i, live;
             end
-            if (up_i == i or down_i == i or go_i == i) then
+            -- Lit: the row under the cursor, or while one is being dragged,
+            -- the slot the cursor has carried it to rather than the one it
+            -- was picked up from.
+            if ((drag ~= nil and drag.i == i) or (drag == nil and over)) then
                 fdl:AddRectFilled(
                     { px + ICON_BORDER, math.max(ry, py + ICON_BORDER) },
                     { px + w - ICON_BORDER,
@@ -1311,16 +1322,8 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
             end
 
             local ty = ry + (POPUP_ROW - th) / 2;
-            -- Arrows, centred in their columns and dimmed at the end of the
-            -- list they cannot move past.
-            local aw = imgui.CalcTextSize(FAV_UP);
-            fdl:AddText({ ax + (FAV_ARROW_W - aw) / 2, ty },
-                        (i > 1) and COL_FAV_ARROW or COL_FAV_END, FAV_UP);
-            aw = imgui.CalcTextSize(FAV_DOWN);
-            fdl:AddText({ ax + FAV_ARROW_W + (FAV_ARROW_W - aw) / 2, ty },
-                        (i < n) and COL_FAV_ARROW or COL_FAV_END, FAV_DOWN);
 
-            -- Unlike a popup row, a favourite comes back off disk, so its
+            -- Unlike a popup row, a favorite comes back off disk, so its
             -- type is only as good as the settings file: one no toggle
             -- names draws no icon rather than looking one up under a nil.
             local art = WARP_ICON[f.type];
@@ -1328,16 +1331,19 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
             if (art ~= nil) then tex, iw, ih = icon_texture(art); end
             if (tex ~= nil) then
                 local sc = math.min(POPUP_ICON / iw, POPUP_ROW / ih);
-                local ix = ax + FAV_ARROW_W * 2 + POPUP_PAD
-                           + (POPUP_ICON - iw * sc) / 2;
+                local ix = px + POPUP_PAD + (POPUP_ICON - iw * sc) / 2;
                 local iy = ry + (POPUP_ROW - ih * sc) / 2;
                 fdl:AddImage(tonumber(ffi.cast('uint32_t', tex)),
                              { ix, iy }, { ix + iw * sc, iy + ih * sc },
                              { 0, 0 }, { 1, 1 },
                              live and COL_ICON or COL_ICON_OFF);
             end
-            fdl:AddText({ px + lab_x, ty },
-                        live and COL_POPUP_TEXT or COL_POPUP_OFF, fav_text(f));
+            local col = live and COL_POPUP_TEXT or COL_POPUP_OFF;
+            fdl:AddText({ px + lab_x, ty }, col, fav_text(f));
+            local pos = fav_pos(f);
+            if (pos ~= nil) then
+                fdl:AddText({ px + pos_x, ty }, col, pos);
+            end
         end
         if (n == 0) then
             fdl:AddText({ px + lab_x, py + (POPUP_ROW - th) / 2 },
@@ -1351,31 +1357,55 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
         imgui.InvisibleButton('##ubermap_favs', { w, h });
         local fav_hot = mouse_x >= px and mouse_x <= px + w
                         and mouse_y >= py and mouse_y <= py + h;
-        ui.search_hot = ui.search_hot or fav_hot;
+        -- Held on to through a drag as well as a hover: a row dragged past
+        -- the ends of the list puts the cursor outside the panel, which would
+        -- otherwise hand the same press to the map and pan it.
+        ui.search_hot = ui.search_hot or fav_hot or ui.fav_drag ~= nil;
 
         -- A warp popup lying over this panel eats its presses, the same way
         -- one over a toggle does: the popup is anchored on a marker, which
         -- can put it in this corner.  Read a frame late, which is harmless
         -- since neither panel moves while it is open.
-        if (imgui.IsMouseClicked(0) and ui.ctx == nil and not ui.warp_hot) then
-            if (up_i ~= nil) then
-                fav_move(up_i, -1);
-            elseif (down_i ~= nil) then
-                fav_move(down_i, 1);
-            elseif (go_i ~= nil) then
-                -- The saved entry carries every field warp_cmd reads, so it
-                -- travels as the row it was taken from.
-                local f   = cfg.favs[go_i];
-                local cmd = warp_cmd(f.key, f);
-                if (cmd ~= nil) then
-                    send_cmd(cmd);
+        if (ui.fav_drag ~= nil) then
+            if (imgui.IsMouseDown(0)) then
+                -- Held: the row rides to whichever slot the cursor is over, so
+                -- the list reorders under the hand holding it.  Clamped to the
+                -- list, since the cursor is free to leave the panel.
+                local j = mm.clamp(
+                    math.floor((mouse_y - py) / POPUP_ROW) + 1, 1, n);
+                if (j ~= ui.fav_drag.i) then
+                    fav_reorder(ui.fav_drag.i, j);
+                    ui.fav_drag.i, ui.fav_drag.moved = j, true;
                 end
+            elseif (imgui.IsMouseReleased(0)) then
+                -- Let go: one that moved is a reorder to write out, one that
+                -- never left its row is a plain click, so it travels.
+                if (ui.fav_drag.moved) then
+                    settings.save();
+                elseif (ui.fav_drag.live) then
+                    -- The saved entry carries every field warp_cmd reads, so
+                    -- it travels as the row it was taken from.
+                    local f   = cfg.favs[ui.fav_drag.i];
+                    local cmd = warp_cmd(f.key, f);
+                    if (cmd ~= nil) then
+                        send_cmd(cmd);
+                    end
+                end
+                ui.fav_drag = nil;
+            else
+                -- The button came up while this panel was not drawn, i.e. the
+                -- map shut mid-drag.  The row keeps where it was dragged to;
+                -- it just does not also travel.
+                ui.fav_drag = nil;
             end
+        elseif (imgui.IsMouseClicked(0) and hot_i ~= nil
+                and ui.ctx == nil and not ui.warp_hot) then
+            ui.fav_drag = { i = hot_i, live = hot_live, moved = false };
         end
-        -- Right-click a listed favourite to take it back off the list, the
+        -- Right-click a listed favorite to take it back off the list, the
         -- same menu that put it on.
-        if (imgui.IsMouseClicked(1) and ctx_i ~= nil and not ui.warp_hot) then
-            local f = cfg.favs[ctx_i];
+        if (imgui.IsMouseClicked(1) and hot_i ~= nil and not ui.warp_hot) then
+            local f = cfg.favs[hot_i];
             ui.ctx = { x = mouse_x, y = mouse_y, fresh = true,
                        key = f.key, row = f };
         end
@@ -1430,7 +1460,7 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
             -- hot_row is the row a left-click would send, so it is only
             -- ever a live one; hot_any is the row under the cursor whether
             -- it is live or not, which is what the right-click menu goes
-            -- on - a destination can be favourited from anywhere, not only
+            -- on - a destination can be favorited from anywhere, not only
             -- from in front of the NPC that travels to it.
             local hot_row, hot_any = nil, nil;
             for i, r in ipairs(rows) do
@@ -1506,7 +1536,7 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                     end
                 end
             end
-            -- Right-click opens the favourites menu on the row under the
+            -- Right-click opens the favorites menu on the row under the
             -- cursor, live or not.
             if (imgui.IsMouseClicked(1) and hot_any ~= nil) then
                 ui.ctx = { x = mouse_x, y = mouse_y, fresh = true,
@@ -1520,7 +1550,7 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
 end
 
 --[[
-* The favourites right-click menu.  See draw_favs above for why it is out here.
+* The favorites right-click menu.  See draw_favs above for why it is out here.
 --]]
 local function draw_ctx_menu(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y)
     -- The right-click menu, drawn after both panels so it lands on top of
@@ -1841,7 +1871,7 @@ local function draw_map(view_w, view_h)
             settings.save();
         end
 
-        -- The three panels, in the order they stack: favourites over the map,
+        -- The three panels, in the order they stack: favorites over the map,
         -- a zone's warp list over that, and the right-click menu over both.
         draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, row_h);
         draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y);

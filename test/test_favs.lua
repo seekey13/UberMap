@@ -1,9 +1,9 @@
 --[[
-* Self-check for the favourites list.  A favourite is a warp row saved flat -
+* Self-check for the favorites list.  A favorite is a warp row saved flat -
 * the zone label it hung off plus the row's own fields - so it has to stay
 * usable as a warp row after a round trip through the settings file, keep the
 * order it was moved into, and match itself when the menu asks whether it is
-* already listed.  Mirrors fav_index/fav_toggle/fav_move/warp_cmd in
+* already listed.  Mirrors fav_index/fav_toggle/fav_reorder/fav_pos/warp_cmd in
 * ubermap.lua against the real data.  Run with any Lua 5.1+:
 *     lua test/test_favs.lua
 --]]
@@ -31,12 +31,19 @@ local function fav_toggle(key, row)
     end
 end
 
-local function fav_move(i, d)
-    local j = i + d;
-    if (j < 1 or j > #favs) then
-        return;
+local function fav_reorder(i, j)
+    table.insert(favs, j, table.remove(favs, i));
+end
+
+-- The grid reference is read back out of the warp data rather than saved, so
+-- a favorite has to be able to find its own row again.
+local function fav_pos(f)
+    for _, r in ipairs(WARPS[f.key] or {}) do
+        if (r.type == f.type and r.label == f.label) then
+            return r.pos;
+        end
     end
-    favs[i], favs[j] = favs[j], favs[i];
+    return nil;
 end
 
 local UW_TYPE = { home = 'hp', guide = 'sg', unity = 'uc' };
@@ -88,11 +95,11 @@ check(A.label == C.label,
 fav_toggle(A_ZONE, A);
 fav_toggle(B_ZONE, B);
 fav_toggle(C_ZONE, C);
-check(#favs == 3, 'three adds should leave three favourites, got ' .. #favs);
+check(#favs == 3, 'three adds should leave three favorites, got ' .. #favs);
 check(favs[1].label == A.label, 'first added should be first listed');
 check(favs[3].key == C_ZONE, 'last added should be last listed');
 
--- A saved favourite matches itself, and rows of another type or zone do not.
+-- A saved favorite matches itself, and rows of another type or zone do not.
 check(fav_index(A_ZONE, A) == 1, 'a listed row should be found');
 check(fav_index(A_ZONE, B) == 2, 'the guide row is its own entry');
 -- A and C are the same row but for the zone they hang off, so they stay two
@@ -106,28 +113,46 @@ fav_toggle(B_ZONE, B);
 check(#favs == 2, 'toggling a listed row should drop it, got ' .. #favs);
 check(fav_index(B_ZONE, B) == nil, 'the dropped row should no longer be found');
 check(fav_index(A_ZONE, A) == 1, 'dropping one should leave the others');
-fav_toggle(B_ZONE, B);  -- back on the end, for the moves below
+fav_toggle(B_ZONE, B);  -- back on the end, for the drags below
 
--- Reordering: down then up returns the list to where it started, and a move
--- off either end does nothing rather than wrapping.
-local first = favs[1].label;
-fav_move(1, 1);
-check(favs[2].label == first, 'moving down should put it second');
-fav_move(2, -1);
-check(favs[1].label == first, 'moving back up should undo it');
-fav_move(1, -1);
-check(favs[1].label == first, 'up off the top should do nothing');
-fav_move(#favs, 1);
-check(favs[1].label == first, 'down off the bottom should do nothing');
+-- Reordering: dragging down then back up returns the list to where it started,
+-- the rows a dragged one passes shift along rather than trading places, and a
+-- drag onto the row it started on leaves the list alone.
+local first, second, last = favs[1].label, favs[2].label, favs[#favs].label;
+fav_reorder(1, 2);
+check(favs[2].label == first, 'dragging down should put it second');
+check(favs[1].label == second, 'the row it passed should shift up');
+fav_reorder(2, 1);
+check(favs[1].label == first, 'dragging back up should undo it');
+fav_reorder(1, #favs);
+check(favs[#favs].label == first, 'dragging to the end should put it last');
+check(favs[#favs - 1].label == last, 'the rows it passed should all shift up');
+fav_reorder(#favs, 1);
+check(favs[1].label == first, 'dragging back to the top should undo it');
+fav_reorder(1, 1);
+check(favs[1].label == first, 'a drag onto its own row should do nothing');
 
--- The saved entry carries every field warp_cmd reads, so a favourite sends the
+-- A favorite finds its own row again, so the list can draw the grid reference
+-- the popup drew without saving a copy of it.
+for _, f in ipairs(favs) do
+    local row;
+    for _, r in ipairs(WARPS[f.key]) do
+        if (r.type == f.type and r.label == f.label) then row = r; end
+    end
+    check(fav_pos(f) == row.pos,
+          'a favorite should read its row\'s grid reference: ' .. f.label);
+end
+check(fav_pos({ key = 'Nowhere At All', type = 'home', label = 'Home Point #1' })
+      == nil, 'a favorite off an unknown zone should have no grid reference');
+
+-- The saved entry carries every field warp_cmd reads, so a favorite sends the
 -- same line the popup row it came from does.
 for _, f in ipairs(favs) do
     local from_row = warp_cmd(f.key, f);
-    check(from_row ~= nil, 'a favourite should build a /uw: ' .. f.key .. ' - ' .. f.label);
+    check(from_row ~= nil, 'a favorite should build a /uw: ' .. f.key .. ' - ' .. f.label);
 end
 check(warp_cmd(A_ZONE, favs[fav_index(A_ZONE, A)]) == warp_cmd(A_ZONE, A),
-      'a favourite should send exactly what its row sends');
+      'a favorite should send exactly what its row sends');
 
 -- Settings round trip: the library writes tables out key by key and reads them
 -- back as plain data, so an entry has to hold only strings.  A row field it
@@ -135,13 +160,13 @@ check(warp_cmd(A_ZONE, favs[fav_index(A_ZONE, A)]) == warp_cmd(A_ZONE, A),
 for _, f in ipairs(favs) do
     for k, v in pairs(f) do
         check(type(k) == 'string' and type(v) == 'string',
-              ('favourite field %s is a %s, which will not survive settings')
+              ('favorite field %s is a %s, which will not survive settings')
               :format(tostring(k), type(v)));
     end
 end
 
 if (fails == 0) then
-    print(('ok: %d favourites, add/remove, reorder and /uw all hold'):format(#favs));
+    print(('ok: %d favorites, add/remove, reorder and /uw all hold'):format(#favs));
 else
     print(('%d check(s) failed'):format(fails));
     os.exit(1);
