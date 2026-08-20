@@ -224,7 +224,7 @@ local RING_BAG_NUM = { [0] = 0, [8] = 1, [10] = 2, [11] = 3, [12] = 4,
 
 -- Warp popup: a header row and one row per destination, hung off the zone
 -- point that opened it.
-local POPUP_PAD      = 8;   -- screen pixels of margin inside the panel
+local POPUP_PAD      = 8;   -- screen pixels of margin on either side of the panel
 local POPUP_ROW      = 24;  -- row pitch, screen pixels
 local POPUP_ICON     = 24;  -- the box a type icon is fitted into
 local POPUP_GAP      = 6;   -- screen pixels between the marker and the panel
@@ -1433,7 +1433,7 @@ local function draw_map(view_w, view_h)
                 local pos_x = lab_x + labw + POPUP_PAD;
                 local w     = ((posw > 0) and (pos_x + posw) or (lab_x + labw))
                               + POPUP_PAD;
-                local h = POPUP_PAD * 2 + POPUP_ROW * #rows;
+                local h = POPUP_ROW * #rows;
 
                 -- Hung under the marker and clamped both ways, so a point near
                 -- an edge does not push the panel off the viewport.
@@ -1451,7 +1451,7 @@ local function draw_map(view_w, view_h)
                             0, ImDrawCornerFlags_All, ICON_BORDER);
                 local hot_row = nil;
                 for i, r in ipairs(rows) do
-                    local ry = py + POPUP_PAD + POPUP_ROW * (i - 1);
+                    local ry = py + POPUP_ROW * (i - 1);
                     -- A row only travels from the kind of NPC the player is
                     -- stood at, so one of another kind is drawn dim and takes
                     -- no hover or press.  Listed rather than dropped: the row
@@ -1466,9 +1466,11 @@ local function draw_map(view_w, view_h)
                     if (live and mouse_x >= px and mouse_x <= px + w
                         and mouse_y >= ry and mouse_y < ry + POPUP_ROW) then
                         hot_row = r;
-                        pdl:AddRectFilled({ px + ICON_BORDER, ry },
-                                          { px + w - ICON_BORDER, ry + POPUP_ROW },
-                                          COL_HOVER, 0, ImDrawCornerFlags_All);
+                        pdl:AddRectFilled(
+                            { px + ICON_BORDER, math.max(ry, py + ICON_BORDER) },
+                            { px + w - ICON_BORDER,
+                              math.min(ry + POPUP_ROW, py + h - ICON_BORDER) },
+                            COL_HOVER, 0, ImDrawCornerFlags_All);
                     end
                     local tex, iw, ih = icon_texture(WARP_ICON[r.type]);
                     if (tex ~= nil) then
