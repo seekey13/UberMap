@@ -1,173 +1,85 @@
 # UberMap
 
-Ashita v4 addon by Seekey. Pops up a zoomable, pannable server map whenever you
-interact with a Home Point, Survival Guide or Unity Concord.
+Ashita v4 addon by Seekey. A zoomable, pannable map of Vana'diel that pops up when you talk to a Home Point, Survival Guide or Unity Concord, and warps you from it (using Uberwarp).
 
 ## Install
 
-Drop the `UberMap` folder into `Ashita/addons/`, then:
-
-```
-/addon load ubermap
-```
-
-## Use
+Drop the `UberMap` folder into `Ashita/addons/`, then `/addon load ubermap`.
 
 | Command | Effect |
 | --- | --- |
-| `/ubermap` or `/um` | Toggle the map |
+| `/ubermap`, `/um` | Toggle the map |
 | `/ubermap edit` | Toggle the point editor |
 
-The button at the right of the search row switches between past and present: it
-reads **Past** while the present-day map is up and **Present** while the past one
-is. Switching swaps `Present_Map.jpg` for `Past_Map.jpg` and draws only the
-markers whose `time` matches. The two images have different sizes and share no
-coordinates, so the view resets to the whole map on each switch, and only one
-image is held in memory at a time.
+## The map
 
-Mouse wheel zooms about the cursor and left-drag pans. Hold **shift** while
-dragging to move the window itself. The map also opens on its own when you talk
-to a Home Point, a Survival Guide or a Unity Concord NPC; if it is already open
-your current view is left alone.
+Mouse wheel zooms, left-drag pans, **shift**-drag moves the window.  
+Talking to a warp NPC opens it; or use the command `/uw`.  
+It closes itself once you walk away or a warp is used.  
 
-It closes itself once you walk a yalm from where it opened, so the map is never
-left covering the screen while you move. Zoning counts as moving. Clicking a
-warp row closes it too, since the warp is what the map was opened for.
+**Past**/**Present**.  
 
 ## Warp list
 
-Left-click a zone point - the markers that appear once the view is zoomed past
-the overview - and a panel opens on it listing that zone's warp destinations:
-its Home Points, Survival Guide and Unity Concord, each with the icon of its kind.
-Clicking a row sends its `/uw` command - `/uw hp <zone>` for the first Home Point
-and `/uw hp <zone>3` for the third, `/uw sg <zone>` for a Survival Guide and
-`/uw uc <zone>` for a Unity Concord - and closes the panel. Clicking
-anywhere else closes it, as does zooming, panning, or switching past/present,
-and clicking another point replaces it. While the cursor is over the panel the
-map underneath neither pans nor zooms.
+Left-click a zone point — for a panel of that zone's destinations. Clicking a row sends its command and closes the panel:
 
-Because the map opens when you talk to the NPC, the click lands while its menu
-is still up, and Uberwarp cannot start its own conversation with one already
-open. So the command waits: Escape is pressed for you, and it goes out once the
-game reports the event over. A menu more than one level deep gets another press
-every half second, and after two seconds the map gives up and says so rather
-than holding the command. Nothing is injected at the packet level - the client
-sends its own cancel, exactly as if you had pressed Escape yourself.
+| Kind | Command |
+| --- | --- |
+| Home Point #1 | `/uw hp <zone>` |
+| Home Point #3 | `/uw hp <zone>3` |
+| Survival Guide | `/uw sg <zone>` |
+| Unity Concord | `/uw uc <zone>` |
 
-A row only travels from the kind of NPC you are stood at, so rows of any other
-kind are drawn greyed out and take no click: the panel still lists the
-destination and its icon says what to walk up to. Stand away from every warp NPC
-and the whole panel reads grey.
+### Row states
 
-A destination you have never stood at is a separate state: its label is drawn
-**red**, it takes no click from anywhere, and hovering it says why. The icon is
-left alone, since which kind of NPC the row travels from is worth reading either
-way.
+| Look | Meaning |
+| --- | --- |
+| Normal | Travels now |
+| Grey | Wrong kind of NPC for where you stand; the icon says what to walk up to |
+| **Red** | Never registered; takes no click from anywhere, hover says why |
 
-Home Points and Survival Guides have to be registered in person before they will
-travel to, which the game records as a bit per destination and sends as packet
-`0x63` type 6. The map reads that packet off the wire and pairs it with
-Uberwarp's destination list, so the row and the `/uw` it would send agree.
-Opening the map asks for a fresh one - the same `0x114` marker request the client
-makes when you open the in-game map - so registering a destination and opening
-the map again shows it unlocked without zoning. Unity Concords are open to every
-member, so they are never red. If either piece is missing - no masks back from
-the server, a destination Uberwarp does not list - the row stays clickable rather
-than being locked out on a guess.
+## Toolbar
 
-The three icons at the right of the search row filter it: dimming **Crystal**
-drops the Home Point rows, **Guide** the Survival Guides and **Unity** the Unity
-Warps. A zone whose every row is filtered out - or that has no warps at all -
-does not open a panel.
+| Icon | Where | Does |
+| --- | --- | --- |
+| **Crystal**, **Guide**, **Unity** | Right of search | Dim one to drop that kind of row. A zone with nothing left opens no panel |
+| **Warp** | After them | `/item "Instant Warp" <me>` and closes the map. Lit only while the scroll (4181) is carried |
+| **Warp Ring** | After that | Two steps, see below |
+| **Multisend** | Bottom right | Prefixes every command the map sends with `/mss ` |
+| **Heart** | Bottom left | Opens favorites |
 
-A fourth icon, **Warp**, sits after them and is not a filter: it reads an
-Instant Warp scroll (item 4181) out of your bag, sending
-`/item "Instant Warp" <me>` and closing the map. It is lit only while one is
-carried and takes no click while it is not; the bag is re-read twice a second on
-the same beat as the check below.
+**Warp Ring** works in two steps, since a ring must be worn before use. It looks for item 28540 in your bag and the eight Mog Wardrobes the client will equip out of, re-read twice a second like the scroll. Carrying none: dimmed and dead. Carrying one unworn: dimmed, and clicking sends `/equip ring1 "Warp Ring" <container>`, keeps the map open and goes dead for nine seconds while the ring lands. Wearing one: lit, and clicking sends `/item "Warp Ring" <me>` and closes the map. Hovering says which step it is on.
 
-A fifth icon, **Warp Ring**, sits after that one and works in two steps, because
-a ring has to be worn before it can be used. It looks for the ring (item 28540)
-in your bag and in the eight Mog Wardrobes - the mog house storage the client
-will equip out of - on the same twice-a-second beat. Carrying none leaves it
-dimmed and dead. Carrying one you are not wearing leaves it dimmed, and clicking
-it sends `/equip ring1 "Warp Ring" <container>` and keeps the map open, dead for
-nine seconds while the ring lands. Wearing one lights it, and clicking it sends
-`/item "Warp Ring" <me>` and closes the map. Hovering any of those steps says
-which one it is on.
+While **Multisend** is lit every command — warp rows, scroll and ring alike — goes out through [Multisend](https://github.com/ThornyFFXI/Multisend) and repeats on every logged-in character. Off and dimmed until clicked.
 
-In the bottom-right corner, **Multisend** sends for your whole party of
-characters: while it is lit every command the map sends - warp rows and the
-Instant Warp scroll and the Warp Ring alike - goes out with a `/mss ` prefix, so
-[Multisend](https://github.com/ThornyFFXI/Multisend) repeats it on every
-logged-in character. It is off, and drawn dimmed, until clicked.
+**Favorites** are warp rows you saved, in your order. Right-click any row for *Add point to favorites list* — a row you cannot travel on right now works too, so a destination can be saved from anywhere. Each is named by its zone and row, e.g. `Windurst Woods - Home Point #2`. Clicking one warps exactly as its original row would, and it reads grey or red on the same two tests. `^` and `v` reorder; right-click offers *Remove point from favorites list*.
 
-In the bottom-left corner opposite it, the **heart** opens your **favorites**:
-warp rows you have saved, in the order you put them in. Right-click any row in a
-zone's warp list to *Add point to favorites list* - a row you cannot travel on
-from where you stand works too, so you can save a destination from anywhere on
-the map. The list names each one by the zone it hangs off and the row itself,
-e.g. `Windurst Woods - Home Point #2`.
+## Filters set themselves
 
-Clicking a favourite sends its warp, exactly as clicking the row it came from
-would; one you cannot use from where you stand is drawn dim and takes no press,
-and one you have not registered yet reads red, the same way a popup row does.
-The `^` and `v` on the left of each row move it up
-and down the list, and right-clicking a favourite offers *Remove point from
-favorites list*. The list and its order are saved with the rest of your
-settings.
+Stand at a warp NPC and the map narrows to it: only that kind of row stays lit, since it is the only one you can travel on from there. Walk away and all three light again. Your own clicks are not overridden — a toggle you set by hand stands until you move to a different kind of NPC.
 
-The map sets those toggles for you, from what you are standing next to: within
-10 yalms of a Home Point, a Survival Guide or a Unity Concord NPC - Igsli in
-Bastok Markets, Urbiolaine in Southern San d'Oria, Teldro-Kesdrodo or Yonolala
-in Windurst Woods - only that kind stays lit, since that NPC is the only one you
-can warp from. Walk away and all three light again.
+A dimmed filter reaches the map itself: a zone marker with no row left fades back the way an unfocused group does and stops taking the cursor. Dim **Guide** and **Unity** and only Home Point zones stay lit.
 
-It is re-read twice a second while the map is up, but the toggles are only set
-when the answer changes, so a toggle clicked by hand stands until you walk off
-the NPC or up to a different kind.
+The Multisend gate, your favorites and the three toggles are saved per character in `config/addons/UberMap/<name>_<server id>/settings.lua` the moment you change one.
 
-While any of those three is dimmed the filter reaches the map itself: a zone
-marker with no row left to show fades back the way an unfocused group does, and
-stops taking the cursor. Dimming **Guide** and **Unity** so leaves only the
-zones with a Home Point lit. With all three lit the map reads plain again.
+## Data
 
-The Multisend gate, your favorites and those three toggles are remembered per character, in
-`config/addons/UberMap/<name>_<server id>/settings.lua`, written the moment you
-change one, so your choices stand the next time you log in.
-
-The data lives in `lib/warps.lua` under the addon, keyed by the zone name, which is
-the point's `label` in `lib/points.lua`. A row whose key is not the game's own name
-for the zone - `Delkfutt Tower`, the two halves of Windurst Waters - carries a
-`zone` field with the name `/uw` wants. The Campaign zones are named `[S]`, the
-way Uberwarp spells them, so they need no override. `pos` is the
-grid reference, held apart from the label so the panel can draw it in a column of
-its own and every row's lines up; a row with no grid reference leaves it out. Rows
-are listed in the order the file gives them:
+`lib/warps.lua` is keyed by zone name — the point's `label` in `lib/points.lua`:
 
 ```lua
 ["Aht Urhgan Whitegate"] = {
-    { type = 'home',  label = 'Home Point #1', pos = '(H-9)' },
+    { type = 'home',  label = 'Home Point #1',  pos = '(H-9)' },
     { type = 'guide', label = 'Survival Guide', pos = '(L-8)' },
 },
 ```
 
-`type` is `home`, `guide` or `unity`, picking `assets/Crystal.png`,
-`assets/Guide.png` or `assets/Unity.png`. Unlike `lib/points.lua` the file is an
-overlay: if it is missing or broken the addon says so once and runs on without
-the panels.
+`type` is `home`, `guide` or `unity`, picking `assets/Crystal.png`, `Guide.png` or `Unity.png`. `pos` is the grid reference, held apart from the label so the panel draws it in a column of its own; a row without one leaves it out. Rows draw in file order. A key that is not the game's own name for the zone — `Delkfutt Tower`, the two halves of Windurst Waters — carries a `zone` field with the name `/uw` wants; Campaign zones are written `[S]` the way Uberwarp spells them, so they need no override. Unlike `lib/points.lua` this file is an overlay: missing or broken, the addon says so once and runs on without panels.
 
 ## Coordinates
 
-Hover the map and the bottom-left corner shows the **source-image pixel** under
-the cursor, measured on the map's own image: `0..5504` across and `0..3072` down
-on `assets/Present_Map.jpg`, `0..4096` both ways on `assets/Past_Map.jpg`.
-Zooming and panning change where a coordinate is drawn, never what it is, so the
-same spot on a map always reads the same numbers - but the same numbers mean
-different places on the two maps.
+Hovering shows the **source-image pixel** under the cursor, bottom left: `0..5504` across by `0..3072` down on `Present_Map.jpg`, `0..4096` both ways on `Past_Map.jpg`. Zoom and pan change where a coordinate is drawn, never what it is — but the same numbers mean different places on the two maps.
 
-Icons are listed in `ICONS` in `ubermap.lua` - a file in `assets/` plus the
-coordinate its centre sits on - and are drawn rounded with a black border:
+Icons are listed in `ICONS` in `ubermap.lua`, a file in `assets/` plus the coordinate its centre sits on, drawn rounded with a black border:
 
 ```lua
 { file = 'Bastok.jpg', x = 1340, y = 1886 },
@@ -175,25 +87,13 @@ coordinate its centre sits on - and are drawn rounded with a black border:
 
 ## Placing points in game
 
-`/ubermap edit` turns on the point editor. **Ctrl+click** the map to drop a
-point, or to grab one already there; keep the button held to drag it. The panel
-under the search box renames it, sets its group, and deletes it. Plain drag
-still pans, so only ctrl-drag moves points.
+`/ubermap edit` turns on the editor. **Ctrl+click** the map to drop a point or grab one, hold to drag; plain drag still pans. The panel under the search box renames, regroups and deletes.
 
-Every change is written to `lib/points.lua` under the addon, which is loaded back
-at startup - reloading the addon or the game does not lose the work. That file
-holds all the map data: `groups` for the overview tiers drawn when zoomed out,
-`points` for the zone markers drawn when zoomed in. Every marker carries a
-`time` tag - `'present'` or `'past'` - naming the map it belongs to, and is drawn
-only while that map is up. Points dropped with the editor take the map on screen
-at the time; a row with no tag is drawn on neither map.
+Changes are written to `lib/points.lua`, which is loaded back at startup, so reloading loses nothing. That file holds `groups` for the overview tiers drawn zoomed out and `points` for the zone markers drawn zoomed in. Every marker carries a `time` tag — `'present'` or `'past'` — and is drawn only on that map; points dropped with the editor take the map on screen, and a row with no tag is drawn on neither.
 
-Only the rows under `points` are editable. The `groups` icons are drawn but
-cannot be selected, moved, or deleted; edit those in `lib/points.lua` by hand.
+Only `points` rows are editable. `groups` icons are drawn but cannot be selected, moved or deleted — edit those by hand.
 
-If Home Points do not trigger it on your server, they are named differently
-there: `WARP_NPC` in `ubermap.lua` holds the name patterns, for Survival Guides
-and Unity Concord NPCs as well.
+If Home Points do not trigger the map on your server they are named differently there: `WARP_NPC` in `ubermap.lua` holds the name patterns for all three kinds.
 
 ## Development
 
@@ -211,9 +111,7 @@ lua test/test_unlocks.lua   # the unlock bit test, and every alias Uberwarp know
 
 ## Credits
 
-This addon wouldn't work or look good without:
-
-- Thorny - [Uberwarp](https://github.com/ThornyFFXI/Uberwarp) and
+- Thorny — [Uberwarp](https://github.com/ThornyFFXI/Uberwarp) and
   [Multisend](https://github.com/ThornyFFXI/Multisend)
 - The [FFXI Remapster Project](https://remapster.com/)
 
