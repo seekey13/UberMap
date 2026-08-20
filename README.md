@@ -59,6 +59,17 @@ kind are drawn greyed out and take no click: the panel still lists the
 destination and its icon says what to walk up to. Stand away from every warp NPC
 and the whole panel reads grey.
 
+A destination you have never stood at is a separate state: it is drawn
+**purple**, takes no click from anywhere, and hovering it says why. Home Points
+and Survival Guides have to be registered in person before they will travel to,
+which the game records as a bit per destination and hands the client on zoning
+in; the map reads the same bits the NPC's own menu greys its rows on, and pairs
+them with Uberwarp's destination list so the row and the `/uw` it would send
+agree. Unity Concords are open to every member, so they are never purple. If
+either piece is missing - no unlock data back from the client, a destination
+Uberwarp does not list - the row stays clickable rather than being locked out on
+a guess.
+
 The three icons at the right of the search row filter it: dimming **Crystal**
 drops the Home Point rows, **Guide** the Survival Guides and **Unity** the Unity
 Warps. A zone whose every row is filtered out - or that has no warps at all -
@@ -95,7 +106,7 @@ e.g. `Windurst Woods - Home Point #2`.
 
 Clicking a favourite sends its warp, exactly as clicking the row it came from
 would; one you cannot use from where you stand is drawn dim and takes no press,
-the same way a popup row is. The `^` and `v` on the left of each row move it up
+and one you have not registered yet is purple, the same way a popup row is. The `^` and `v` on the left of each row move it up
 and down the list, and right-clicking a favourite offers *Remove point from
 favorites list*. The list and its order are saved with the rest of your
 settings.
@@ -188,6 +199,7 @@ lua test/test_warps.lua     # every warp row builds a /uw the game takes
 lua test/test_toggles.lua   # the layer toggles against the real points
 lua test/test_ring.lua      # the Warp Ring icon's equip-then-use steps
 lua test/test_favs.lua      # favorites: add, remove, reorder and the /uw they send
+lua test/test_unlocks.lua   # the unlock bit test, and every alias Uberwarp knows
 ```
 
 ## Credits

@@ -25,6 +25,7 @@ local imgui = require('imgui');
 local ffi   = require('ffi');
 local d3d   = require('d3d8');
 local mm    = require('lib.mapmath');
+local unlocks = require('lib.unlocks');
 
 local C       = ffi.C;
 local d3d8dev = d3d.get_device();
@@ -231,6 +232,16 @@ local POPUP_GAP      = 6;   -- screen pixels between the marker and the panel
 local COL_POPUP_BG   = 0xE0101010;  -- near black, a little of the map showing through
 local COL_POPUP_TEXT = 0xFFFFFFFF;  -- the panel has its own ground, so white reads
 local COL_POPUP_OFF  = 0x60FFFFFF;  -- a row whose kind of NPC is not in reach
+-- Purple, held apart from the dim above: not being in front of the right NPC is
+-- a thing the player can walk off and fix, while a destination they have never
+-- stood at is not, so the two do not read the same.
+local COL_POPUP_LOCK = 0xFFFF60C0;
+local COL_ICON_LOCK  = 0xC0FF60C0;  -- the same hue, at the tint the icons take
+-- What a purple row says when the cursor stops on it.
+local LOCK_TIP = T{
+    home  = 'Not registered - interact with this Home Point once to unlock it',
+    guide = 'Not registered - interact with this Survival Guide once to unlock it',
+};
 
 -- Multisend, in the viewport's bottom-right corner.  While it is lit every
 -- command the map sends goes out through Thorny's Multisend instead of straight
@@ -308,6 +319,7 @@ local ui = T{
     press       = nil,       -- marker the left button went down on
     near_kind   = false,     -- warp type last seen in reach; false until checked
     has_warp    = false,     -- an Instant Warp scroll was in the bag last poll
+    masks       = nil,       -- teleport mask block as of the last poll, or nil
     ring        = 'none',    -- Warp Ring step: none, equip or use, as of last poll
     ring_bag    = nil,       -- /equip container number the ring was found in
     -- os.clock() an equip was asked for, for the wait.  Starts a whole wait in
@@ -567,6 +579,18 @@ local function ring_worn()
 end
 
 --[[
+* The teleport mask block the client keeps, or nil while it has none.  Read
+* through pcall the way the other memory reads here are: an Ashita that does
+* not hand this back leaves every row lit rather than taking the addon down.
+--]]
+local function teleport_masks()
+    local ok, m = pcall(function ()
+        return AshitaCore:GetMemoryManager():GetPlayer():GetHomepointMasks();
+    end);
+    return (ok and type(m) == 'table') and m or nil;
+end
+
+--[[
 * The step the ring icon is on, from what the poll found and whether an equip
 * is still landing: 'none' when none is held, 'use' when one is worn, 'equip'
 * otherwise.  Only 'use' and 'equip' take a press.
@@ -593,6 +617,7 @@ local function poll_near(now)
     end
     ui.near_at = now;
     ui.has_warp = have_warp_item();
+    ui.masks    = teleport_masks();
     ui.ring_bag = ring_bag();
     ui.ring     = ring_step(ui.ring_bag ~= nil, ring_worn(),
                             now - ui.ring_at < RING_EQUIP_WAIT);
@@ -832,6 +857,11 @@ local function load_warps()
 end
 load_warps();
 
+-- Uberwarp's own destination data, which is where the unlock bits come from.
+-- Read out of the install rather than shipped alongside the map: it is the
+-- same copy Uberwarp performs the warp out of, so the two cannot drift.
+unlocks.load(('%s/resources/ashitahelper/uberwarp/'):fmt(AshitaCore:GetInstallPath()));
+
 --[[
 * The warp rows of a zone that the toggles leave lit, in the order the data
 * lists them.  nil when the zone has none, which is what keeps the popup shut.
@@ -854,17 +884,35 @@ end
 --]]
 local UW_TYPE = T{ home = 'hp', guide = 'sg', unity = 'uc' };
 
-local function warp_cmd(label, row)
-    local kind = UW_TYPE[row.type];
-    if (kind == nil) then
-        return nil;
-    end
+--[[
+* The destination half of that line, which is also the name Uberwarp files its
+* own data under, so lib/unlocks.lua can be asked about a row by the very
+* string the command for it would carry.
+--]]
+local function warp_alias(label, row)
     -- The map writes the Campaign zones '(S)', the game calls them '[S]'.
     local zone = (row.zone or label):gsub('%(S%)$', '[S]');
     -- The first Home Point of a zone is the bare name: '#1' is the default the
     -- command falls back to, so sending it would be a zone the server rejects.
     local n = (row.type == 'home') and row.label:match('^Home Point #(%d+)') or nil;
-    return ('/uw %s %s%s'):fmt(kind, zone, (n ~= '1') and n or '');
+    return ('%s%s'):fmt(zone, (n ~= nil and n ~= '1') and n or '');
+end
+
+local function warp_cmd(label, row)
+    local kind = UW_TYPE[row.type];
+    if (kind == nil) then
+        return nil;
+    end
+    return ('/uw %s %s'):fmt(kind, warp_alias(label, row));
+end
+
+--[[
+* Whether the row's destination is one the player has stood at.  One that is
+* not draws purple and takes no press: the /uw for it would be turned down at
+* the NPC, and a row that looks live but does nothing reads as a broken map.
+--]]
+local function warp_known(label, row)
+    return unlocks.known(row.type, warp_alias(label, row), ui.masks);
 end
 
 --[[
@@ -1298,17 +1346,23 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
 
         -- Which row the cursor is on, read while drawing and acted on after:
         -- a drag reorders the list the loop is walking.
-        local hot_i, hot_live = nil, false;
+        local hot_i, hot_live, hot_lock = nil, false, nil;
         local drag = ui.fav_drag;
         for i, f in ipairs(cfg.favs) do
             local ry   = py + POPUP_ROW * (i - 1);
-            -- The same reach test the popup rows use: a favorite only
-            -- travels from the kind of NPC it was saved off.
-            local live = f.type == ui.near_kind;
+            -- The same two tests the popup rows use: a favorite travels only
+            -- from the kind of NPC it was saved off, and only to somewhere the
+            -- player has registered.  A favorite can outlive neither, so both
+            -- are asked again every frame rather than saved with the entry.
+            local live  = f.type == ui.near_kind;
+            local known = warp_known(f.key, f);
             local over = mouse_x >= px and mouse_x <= px + w
                          and mouse_y >= ry and mouse_y < ry + POPUP_ROW;
             if (over) then
-                hot_i, hot_live = i, live;
+                hot_i, hot_live = i, live and known;
+                if (not known) then
+                    hot_lock = f.type;
+                end
             end
             -- Lit: the row under the cursor, or while one is being dragged,
             -- the slot the cursor has carried it to rather than the one it
@@ -1336,9 +1390,11 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
                 fdl:AddImage(tonumber(ffi.cast('uint32_t', tex)),
                              { ix, iy }, { ix + iw * sc, iy + ih * sc },
                              { 0, 0 }, { 1, 1 },
-                             live and COL_ICON or COL_ICON_OFF);
+                             (not known) and COL_ICON_LOCK
+                             or live and COL_ICON or COL_ICON_OFF);
             end
-            local col = live and COL_POPUP_TEXT or COL_POPUP_OFF;
+            local col = (not known) and COL_POPUP_LOCK
+                        or live and COL_POPUP_TEXT or COL_POPUP_OFF;
             fdl:AddText({ px + lab_x, ty }, col, fav_text(f));
             local pos = fav_pos(f);
             if (pos ~= nil) then
@@ -1361,6 +1417,12 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
         -- the ends of the list puts the cursor outside the panel, which would
         -- otherwise hand the same press to the map and pan it.
         ui.search_hot = ui.search_hot or fav_hot or ui.fav_drag ~= nil;
+        -- Why a purple favorite does not travel.  Vetoed by a warp popup over
+        -- this panel, the same way item_tip vetoes: the popup is anchored on a
+        -- marker and can land in this corner.
+        if (hot_lock ~= nil and not ui.warp_hot and LOCK_TIP[hot_lock] ~= nil) then
+            imgui.SetTooltip(LOCK_TIP[hot_lock]);
+        end
 
         -- A warp popup lying over this panel eats its presses, the same way
         -- one over a toggle does: the popup is anchored on a marker, which
@@ -1462,7 +1524,9 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
             -- it is live or not, which is what the right-click menu goes
             -- on - a destination can be favorited from anywhere, not only
             -- from in front of the NPC that travels to it.
-            local hot_row, hot_any = nil, nil;
+            -- hot_lock is the warp type of a purple row under the cursor, so
+            -- the tooltip below can say why that row will not travel.
+            local hot_row, hot_any, hot_lock = nil, nil, nil;
             for i, r in ipairs(rows) do
                 local ry = py + POPUP_ROW * (i - 1);
                 -- A row only travels from the kind of NPC the player is
@@ -1473,6 +1537,10 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                 -- nothing is in reach; neither is a type, so both read as
                 -- out of reach.
                 local live = r.type == ui.near_kind;
+                -- A destination the player has never stood at is refused at
+                -- the NPC whether or not they are in front of one, so it is
+                -- drawn purple and takes no press either.
+                local known = warp_known(ui.warp.label, r);
                 -- The hover is drawn straight into the list rather than
                 -- coming off an ImGui item, for the same reason the click
                 -- below is tested by hand: the panel is one InvisibleButton.
@@ -1480,8 +1548,11 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                              and mouse_y >= ry and mouse_y < ry + POPUP_ROW;
                 if (over) then
                     hot_any = r;
+                    if (not known) then
+                        hot_lock = r.type;
+                    end
                 end
-                if (live and over) then
+                if (live and known and over) then
                     hot_row = r;
                     pdl:AddRectFilled(
                         { px + ICON_BORDER, math.max(ry, py + ICON_BORDER) },
@@ -1499,10 +1570,12 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                     pdl:AddImage(tonumber(ffi.cast('uint32_t', tex)),
                                  { ix, iy }, { ix + iw * sc, iy + ih * sc },
                                  { 0, 0 }, { 1, 1 },
-                                 live and COL_ICON or COL_ICON_OFF);
+                                 (not known) and COL_ICON_LOCK
+                                 or live and COL_ICON or COL_ICON_OFF);
                 end
                 local ty  = ry + (POPUP_ROW - th) / 2;
-                local col = live and COL_POPUP_TEXT or COL_POPUP_OFF;
+                local col = (not known) and COL_POPUP_LOCK
+                            or live and COL_POPUP_TEXT or COL_POPUP_OFF;
                 pdl:AddText({ px + lab_x, ty }, col, r.label);
                 if (r.pos ~= nil) then
                     pdl:AddText({ px + pos_x, ty }, col, r.pos);
@@ -1522,6 +1595,11 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                              and mouse_y >= py and mouse_y <= py + h;
             ui.search_hot = ui.search_hot or warp_hot;
             ui.warp_hot   = warp_hot;
+            -- Straight from the panel's own button rather than through
+            -- item_tip, which vetoes on this very panel lying over things.
+            if (hot_lock ~= nil and LOCK_TIP[hot_lock] ~= nil) then
+                imgui.SetTooltip(LOCK_TIP[hot_lock]);
+            end
             -- A click while the right-click menu is up belongs to the menu,
             -- which is drawn after this and reads the same press.  Without
             -- the guard, picking an item would close the panel out from
