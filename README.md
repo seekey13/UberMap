@@ -86,6 +86,20 @@ Instant Warp scroll and the Warp Ring alike - goes out with a `/mss ` prefix, so
 [Multisend](https://github.com/ThornyFFXI/Multisend) repeats it on every
 logged-in character. It is off, and drawn dimmed, until clicked.
 
+In the bottom-left corner opposite it, the **heart** opens your **favourites**:
+warp rows you have saved, in the order you put them in. Right-click any row in a
+zone's warp list to *Add point to favorites list* - a row you cannot travel on
+from where you stand works too, so you can save a destination from anywhere on
+the map. The list names each one by the zone it hangs off and the row itself,
+e.g. `Windurst Woods - Home Point #2`.
+
+Clicking a favourite sends its warp, exactly as clicking the row it came from
+would; one you cannot use from where you stand is drawn dim and takes no press,
+the same way a popup row is. The `^` and `v` on the left of each row move it up
+and down the list, and right-clicking a favourite offers *Remove point from
+favorites list*. The list and its order are saved with the rest of your
+settings.
+
 The map sets those toggles for you, from what you are standing next to: within
 10 yalms of a Home Point, a Survival Guide or a Unity Concord NPC - Igsli in
 Bastok Markets, Urbiolaine in Southern San d'Oria, Teldro-Kesdrodo or Yonolala
@@ -101,7 +115,7 @@ marker with no row left to show fades back the way an unfocused group does, and
 stops taking the cursor. Dimming **Guide** and **Unity** so leaves only the
 zones with a Home Point lit. With all three lit the map reads plain again.
 
-The Multisend gate and those three toggles are remembered per character, in
+The Multisend gate, your favourites and those three toggles are remembered per character, in
 `config/addons/UberMap/<name>_<server id>/settings.lua`, written the moment you
 change one, so your choices stand the next time you log in.
 
@@ -173,6 +187,7 @@ lua test/test_points.lua    # every marker sits on a map that exists
 lua test/test_warps.lua     # every warp row builds a /uw the game takes
 lua test/test_toggles.lua   # the layer toggles against the real points
 lua test/test_ring.lua      # the Warp Ring icon's equip-then-use steps
+lua test/test_favs.lua      # favourites: add, remove, reorder and the /uw they send
 ```
 
 ## Credits

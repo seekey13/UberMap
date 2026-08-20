@@ -241,6 +241,20 @@ local MSS_PREFIX  = '/mss ';
 local COL_MSS_ON  = 0x80FFFFFF;  -- 50% opacity: it sits over the map
 local COL_MSS_OFF = 0x40FFFFFF;  -- half that again, i.e. dimmed off
 
+-- Favourites, in the viewport's bottom-left corner, mirroring Multisend.  The
+-- heart opens a panel of warp rows saved out of the zone popups, in the order
+-- they were put in and moved to; clicking one sends its warp the same way the
+-- popup row it came from does.
+local FAV_ICON     = 'heart.png';
+-- The reorder arrows, as a column each on the left of a row.  Drawn as text
+-- rather than art: two glyphs against nine files to ship and load.
+local FAV_ARROW_W  = 14;   -- screen pixels per arrow column
+local FAV_UP       = '^';
+local FAV_DOWN     = 'v';
+local COL_FAV_ARROW = 0xFFFFFFFF;
+local COL_FAV_END   = 0x40FFFFFF;  -- an arrow at the end of the list, which does nothing
+local FAV_EMPTY     = 'Right-click a warp to add it here';
+
 -- The map data lives in lib/points.lua under the addon: the overview groups, in
 -- draw order so later groups land on top of earlier ones where they overlap,
 -- and the zone points placed with /um edit.  Editing writes the file back out.
@@ -265,6 +279,7 @@ local OVERVIEW    = T{};
 local default_settings = T{
     mss    = false,  -- send through Multisend
     toggle = T{ },   -- toggle file name -> true when dimmed off
+    favs   = T{ },   -- saved warp rows, in the order they are listed in
 };
 -- Loaded from a copy of the defaults, because the library hands its own default
 -- table back for a key the file has no entry for: without the copy the first
@@ -272,6 +287,15 @@ local default_settings = T{
 -- directly, and settings.save() called as each change is made rather than at
 -- unload, so nothing is lost if the game goes down first.
 local cfg = settings.load(default_settings:copy(true));
+
+-- A settings file written before a key existed is handed back as it was saved,
+-- without the new default filled in, so a character who used the map before
+-- favourites would otherwise index a nil table.
+local function fill_defaults()
+    cfg.toggle = cfg.toggle or T{};
+    cfg.favs   = cfg.favs   or T{};
+end
+fill_defaults();
 
 local ui = T{
     is_open     = { false, },
@@ -307,6 +331,11 @@ local ui = T{
     open_z      = nil,       -- nil until the first frame after opening reads it
     warp        = nil,       -- zone point whose warp popup is open
     warp_hot    = false,     -- cursor was inside that popup last frame
+    favs_open   = false,     -- favourites panel is up
+    -- The right-click menu, as { x, y, key, row } of the warp row it was opened
+    -- on, or nil while it is shut.  The row is carried rather than looked up
+    -- again, since the panel it came from may be gone by the time it is picked.
+    ctx         = nil,
     focus       = nil,       -- group name to keep lit; everything else dims
     edit        = false,     -- point editor on
     sel         = nil,       -- the user point being edited
@@ -319,6 +348,7 @@ local ui = T{
 -- Logging in, or switching characters, hands back that character's own file.
 settings.register('settings', 'settings_update', function (s)
     cfg = s;
+    fill_defaults();
 end);
 
 local function map_size()
@@ -397,6 +427,7 @@ local function send_cmd(cmd)
     -- warp popup together.
     ui.is_open[1] = false;
     ui.warp       = nil;
+    ui.ctx        = nil;
 end
 
 --[[
@@ -839,6 +870,58 @@ local function warp_cmd(label, row)
     return ('/uw %s %s%s'):fmt(kind, zone, (n ~= '1') and n or '');
 end
 
+--[[
+* Favourites are saved flat rather than as a reference to a warp row: the row
+* tables are rebuilt from lib/warps.lua on every load, so a saved reference
+* would not survive that file being edited.  'key' is the marker label the row
+* hung off, which is what warp_cmd wants alongside the row's own fields - and
+* which makes the saved entry a warp row in its own right, so it can be passed
+* straight back as one.
+--]]
+local function fav_index(key, row)
+    for i, f in ipairs(cfg.favs) do
+        if (f.key == key and f.type == row.type and f.label == row.label) then
+            return i;
+        end
+    end
+    return nil;
+end
+
+--[[
+* Adds the row, or drops it again if it is already listed.  One entry point for
+* both, since the menu is one item that reads whichever way the row is.
+--]]
+local function fav_toggle(key, row)
+    local i = fav_index(key, row);
+    if (i ~= nil) then
+        table.remove(cfg.favs, i);
+    else
+        table.insert(cfg.favs, { key = key, type = row.type,
+                                 label = row.label, zone = row.zone });
+    end
+    settings.save();
+end
+
+--[[
+* Moves a favourite one place up (d = -1) or down (d = 1).  A move off either
+* end does nothing rather than wrapping, so the arrows on the first and last
+* rows are dead ends the way they look.
+--]]
+local function fav_move(i, d)
+    local j = i + d;
+    if (j < 1 or j > #cfg.favs) then
+        return;
+    end
+    cfg.favs[i], cfg.favs[j] = cfg.favs[j], cfg.favs[i];
+    settings.save();
+end
+
+-- What a favourite reads as: the zone the row hung off, then the row itself,
+-- e.g. 'Windurst Woods - Home Point #2'.
+local function fav_text(f)
+    return ('%s - %s'):fmt(f.key, f.label);
+end
+
 local function point_at(mx, my)
     for _, ic in ipairs(ICONS) do
         -- The drawn size is in screen pixels, so it shrinks in map space as
@@ -965,6 +1048,7 @@ local function set_time(time)
     ui.sel   = nil;
     ui.press = nil;
     ui.warp  = nil;
+    ui.ctx   = nil;
 end
 
 --[[
@@ -1139,6 +1223,354 @@ local function show()
     -- close on the distance walked since the last time it was up.
     ui.open_x    = nil;
     ui.open_z    = nil;
+    -- A menu left open from the last time the map was up would come back with
+    -- it, hung over a panel that is no longer there.
+    ui.ctx       = nil;
+end
+
+--[[
+* draw_map's panels live out here rather than inside it, and take the viewport
+* they draw into as arguments.  Not for tidiness: Lua caps a function at 60
+* upvalues, and one function holding every constant and helper the whole map
+* view touches runs into that ceiling.  A panel of its own reaches for only
+* what it draws.
+--]]
+
+local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, row_h)
+    -- Favourites, pinned to the bottom-left corner opposite Multisend.  The
+    -- heart opens and shuts the list; the list itself grows upwards from it,
+    -- so the heart stays where it was put however long the list gets.
+    local fav_y = view_h - SEARCH_MARGIN - row_h;
+    if (icon_button('favs', FAV_ICON, SEARCH_MARGIN, fav_y, row_h,
+                    ui.favs_open and COL_MSS_ON or COL_MSS_OFF,
+                    ui.favs_open and 'Hide favourites' or 'Show favourites')) then
+        ui.favs_open = not ui.favs_open;
+    end
+
+    if (ui.favs_open) then
+        local fdl   = imgui.GetWindowDrawList();
+        local _, th = imgui.CalcTextSize(FAV_EMPTY);
+        local n     = #cfg.favs;
+
+        -- Columns: two arrows, the warp type's icon, then the text.  An
+        -- empty list is one row of instructions with neither of the first
+        -- two, since there is nothing to reorder or travel on yet.
+        local arrow_x = POPUP_PAD;
+        local lab_x   = (n > 0)
+            and (arrow_x + FAV_ARROW_W * 2 + POPUP_PAD + POPUP_ICON + POPUP_PAD)
+            or POPUP_PAD;
+        local textw = (n > 0) and 0 or imgui.CalcTextSize(FAV_EMPTY);
+        for _, f in ipairs(cfg.favs) do
+            textw = math.max(textw, imgui.CalcTextSize(fav_text(f)));
+        end
+        local w = lab_x + textw + POPUP_PAD;
+        local h = POPUP_ROW * math.max(n, 1);
+
+        local px = origin_x + SEARCH_MARGIN;
+        -- Clamped so a list longer than the viewport tucks against the top
+        -- edge rather than running off it.
+        local py = mm.clamp_box(origin_y + fav_y - POPUP_GAP - h,
+                                h, origin_y, view_h);
+
+        fdl:AddRectFilled({ px, py }, { px + w, py + h }, COL_POPUP_BG,
+                          0, ImDrawCornerFlags_All);
+        fdl:AddRect({ px, py }, { px + w, py + h }, COL_OUTLINE,
+                    0, ImDrawCornerFlags_All, ICON_BORDER);
+
+        -- What the press this frame lands on, decided while drawing and
+        -- acted on after: fav_move reorders the list the loop is walking.
+        local up_i, down_i, go_i, ctx_i = nil, nil, nil, nil;
+        for i, f in ipairs(cfg.favs) do
+            local ry   = py + POPUP_ROW * (i - 1);
+            -- The same reach test the popup rows use: a favourite only
+            -- travels from the kind of NPC it was saved off.
+            local live = f.type == ui.near_kind;
+            local over = mouse_x >= px and mouse_x <= px + w
+                         and mouse_y >= ry and mouse_y < ry + POPUP_ROW;
+            local ax   = px + arrow_x;
+            local on_up   = over and mouse_x < ax + FAV_ARROW_W;
+            local on_down = over and not on_up
+                            and mouse_x < ax + FAV_ARROW_W * 2;
+
+            if (over) then
+                ctx_i = i;
+                if (on_up and i > 1) then
+                    up_i = i;
+                elseif (on_down and i < n) then
+                    down_i = i;
+                elseif (not on_up and not on_down and live) then
+                    go_i = i;
+                end
+            end
+            if (up_i == i or down_i == i or go_i == i) then
+                fdl:AddRectFilled(
+                    { px + ICON_BORDER, math.max(ry, py + ICON_BORDER) },
+                    { px + w - ICON_BORDER,
+                      math.min(ry + POPUP_ROW, py + h - ICON_BORDER) },
+                    COL_HOVER, 0, ImDrawCornerFlags_All);
+            end
+
+            local ty = ry + (POPUP_ROW - th) / 2;
+            -- Arrows, centred in their columns and dimmed at the end of the
+            -- list they cannot move past.
+            local aw = imgui.CalcTextSize(FAV_UP);
+            fdl:AddText({ ax + (FAV_ARROW_W - aw) / 2, ty },
+                        (i > 1) and COL_FAV_ARROW or COL_FAV_END, FAV_UP);
+            aw = imgui.CalcTextSize(FAV_DOWN);
+            fdl:AddText({ ax + FAV_ARROW_W + (FAV_ARROW_W - aw) / 2, ty },
+                        (i < n) and COL_FAV_ARROW or COL_FAV_END, FAV_DOWN);
+
+            -- Unlike a popup row, a favourite comes back off disk, so its
+            -- type is only as good as the settings file: one no toggle
+            -- names draws no icon rather than looking one up under a nil.
+            local art = WARP_ICON[f.type];
+            local tex, iw, ih;
+            if (art ~= nil) then tex, iw, ih = icon_texture(art); end
+            if (tex ~= nil) then
+                local sc = math.min(POPUP_ICON / iw, POPUP_ROW / ih);
+                local ix = ax + FAV_ARROW_W * 2 + POPUP_PAD
+                           + (POPUP_ICON - iw * sc) / 2;
+                local iy = ry + (POPUP_ROW - ih * sc) / 2;
+                fdl:AddImage(tonumber(ffi.cast('uint32_t', tex)),
+                             { ix, iy }, { ix + iw * sc, iy + ih * sc },
+                             { 0, 0 }, { 1, 1 },
+                             live and COL_ICON or COL_ICON_OFF);
+            end
+            fdl:AddText({ px + lab_x, ty },
+                        live and COL_POPUP_TEXT or COL_POPUP_OFF, fav_text(f));
+        end
+        if (n == 0) then
+            fdl:AddText({ px + lab_x, py + (POPUP_ROW - th) / 2 },
+                        COL_POPUP_OFF, FAV_EMPTY);
+        end
+
+        -- Same as the warp panel: one InvisibleButton over the whole thing
+        -- so the press neither falls through to the map nor moves the
+        -- window, with the hover tested as a rect rather than off the item.
+        imgui.SetCursorPos({ px - origin_x, py - origin_y });
+        imgui.InvisibleButton('##ubermap_favs', { w, h });
+        local fav_hot = mouse_x >= px and mouse_x <= px + w
+                        and mouse_y >= py and mouse_y <= py + h;
+        ui.search_hot = ui.search_hot or fav_hot;
+
+        -- A warp popup lying over this panel eats its presses, the same way
+        -- one over a toggle does: the popup is anchored on a marker, which
+        -- can put it in this corner.  Read a frame late, which is harmless
+        -- since neither panel moves while it is open.
+        if (imgui.IsMouseClicked(0) and ui.ctx == nil and not ui.warp_hot) then
+            if (up_i ~= nil) then
+                fav_move(up_i, -1);
+            elseif (down_i ~= nil) then
+                fav_move(down_i, 1);
+            elseif (go_i ~= nil) then
+                -- The saved entry carries every field warp_cmd reads, so it
+                -- travels as the row it was taken from.
+                local f   = cfg.favs[go_i];
+                local cmd = warp_cmd(f.key, f);
+                if (cmd ~= nil) then
+                    send_cmd(cmd);
+                end
+            end
+        end
+        -- Right-click a listed favourite to take it back off the list, the
+        -- same menu that put it on.
+        if (imgui.IsMouseClicked(1) and ctx_i ~= nil and not ui.warp_hot) then
+            local f = cfg.favs[ctx_i];
+            ui.ctx = { x = mouse_x, y = mouse_y, fresh = true,
+                       key = f.key, row = f };
+        end
+    end
+end
+
+--[[
+* The warp list for the zone point that was clicked.  See draw_favs above for
+* why it is out here.
+--]]
+local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y)
+    -- Warp list for the zone point that was clicked, drawn after everything
+    -- else so it lands on top of it.  Rows are read out in the order the
+    -- data gives them, and clicking one sends its /uw.  No title row: the
+    -- marker it hangs off already names the zone.
+    if (ui.warp ~= nil) then
+        local rows = warp_rows(ui.warp.label);
+        if (rows == nil) then
+            ui.warp = nil;  -- the toggles emptied it while it was open
+        else
+            local pdl    = imgui.GetWindowDrawList();
+            local _, th  = imgui.CalcTextSize(ui.warp.label);
+            -- The grid reference is a column of its own, so every row's
+            -- label starts at one x and every '(F-11)' at another.
+            local labw, posw = 0, 0;
+            for _, r in ipairs(rows) do
+                labw = math.max(labw, imgui.CalcTextSize(r.label));
+                if (r.pos ~= nil) then
+                    posw = math.max(posw, imgui.CalcTextSize(r.pos));
+                end
+            end
+            local lab_x = POPUP_PAD * 2 + POPUP_ICON;
+            local pos_x = lab_x + labw + POPUP_PAD;
+            local w     = ((posw > 0) and (pos_x + posw) or (lab_x + labw))
+                          + POPUP_PAD;
+            local h = POPUP_ROW * #rows;
+
+            -- Hung under the marker and clamped both ways, so a point near
+            -- an edge does not push the panel off the viewport.
+            local half = (ui.warp.size or ICON_SIZE) / 2;
+            local px = mm.clamp_box(
+                mm.to_screen(ui.warp.x, ui.pan_x, ui.zoom, origin_x) - w / 2,
+                w, origin_x, view_w);
+            local py = mm.clamp_box(
+                mm.to_screen(ui.warp.y, ui.pan_y, ui.zoom, origin_y) + half + POPUP_GAP,
+                h, origin_y, view_h);
+
+            pdl:AddRectFilled({ px, py }, { px + w, py + h }, COL_POPUP_BG,
+                              0, ImDrawCornerFlags_All);
+            pdl:AddRect({ px, py }, { px + w, py + h }, COL_OUTLINE,
+                        0, ImDrawCornerFlags_All, ICON_BORDER);
+            -- hot_row is the row a left-click would send, so it is only
+            -- ever a live one; hot_any is the row under the cursor whether
+            -- it is live or not, which is what the right-click menu goes
+            -- on - a destination can be favourited from anywhere, not only
+            -- from in front of the NPC that travels to it.
+            local hot_row, hot_any = nil, nil;
+            for i, r in ipairs(rows) do
+                local ry = py + POPUP_ROW * (i - 1);
+                -- A row only travels from the kind of NPC the player is
+                -- stood at, so one of another kind is drawn dim and takes
+                -- no hover or press.  Listed rather than dropped: the row
+                -- says the destination exists and what to walk up to.
+                -- ui.near_kind is false before the first poll and nil while
+                -- nothing is in reach; neither is a type, so both read as
+                -- out of reach.
+                local live = r.type == ui.near_kind;
+                -- The hover is drawn straight into the list rather than
+                -- coming off an ImGui item, for the same reason the click
+                -- below is tested by hand: the panel is one InvisibleButton.
+                local over = mouse_x >= px and mouse_x <= px + w
+                             and mouse_y >= ry and mouse_y < ry + POPUP_ROW;
+                if (over) then
+                    hot_any = r;
+                end
+                if (live and over) then
+                    hot_row = r;
+                    pdl:AddRectFilled(
+                        { px + ICON_BORDER, math.max(ry, py + ICON_BORDER) },
+                        { px + w - ICON_BORDER,
+                          math.min(ry + POPUP_ROW, py + h - ICON_BORDER) },
+                        COL_HOVER, 0, ImDrawCornerFlags_All);
+                end
+                local tex, iw, ih = icon_texture(WARP_ICON[r.type]);
+                if (tex ~= nil) then
+                    -- The art is not square, so fit it into the icon column
+                    -- by its own aspect and centre the slack.
+                    local sc = math.min(POPUP_ICON / iw, POPUP_ROW / ih);
+                    local ix = px + POPUP_PAD + (POPUP_ICON - iw * sc) / 2;
+                    local iy = ry + (POPUP_ROW - ih * sc) / 2;
+                    pdl:AddImage(tonumber(ffi.cast('uint32_t', tex)),
+                                 { ix, iy }, { ix + iw * sc, iy + ih * sc },
+                                 { 0, 0 }, { 1, 1 },
+                                 live and COL_ICON or COL_ICON_OFF);
+                end
+                local ty  = ry + (POPUP_ROW - th) / 2;
+                local col = live and COL_POPUP_TEXT or COL_POPUP_OFF;
+                pdl:AddText({ px + lab_x, ty }, col, r.label);
+                if (r.pos ~= nil) then
+                    pdl:AddText({ px + pos_x, ty }, col, r.pos);
+                end
+            end
+
+            -- An InvisibleButton over the panel takes the press, so it
+            -- neither falls through to the map nor starts a window move.
+            -- The hover test is the rect and not IsItemHovered: ImGui gives
+            -- hover to the first item that claims it, and the search row is
+            -- submitted before this one.  Feeding search_hot keeps the map
+            -- from panning or zooming underneath; a click anywhere else
+            -- closes the panel.
+            imgui.SetCursorPos({ px - origin_x, py - origin_y });
+            imgui.InvisibleButton('##ubermap_warps', { w, h });
+            local warp_hot = mouse_x >= px and mouse_x <= px + w
+                             and mouse_y >= py and mouse_y <= py + h;
+            ui.search_hot = ui.search_hot or warp_hot;
+            ui.warp_hot   = warp_hot;
+            -- A click while the right-click menu is up belongs to the menu,
+            -- which is drawn after this and reads the same press.  Without
+            -- the guard, picking an item would close the panel out from
+            -- under it as a click landing outside the panel's rect.
+            if (imgui.IsMouseClicked(0) and ui.ctx == nil) then
+                if (not warp_hot) then
+                    ui.warp = nil;
+                elseif (hot_row ~= nil) then
+                    local cmd = warp_cmd(ui.warp.label, hot_row);
+                    if (cmd ~= nil) then
+                        send_cmd(cmd);
+                    end
+                end
+            end
+            -- Right-click opens the favourites menu on the row under the
+            -- cursor, live or not.
+            if (imgui.IsMouseClicked(1) and hot_any ~= nil) then
+                ui.ctx = { x = mouse_x, y = mouse_y, fresh = true,
+                           key = ui.warp.label, row = hot_any };
+            end
+        end
+    end
+    if (ui.warp == nil) then
+        ui.warp_hot = false;
+    end
+end
+
+--[[
+* The favourites right-click menu.  See draw_favs above for why it is out here.
+--]]
+local function draw_ctx_menu(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y)
+    -- The right-click menu, drawn after both panels so it lands on top of
+    -- whichever one it was opened from.  Hand-drawn like they are rather
+    -- than an ImGui popup: the panels are one InvisibleButton each and have
+    -- no per-row item for a popup to hang off.
+    if (ui.ctx ~= nil) then
+        local cdl   = imgui.GetWindowDrawList();
+        local text  = (fav_index(ui.ctx.key, ui.ctx.row) ~= nil)
+            and 'Remove point from favorites list'
+            or 'Add point to favorites list';
+        local tw, th = imgui.CalcTextSize(text);
+        local w = tw + POPUP_PAD * 2;
+        local h = POPUP_ROW;
+        -- Opened at the cursor, clamped so a right-click near an edge does
+        -- not put the item off the viewport.
+        local px = mm.clamp_box(ui.ctx.x, w, origin_x, view_w);
+        local py = mm.clamp_box(ui.ctx.y, h, origin_y, view_h);
+
+        cdl:AddRectFilled({ px, py }, { px + w, py + h }, COL_POPUP_BG,
+                          0, ImDrawCornerFlags_All);
+        cdl:AddRect({ px, py }, { px + w, py + h }, COL_OUTLINE,
+                    0, ImDrawCornerFlags_All, ICON_BORDER);
+        local ctx_hot = mouse_x >= px and mouse_x <= px + w
+                        and mouse_y >= py and mouse_y <= py + h;
+        if (ctx_hot) then
+            cdl:AddRectFilled({ px + ICON_BORDER, py + ICON_BORDER },
+                              { px + w - ICON_BORDER, py + h - ICON_BORDER },
+                              COL_HOVER, 0, ImDrawCornerFlags_All);
+        end
+        cdl:AddText({ px + POPUP_PAD, py + (h - th) / 2 }, COL_POPUP_TEXT, text);
+
+        imgui.SetCursorPos({ px - origin_x, py - origin_y });
+        imgui.InvisibleButton('##ubermap_ctx', { w, h });
+        ui.search_hot = ui.search_hot or ctx_hot;
+
+        -- Any press closes the menu; one on the item runs it first.  Both
+        -- buttons, so a second right-click dismisses it rather than leaving
+        -- two menus' worth of state behind.  The press that opened it is
+        -- the same one this test reads, since the panels are drawn before
+        -- this block, so the opening frame is skipped over.
+        if (ui.ctx.fresh) then
+            ui.ctx.fresh = false;
+        elseif (imgui.IsMouseClicked(0) or imgui.IsMouseClicked(1)) then
+            if (ctx_hot and imgui.IsMouseClicked(0)) then
+                fav_toggle(ui.ctx.key, ui.ctx.row);
+            end
+            ui.ctx = nil;
+        end
+    end
 end
 
 local function draw_map(view_w, view_h)
@@ -1409,117 +1841,11 @@ local function draw_map(view_w, view_h)
             settings.save();
         end
 
-        -- Warp list for the zone point that was clicked, drawn after everything
-        -- else so it lands on top of it.  Rows are read out in the order the
-        -- data gives them, and clicking one sends its /uw.  No title row: the
-        -- marker it hangs off already names the zone.
-        if (ui.warp ~= nil) then
-            local rows = warp_rows(ui.warp.label);
-            if (rows == nil) then
-                ui.warp = nil;  -- the toggles emptied it while it was open
-            else
-                local pdl    = imgui.GetWindowDrawList();
-                local _, th  = imgui.CalcTextSize(ui.warp.label);
-                -- The grid reference is a column of its own, so every row's
-                -- label starts at one x and every '(F-11)' at another.
-                local labw, posw = 0, 0;
-                for _, r in ipairs(rows) do
-                    labw = math.max(labw, imgui.CalcTextSize(r.label));
-                    if (r.pos ~= nil) then
-                        posw = math.max(posw, imgui.CalcTextSize(r.pos));
-                    end
-                end
-                local lab_x = POPUP_PAD * 2 + POPUP_ICON;
-                local pos_x = lab_x + labw + POPUP_PAD;
-                local w     = ((posw > 0) and (pos_x + posw) or (lab_x + labw))
-                              + POPUP_PAD;
-                local h = POPUP_ROW * #rows;
-
-                -- Hung under the marker and clamped both ways, so a point near
-                -- an edge does not push the panel off the viewport.
-                local half = (ui.warp.size or ICON_SIZE) / 2;
-                local px = mm.clamp_box(
-                    mm.to_screen(ui.warp.x, ui.pan_x, ui.zoom, origin_x) - w / 2,
-                    w, origin_x, view_w);
-                local py = mm.clamp_box(
-                    mm.to_screen(ui.warp.y, ui.pan_y, ui.zoom, origin_y) + half + POPUP_GAP,
-                    h, origin_y, view_h);
-
-                pdl:AddRectFilled({ px, py }, { px + w, py + h }, COL_POPUP_BG,
-                                  0, ImDrawCornerFlags_All);
-                pdl:AddRect({ px, py }, { px + w, py + h }, COL_OUTLINE,
-                            0, ImDrawCornerFlags_All, ICON_BORDER);
-                local hot_row = nil;
-                for i, r in ipairs(rows) do
-                    local ry = py + POPUP_ROW * (i - 1);
-                    -- A row only travels from the kind of NPC the player is
-                    -- stood at, so one of another kind is drawn dim and takes
-                    -- no hover or press.  Listed rather than dropped: the row
-                    -- says the destination exists and what to walk up to.
-                    -- ui.near_kind is false before the first poll and nil while
-                    -- nothing is in reach; neither is a type, so both read as
-                    -- out of reach.
-                    local live = r.type == ui.near_kind;
-                    -- The hover is drawn straight into the list rather than
-                    -- coming off an ImGui item, for the same reason the click
-                    -- below is tested by hand: the panel is one InvisibleButton.
-                    if (live and mouse_x >= px and mouse_x <= px + w
-                        and mouse_y >= ry and mouse_y < ry + POPUP_ROW) then
-                        hot_row = r;
-                        pdl:AddRectFilled(
-                            { px + ICON_BORDER, math.max(ry, py + ICON_BORDER) },
-                            { px + w - ICON_BORDER,
-                              math.min(ry + POPUP_ROW, py + h - ICON_BORDER) },
-                            COL_HOVER, 0, ImDrawCornerFlags_All);
-                    end
-                    local tex, iw, ih = icon_texture(WARP_ICON[r.type]);
-                    if (tex ~= nil) then
-                        -- The art is not square, so fit it into the icon column
-                        -- by its own aspect and centre the slack.
-                        local sc = math.min(POPUP_ICON / iw, POPUP_ROW / ih);
-                        local ix = px + POPUP_PAD + (POPUP_ICON - iw * sc) / 2;
-                        local iy = ry + (POPUP_ROW - ih * sc) / 2;
-                        pdl:AddImage(tonumber(ffi.cast('uint32_t', tex)),
-                                     { ix, iy }, { ix + iw * sc, iy + ih * sc },
-                                     { 0, 0 }, { 1, 1 },
-                                     live and COL_ICON or COL_ICON_OFF);
-                    end
-                    local ty  = ry + (POPUP_ROW - th) / 2;
-                    local col = live and COL_POPUP_TEXT or COL_POPUP_OFF;
-                    pdl:AddText({ px + lab_x, ty }, col, r.label);
-                    if (r.pos ~= nil) then
-                        pdl:AddText({ px + pos_x, ty }, col, r.pos);
-                    end
-                end
-
-                -- An InvisibleButton over the panel takes the press, so it
-                -- neither falls through to the map nor starts a window move.
-                -- The hover test is the rect and not IsItemHovered: ImGui gives
-                -- hover to the first item that claims it, and the search row is
-                -- submitted before this one.  Feeding search_hot keeps the map
-                -- from panning or zooming underneath; a click anywhere else
-                -- closes the panel.
-                imgui.SetCursorPos({ px - origin_x, py - origin_y });
-                imgui.InvisibleButton('##ubermap_warps', { w, h });
-                local warp_hot = mouse_x >= px and mouse_x <= px + w
-                                 and mouse_y >= py and mouse_y <= py + h;
-                ui.search_hot = ui.search_hot or warp_hot;
-                ui.warp_hot   = warp_hot;
-                if (imgui.IsMouseClicked(0)) then
-                    if (not warp_hot) then
-                        ui.warp = nil;
-                    elseif (hot_row ~= nil) then
-                        local cmd = warp_cmd(ui.warp.label, hot_row);
-                        if (cmd ~= nil) then
-                            send_cmd(cmd);
-                        end
-                    end
-                end
-            end
-        end
-        if (ui.warp == nil) then
-            ui.warp_hot = false;
-        end
+        -- The three panels, in the order they stack: favourites over the map,
+        -- a zone's warp list over that, and the right-click menu over both.
+        draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, row_h);
+        draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y);
+        draw_ctx_menu(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y);
     end
     imgui.EndChild();
 
