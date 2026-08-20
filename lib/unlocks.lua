@@ -70,6 +70,7 @@ end
 * the warp, so if its data is gone the /uw was never going to land anyway.
 --]]
 function unlocks.load(dir)
+    unlocks.dir = dir;
     for kind, r in pairs(unlocks.REGION) do
         local fh = io.open(dir .. r.file, 'r');
         if (fh ~= nil) then
@@ -78,6 +79,20 @@ function unlocks.load(dir)
             BITS[kind] = unlocks.parse(text, r.base, r.byte);
         end
     end
+end
+
+-- Where load() last read from, and how many names each type came back with,
+-- for the '/um unlocks' readout.  Both fail quietly by design - a row that
+-- cannot be tested simply stays clickable - so without this there is nothing
+-- to look at when the test is not answering.
+unlocks.dir = nil;
+
+function unlocks.size(kind)
+    local n = 0;
+    for _ in pairs(BITS[kind] or {}) do
+        n = n + 1;
+    end
+    return n;
 end
 
 --[[

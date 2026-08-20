@@ -298,6 +298,14 @@ local cfg = settings.load(default_settings:copy(true));
 local function fill_defaults()
     cfg.toggle = cfg.toggle or T{};
     cfg.favs   = cfg.favs   or T{};
+    -- The map used to write the Campaign zones '(S)' and rewrite them to '[S]'
+    -- on the way out; it names them '[S]' throughout now.  A favorite saved
+    -- under the old name still travels, but nothing else about it looks up any
+    -- more, so it is renamed in place the first time it is read back.
+    for _, f in ipairs(cfg.favs) do
+        f.key  = f.key  and (f.key:gsub('%(S%)$', '[S]'))  or f.key;
+        f.zone = f.zone and (f.zone:gsub('%(S%)$', '[S]')) or f.zone;
+    end
 end
 fill_defaults();
 
@@ -579,15 +587,36 @@ local function ring_worn()
 end
 
 --[[
-* The teleport mask block the client keeps, or nil while it has none.  Read
-* through pcall the way the other memory reads here are: an Ashita that does
-* not hand this back leaves every row lit rather than taking the addon down.
+* The teleport mask block the client keeps, as 64 bytes numbered from 1, or nil
+* while there is none to be had.  Read through pcall the way the other memory
+* reads here are: an Ashita that does not hand this back leaves every row lit
+* rather than taking the addon down.
+*
+* Handed back three ways depending on the build - a table from 1, a table from
+* 0, or the raw uint8_t* the struct field is - so it is copied into the one
+* shape rather than the callers having to know which.  A table is told apart by
+* its ends: the 1-based one has a 64th entry and no zeroth, the 0-based one the
+* other way about.
 --]]
+local MASK_BYTES = 64;
+
 local function teleport_masks()
     local ok, m = pcall(function ()
         return AshitaCore:GetMemoryManager():GetPlayer():GetHomepointMasks();
     end);
-    return (ok and type(m) == 'table') and m or nil;
+    if (not ok or m == nil) then
+        return nil;
+    end
+    if (type(m) == 'table' and m[MASK_BYTES] ~= nil) then
+        return m;
+    end
+    local out  = {};
+    local copy = pcall(function ()
+        for i = 1, MASK_BYTES do
+            out[i] = tonumber(m[i - 1]);
+        end
+    end);
+    return (copy and out[1] ~= nil) and out or nil;
 end
 
 --[[
@@ -890,7 +919,9 @@ local UW_TYPE = T{ home = 'hp', guide = 'sg', unity = 'uc' };
 * string the command for it would carry.
 --]]
 local function warp_alias(label, row)
-    -- The map writes the Campaign zones '(S)', the game calls them '[S]'.
+    -- The Campaign zones are named '[S]' throughout, the way Uberwarp spells
+    -- them, so this rewrite is only for favorites saved back when the map
+    -- wrote them '(S)': those keep the old name in the settings file.
     local zone = (row.zone or label):gsub('%(S%)$', '[S]');
     -- The first Home Point of a zone is the bare name: '#1' is the default the
     -- command falls back to, so sending it would be a zone the server rejects.
@@ -2069,6 +2100,43 @@ ashita.events.register('command', 'ubermap_command', function (e)
             ui.sel = nil;
         end
         notify(('point editor: %s'):fmt(ui.edit and 'on, ctrl+click the map' or 'off'));
+        return;
+    end
+
+    --[[
+    * '/um unlocks [destination]' prints what the purple-row test is working
+    * from: where Uberwarp's data was read, how many names came back, what
+    * shape the client handed the mask block back in, and the two blocks
+    * themselves.  Given a destination - the name the /uw carries, e.g.
+    * 'Xarcabard [S]' - it also says how that one reads.
+    --]]
+    if (sub == 'unlocks') then
+        notify(('data: %s'):fmt(tostring(unlocks.dir)));
+        notify(('names: %d home, %d guide'):fmt(unlocks.size('home'),
+                                                unlocks.size('guide')));
+        local m = teleport_masks();
+        if (m == nil) then
+            notify('mask block: nothing readable, so nothing is gated');
+        else
+            local home, guide = T{}, T{};
+            for i = 1, 16 do
+                home:append(('%02X'):fmt(m[i] or 0));
+                guide:append(('%02X'):fmt(m[i + 16] or 0));
+            end
+            notify(('home  %s'):fmt(home:concat(' ')));
+            notify(('guide %s'):fmt(guide:concat(' ')));
+        end
+        -- Rejoined with spaces: the command splits on them and zone names
+        -- have them.
+        local alias = nil;
+        for i = 3, #args do
+            alias = (alias == nil) and args[i] or ('%s %s'):fmt(alias, args[i]);
+        end
+        if (alias ~= nil) then
+            notify(('%q: home %s, guide %s'):fmt(alias,
+                   tostring(unlocks.known('home', alias, m)),
+                   tostring(unlocks.known('guide', alias, m))));
+        end
         return;
     end
 

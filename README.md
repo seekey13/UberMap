@@ -133,7 +133,8 @@ change one, so your choices stand the next time you log in.
 The data lives in `lib/warps.lua` under the addon, keyed by the zone name, which is
 the point's `label` in `lib/points.lua`. A row whose key is not the game's own name
 for the zone - `Delkfutt Tower`, the two halves of Windurst Waters - carries a
-`zone` field with the name `/uw` wants; `(S)` keys are sent as `[S]`. `pos` is the
+`zone` field with the name `/uw` wants. The Campaign zones are named `[S]`, the
+way Uberwarp spells them, so they need no override. `pos` is the
 grid reference, held apart from the label so the panel can draw it in a column of
 its own and every row's lines up; a row with no grid reference leaves it out. Rows
 are listed in the order the file gives them:
