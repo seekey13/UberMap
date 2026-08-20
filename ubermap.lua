@@ -81,6 +81,17 @@ local WARP_NPC = T{
 -- the server's choice, so all three are watched.
 local NPC_EVENT = T{ [0x032] = 0x08, [0x033] = 0x08, [0x034] = 0x28 };
 
+-- The teleport masks, in the same terms: packet 0x63 carries several kinds of
+-- miscellaneous data behind a type word, and type 6 is 64 bytes of them - four
+-- uint32 of Home Points, four of Survival Guides, then the rest.  The server
+-- sends it on zoning in, so the map has one from the first zone after it loads
+-- and none before that.
+local MASK_PACKET  = 0x063;
+local MASK_TYPE_AT = 0x04;  -- the type word, past the 4 byte header
+local MASK_TYPE    = 6;
+local MASK_AT      = 0x08;  -- the masks themselves, past the type word
+local MASK_BYTES   = 64;
+
 -- How close one of those has to be to count as being stood at, in yalms, and
 -- how often the map re-checks while it is open, in seconds.
 local WARP_NPC_NEAR = 7;
@@ -327,7 +338,8 @@ local ui = T{
     press       = nil,       -- marker the left button went down on
     near_kind   = false,     -- warp type last seen in reach; false until checked
     has_warp    = false,     -- an Instant Warp scroll was in the bag last poll
-    masks       = nil,       -- teleport mask block as of the last poll, or nil
+    masks       = nil,       -- teleport mask block off the last 0x63 type 6
+    mask_seen   = T{},       -- how many 0x63 arrived, counted by type word
     ring        = 'none',    -- Warp Ring step: none, equip or use, as of last poll
     ring_bag    = nil,       -- /equip container number the ring was found in
     -- os.clock() an equip was asked for, for the wait.  Starts a whole wait in
@@ -587,39 +599,6 @@ local function ring_worn()
 end
 
 --[[
-* The teleport mask block the client keeps, as 64 bytes numbered from 1, or nil
-* while there is none to be had.  Read through pcall the way the other memory
-* reads here are: an Ashita that does not hand this back leaves every row lit
-* rather than taking the addon down.
-*
-* Handed back three ways depending on the build - a table from 1, a table from
-* 0, or the raw uint8_t* the struct field is - so it is copied into the one
-* shape rather than the callers having to know which.  A table is told apart by
-* its ends: the 1-based one has a 64th entry and no zeroth, the 0-based one the
-* other way about.
---]]
-local MASK_BYTES = 64;
-
-local function teleport_masks()
-    local ok, m = pcall(function ()
-        return AshitaCore:GetMemoryManager():GetPlayer():GetHomepointMasks();
-    end);
-    if (not ok or m == nil) then
-        return nil;
-    end
-    if (type(m) == 'table' and m[MASK_BYTES] ~= nil) then
-        return m;
-    end
-    local out  = {};
-    local copy = pcall(function ()
-        for i = 1, MASK_BYTES do
-            out[i] = tonumber(m[i - 1]);
-        end
-    end);
-    return (copy and out[1] ~= nil) and out or nil;
-end
-
---[[
 * The step the ring icon is on, from what the poll found and whether an equip
 * is still landing: 'none' when none is held, 'use' when one is worn, 'equip'
 * otherwise.  Only 'use' and 'equip' take a press.
@@ -646,7 +625,6 @@ local function poll_near(now)
     end
     ui.near_at = now;
     ui.has_warp = have_warp_item();
-    ui.masks    = teleport_masks();
     ui.ring_bag = ring_bag();
     ui.ring     = ring_step(ui.ring_bag ~= nil, ring_worn(),
                             now - ui.ring_at < RING_EQUIP_WAIT);
@@ -889,7 +867,10 @@ load_warps();
 -- Uberwarp's own destination data, which is where the unlock bits come from.
 -- Read out of the install rather than shipped alongside the map: it is the
 -- same copy Uberwarp performs the warp out of, so the two cannot drift.
-unlocks.load(('%s/resources/ashitahelper/uberwarp/'):fmt(AshitaCore:GetInstallPath()));
+-- The install path comes back with a trailing separator on some builds and
+-- without on others, so it is taken off and put back.
+unlocks.load(('%s/resources/ashitahelper/uberwarp/'):fmt(
+    (AshitaCore:GetInstallPath():gsub('[\\/]+$', ''))));
 
 --[[
 * The warp rows of a zone that the toggles leave lit, in the order the data
@@ -1300,6 +1281,31 @@ local function zoom_to_group(name, view_w, view_h)
 end
 
 --[[
+* Asks the server for the map markers, which it answers with the teleport masks
+* among other things.  The same request the client makes for itself every time
+* the in-game map is opened, and header-only: nine bits of id, seven of size in
+* dwords, then a sync the client fills in.
+*
+* Sent on opening rather than waited for, since the masks otherwise only arrive
+* on zoning in - the map would sit ungated for a whole session that never
+* zoned, and would still be showing the state from before a Home Point was
+* registered in the one that did.
+--]]
+local MARKERS_PACKET = 0x114;
+
+local function ask_for_masks()
+    local mgr = AshitaCore:GetPacketManager();
+    if (mgr == nil) then
+        return;
+    end
+    local id = MARKERS_PACKET + 0x200;  -- one dword of size, in the top bits
+    pcall(function ()
+        mgr:AddOutgoingPacket(MARKERS_PACKET,
+                              { id % 256, math.floor(id / 256), 0, 0 });
+    end);
+end
+
+--[[
 * Opens the map.  If it is already open the current zoom and pan are left
 * alone, so repeated Home Point visits do not yank the view back to the default.
 --]]
@@ -1316,6 +1322,7 @@ local function show()
     -- A menu left open from the last time the map was up would come back with
     -- it, hung over a panel that is no longer there.
     ui.ctx       = nil;
+    ask_for_masks();
 end
 
 --[[
@@ -2048,6 +2055,29 @@ ashita.events.register('d3d_present', 'ubermap_present', function ()
 end);
 
 ashita.events.register('packet_in', 'ubermap_packet_in', function (e)
+    -- The teleport masks, which say which destinations are registered.  Taken
+    -- off the wire rather than out of the client's own copy: the layout here is
+    -- the server's own header file, while the copy's is an offset in a struct
+    -- that has to be guessed right.
+    if (e.id == MASK_PACKET) then
+        -- Every 0x63 is counted by its type word, whether or not it is the one
+        -- wanted: the readout can then tell a packet that never arrives from
+        -- one arriving under a type this is not looking for.
+        local kind = e.data:byte(MASK_TYPE_AT + 1);
+        if (kind ~= nil) then
+            ui.mask_seen[kind] = (ui.mask_seen[kind] or 0) + 1;
+        end
+        if (kind == MASK_TYPE and e.data:byte(MASK_TYPE_AT + 2) == 0) then
+            local m = {};
+            for i = 1, MASK_BYTES do
+                m[i] = e.data:byte(MASK_AT + i);
+            end
+            -- A short packet leaves holes, which would read as unregistered.
+            ui.masks = (m[MASK_BYTES] ~= nil) and m or nil;
+        end
+        return false;
+    end
+
     local at = NPC_EVENT[e.id];
     if (at == nil) then
         return false;
@@ -2105,18 +2135,25 @@ ashita.events.register('command', 'ubermap_command', function (e)
 
     --[[
     * '/um unlocks [destination]' prints what the purple-row test is working
-    * from: where Uberwarp's data was read, how many names came back, what
-    * shape the client handed the mask block back in, and the two blocks
-    * themselves.  Given a destination - the name the /uw carries, e.g.
-    * 'Xarcabard [S]' - it also says how that one reads.
+    * from: where Uberwarp's data was read, how many names came back, and the
+    * two mask blocks as they arrived.  Given a destination - the name the /uw
+    * carries, e.g. 'Xarcabard [S]' - it also says how that one reads.
     --]]
     if (sub == 'unlocks') then
+        -- Answered a moment later, so what it fetches shows on the next run of
+        -- this rather than in the lines below.
+        ask_for_masks();
         notify(('data: %s'):fmt(tostring(unlocks.dir)));
         notify(('names: %d home, %d guide'):fmt(unlocks.size('home'),
                                                 unlocks.size('guide')));
-        local m = teleport_masks();
+        local kinds = T{};
+        for kind, n in pairs(ui.mask_seen) do
+            kinds:append(('%02X x%d'):fmt(kind, n));
+        end
+        notify(('0x63 seen: %s'):fmt(#kinds > 0 and kinds:concat(', ') or 'none'));
+        local m = ui.masks;
         if (m == nil) then
-            notify('mask block: nothing readable, so nothing is gated');
+            notify('no 0x63 type 6 yet, so nothing is gated - zone once');
         else
             local home, guide = T{}, T{};
             for i = 1, 16 do

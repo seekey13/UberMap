@@ -129,6 +129,47 @@ check('guide registered',     unlocks.known('guide', 'Lufaise Meadows', masks), 
 check('home of that name is not',
       unlocks.known('home', 'Misareaux Coast', masks), false);
 
+--[[
+* Pulling the block out of packet 0x63 type 6, which is where it comes from in
+* game.  Mirrors the reader in ubermap.lua against a packet built to the
+* server's own layout: a 4 byte header, the type word, a size word, then the
+* Home Point masks and the Survival Guide masks.  An offset out by one here
+* would read every destination off its neighbour, which is the kind of wrong
+* that still looks plausible on screen.
+--]]
+local MASK_TYPE_AT, MASK_AT, MASK_BYTES = 0x04, 0x08, 64;
+
+local function read_masks(data)
+    if (data:byte(MASK_TYPE_AT + 1) ~= 6 or data:byte(MASK_TYPE_AT + 2) ~= 0) then
+        return nil;
+    end
+    local m = {};
+    for i = 1, MASK_BYTES do
+        m[i] = data:byte(MASK_AT + i);
+    end
+    return (m[MASK_BYTES] ~= nil) and m or nil;
+end
+
+-- Uleguerand Range #1 is Home Point index 76: byte 9 of the block, bit 4.  Its
+-- Survival Guide opposite number, Lufaise Meadows, is byte 18, bit 0.
+local body = {};
+for i = 1, MASK_BYTES do body[i] = string.char(0); end
+body[10] = string.char(16);
+body[19] = string.char(1);
+local packet = string.char(0x63, 0x00, 0x00, 0x00)   -- header
+            .. string.char(6, 0)                     -- type 6
+            .. string.char(68, 0)                    -- size of the data
+            .. table.concat(body);
+
+local got = read_masks(packet);
+check('packet read',        got ~= nil,                                 true);
+check('packet home bit',    unlocks.known('home', 'Uleguerand Range', got),  true);
+check('packet guide bit',   unlocks.known('guide', 'Lufaise Meadows', got),  true);
+check('packet leaves rest', unlocks.known('home', 'Bastok Mines', got),      false);
+-- Anything that is not type 6 is somebody else's data in the same packet id.
+check('wrong type ignored',
+      read_masks(string.char(0x63, 0, 0, 0, 5, 0, 68, 0) .. packet:sub(9)), nil);
+
 -- Everything doubtful stays travellable: a wrong 'no' takes a warp away from
 -- somebody who owns it, and there is no way past it from the map.
 check('no masks yet',   unlocks.known('home', 'Uleguerand Range', nil),      true);

@@ -62,10 +62,12 @@ and the whole panel reads grey.
 A destination you have never stood at is a separate state: it is drawn
 **purple**, takes no click from anywhere, and hovering it says why. Home Points
 and Survival Guides have to be registered in person before they will travel to,
-which the game records as a bit per destination and hands the client on zoning
-in; the map reads the same bits the NPC's own menu greys its rows on, and pairs
-them with Uberwarp's destination list so the row and the `/uw` it would send
-agree. Unity Concords are open to every member, so they are never purple. If
+which the game records as a bit per destination and sends on zoning in, as
+packet `0x63` type 6. The map reads that packet off the wire and pairs it with
+Uberwarp's destination list, so the row and the `/uw` it would send agree.
+Opening the map asks for a fresh one - the same `0x114` marker request the
+client makes when you open the in-game map - so registering a destination and
+opening the map again shows it unlocked without zoning. Unity Concords are open to every member, so they are never purple. If
 either piece is missing - no unlock data back from the client, a destination
 Uberwarp does not list - the row stays clickable rather than being locked out on
 a guess.
