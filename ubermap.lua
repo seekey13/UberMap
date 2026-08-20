@@ -131,8 +131,10 @@ local NPC_FIRST, NPC_LAST = 0x000, 0x3FF;
 local MAX_ZOOM  = 2.0;  -- two screen pixels per source map pixel
 local ZOOM_STEP = 1.15; -- per wheel notch
 
--- ImGui packs colours as ABGR, not ARGB.
-local COL_OUTLINE = 0xFF000000;
+-- ImGui packs colours as ABGR, not ARGB.  The _DIM outline is the same black
+-- at COL_ICON_OFF's alpha, so a dimmed icon's border fades with its art.
+local COL_OUTLINE     = 0xFF000000;
+local COL_OUTLINE_DIM = 0x40000000;
 
 -- Map text, the stamp behind it, and the fill under a warp row the cursor is
 -- on.  The _DIM pair is the same colours at a quarter alpha, which is what
@@ -1217,7 +1219,8 @@ local function draw_icons(origin_x, origin_y, view_w, view_h, over_map)
                                    dim and COL_ICON_OFF or COL_ICON,
                                    round, ImDrawCornerFlags_All);
                 if (ic.border ~= false) then
-                    dl:AddRect(p0, p1, COL_OUTLINE, round, ImDrawCornerFlags_All, ICON_BORDER);
+                    dl:AddRect(p0, p1, dim and COL_OUTLINE_DIM or COL_OUTLINE,
+                               round, ImDrawCornerFlags_All, ICON_BORDER);
                 end
                 if (ic == ui.sel) then
                     dl:AddRect({ p0[1] - 2, p0[2] - 2 }, { p1[1] + 2, p1[2] + 2 },
