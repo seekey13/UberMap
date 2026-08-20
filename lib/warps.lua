@@ -56,7 +56,7 @@ return {
         { type = 'home', label = 'Home Point #3 (M)', pos = '(I-6)' },
         { type = 'home', label = 'Home Point #4',     pos = '(I-8)' },
     },
-    ["Bastok Markets (S)"] = {
+    ["Bastok Markets [S]"] = {
         { type = 'home',  label = 'Home Point #1',  pos = '(F-9)' },
         { type = 'guide', label = 'Survival Guide', pos = '(G-4)' },
     },
@@ -70,7 +70,7 @@ return {
         { type = 'guide', label = 'Survival Guide', pos = '(H-5)' },
         { type = 'unity', label = 'Unity Concord',  pos = '(K-8)' },
     },
-    ["Batallia Downs (S)"] = {
+    ["Batallia Downs [S]"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(F-9)' },
     },
     ["Beadeaux"] = {
@@ -80,7 +80,7 @@ return {
         { type = 'guide', label = 'Survival Guide', pos = '(H-9)' },
         { type = 'unity', label = 'Unity Concord',  pos = '(I-9)' },
     },
-    ["Beaucedine Glacier (S)"] = {
+    ["Beaucedine Glacier [S]"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(G-7)' },
     },
     ["Behemoth's Dominion"] = {
@@ -122,13 +122,13 @@ return {
     ["Castle Zvahl Baileys"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(J-8)' },
     },
-    ["Castle Zvahl Baileys (S)"] = {
+    ["Castle Zvahl Baileys [S]"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(J-8)' },
     },
     ["Castle Zvahl Keep"] = {
         { type = 'home', label = 'Home Point #1', pos = '(G-7)' },
     },
-    ["Castle Zvahl Keep (S)"] = {
+    ["Castle Zvahl Keep [S]"] = {
         { type = 'home', label = 'Home Point #1', pos = '(G-7)' },
     },
     ["Ceizak Battlegrounds"] = {
@@ -137,7 +137,7 @@ return {
     ["Crawlers' Nest"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(M-8)' },
     },
-    ["Crawlers' Nest (S)"] = {
+    ["Crawlers' Nest [S]"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(M-8)' },
     },
     ["Dangruf Wadi"] = {
@@ -157,7 +157,7 @@ return {
     ["East Ronfaure"] = {
         { type = 'unity', label = 'Unity Concord', pos = '(G-9)' },
     },
-    ["East Ronfaure (S)"] = {
+    ["East Ronfaure [S]"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(J-11)' },
     },
     ["East Sarutabaruta"] = {
@@ -183,14 +183,14 @@ return {
     ["Fort Ghelsba"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(F-8)' },
     },
-    ["Fort Karugo-Narugo (S)"] = {
+    ["Fort Karugo-Narugo [S]"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(I-5)' },
     },
     ["Garlaige Citadel"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(G-7)' },
         { type = 'unity', label = 'Unity Concord',  pos = '(G-6)' },
     },
-    ["Garlaige Citadel (S)"] = {
+    ["Garlaige Citadel [S]"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(G-7)' },
     },
     ["Giddeus"] = {
@@ -199,7 +199,7 @@ return {
     ["Grand Palace of Hu'Xzoi"] = {
         { type = 'home', label = 'Home Point #1', pos = '(H-8)' },
     },
-    ["Grauberg (S)"] = {
+    ["Grauberg [S]"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(L-4)' },
     },
     ["Gusgen Mines"] = {
@@ -224,7 +224,7 @@ return {
         { type = 'guide', label = 'Survival Guide', pos = '(I-8)' },
         { type = 'unity', label = 'Unity Concord',  pos = '(I-8)' },
     },
-    ["Jugner Forest (S)"] = {
+    ["Jugner Forest [S]"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(G-11)' },
     },
     ["Kamihr Drifts"] = {
@@ -283,7 +283,7 @@ return {
         { type = 'guide', label = 'Survival Guide', pos = '(E-5)' },
         { type = 'unity', label = 'Unity Concord',  pos = '(F-11)' },
     },
-    ["Meriphataud Mountains (S)"] = {
+    ["Meriphataud Mountains [S]"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(L-8)' },
     },
     ["Metalworks"] = {
@@ -320,7 +320,7 @@ return {
     ["North Gustaberg"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(D-10)' },
     },
-    ["North Gustaberg (S)"] = {
+    ["North Gustaberg [S]"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(F-7)' },
     },
     ["Northern San d'Oria"] = {
@@ -343,7 +343,7 @@ return {
         { type = 'guide', label = 'Survival Guide', pos = '(K-6)' },
         { type = 'unity', label = 'Unity Concord',  pos = '(E-12)' },
     },
-    ["Pashhow Marshlands (S)"] = {
+    ["Pashhow Marshlands [S]"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(K-11)' },
     },
     ["Phomiuna Aqueducts"] = {
@@ -407,7 +407,7 @@ return {
         { type = 'guide', label = 'Survival Guide', pos = '(G-6)' },
         { type = 'unity', label = 'Unity Concord',  pos = '(D-11)' },
     },
-    ["Rolanberry Fields (S)"] = {
+    ["Rolanberry Fields [S]"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(I-14)' },
     },
     ["Ru'Aun Gardens"] = {
@@ -431,7 +431,7 @@ return {
         { type = 'guide', label = 'Survival Guide', pos = '(J-10)' },
         { type = 'unity', label = 'Unity Concord',  pos = '(J-6)' },
     },
-    ["Sauromugue Champaign (S)"] = {
+    ["Sauromugue Champaign [S]"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(K-11)' },
     },
     ["Sea Serpent Grotto"] = {
@@ -450,7 +450,7 @@ return {
         { type = 'home', label = 'Home Point #3 (M)', pos = '(M-5)' },
         { type = 'home', label = 'Home Point #4',     pos = '(E-8)' },
     },
-    ["Southern San d'Oria (S)"] = {
+    ["Southern San d'Oria [S]"] = {
         { type = 'home',  label = 'Home Point #1',  pos = '(G-10)' },
         { type = 'guide', label = 'Survival Guide', pos = '(K-10)' },
     },
@@ -475,7 +475,7 @@ return {
     ["The Eldieme Necropolis"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(J-9)' },
     },
-    ["The Eldieme Necropolis (S)"] = {
+    ["The Eldieme Necropolis [S]"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(J-9)' },
     },
     ["The Garden of Ru'Hmet"] = {
@@ -516,7 +516,7 @@ return {
         { type = 'guide', label = 'Survival Guide', pos = '(F-8)' },
         { type = 'unity', label = 'Unity Concord',  pos = '(F-8)' },
     },
-    ["Vunkerl Inlet (S)"] = {
+    ["Vunkerl Inlet [S]"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(E-7)' },
     },
     ["Wajaom Woodlands"] = {
@@ -529,7 +529,7 @@ return {
     ["West Sarutabaruta"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(H-6)' },
     },
-    ["West Sarutabaruta (S)"] = {
+    ["West Sarutabaruta [S]"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(I-5)' },
     },
     ["Western Adoulin"] = {
@@ -546,7 +546,7 @@ return {
         { type = 'home', label = 'Home Point #3 (A)', pos = '(I-11)' },
     },
     ["Windurst Waters"] = windurst_waters,
-    ["Windurst Waters (S)"] = {
+    ["Windurst Waters [S]"] = {
         { type = 'home',  label = 'Home Point #1',  pos = '(G-7)' },
         { type = 'guide', label = 'Survival Guide', pos = '(F-5)' },
     },
@@ -561,7 +561,7 @@ return {
         { type = 'guide', label = 'Survival Guide', pos = '(H-9)' },
         { type = 'unity', label = 'Unity Concord',  pos = '(J-9)' },
     },
-    ["Xarcabard (S)"] = {
+    ["Xarcabard [S]"] = {
         { type = 'home', label = 'Home Point #1', pos = '(H-9)' },
     },
     ["Yhoator Jungle"] = {

@@ -59,6 +59,22 @@ kind are drawn greyed out and take no click: the panel still lists the
 destination and its icon says what to walk up to. Stand away from every warp NPC
 and the whole panel reads grey.
 
+A destination you have never stood at is a separate state: its label is drawn
+**red**, it takes no click from anywhere, and hovering it says why. The icon is
+left alone, since which kind of NPC the row travels from is worth reading either
+way.
+
+Home Points and Survival Guides have to be registered in person before they will
+travel to, which the game records as a bit per destination and sends as packet
+`0x63` type 6. The map reads that packet off the wire and pairs it with
+Uberwarp's destination list, so the row and the `/uw` it would send agree.
+Opening the map asks for a fresh one - the same `0x114` marker request the client
+makes when you open the in-game map - so registering a destination and opening
+the map again shows it unlocked without zoning. Unity Concords are open to every
+member, so they are never red. If either piece is missing - no masks back from
+the server, a destination Uberwarp does not list - the row stays clickable rather
+than being locked out on a guess.
+
 The three icons at the right of the search row filter it: dimming **Crystal**
 drops the Home Point rows, **Guide** the Survival Guides and **Unity** the Unity
 Warps. A zone whose every row is filtered out - or that has no warps at all -
@@ -95,7 +111,8 @@ e.g. `Windurst Woods - Home Point #2`.
 
 Clicking a favourite sends its warp, exactly as clicking the row it came from
 would; one you cannot use from where you stand is drawn dim and takes no press,
-the same way a popup row is. The `^` and `v` on the left of each row move it up
+and one you have not registered yet reads red, the same way a popup row does.
+The `^` and `v` on the left of each row move it up
 and down the list, and right-clicking a favourite offers *Remove point from
 favorites list*. The list and its order are saved with the rest of your
 settings.
@@ -122,7 +139,8 @@ change one, so your choices stand the next time you log in.
 The data lives in `lib/warps.lua` under the addon, keyed by the zone name, which is
 the point's `label` in `lib/points.lua`. A row whose key is not the game's own name
 for the zone - `Delkfutt Tower`, the two halves of Windurst Waters - carries a
-`zone` field with the name `/uw` wants; `(S)` keys are sent as `[S]`. `pos` is the
+`zone` field with the name `/uw` wants. The Campaign zones are named `[S]`, the
+way Uberwarp spells them, so they need no override. `pos` is the
 grid reference, held apart from the label so the panel can draw it in a column of
 its own and every row's lines up; a row with no grid reference leaves it out. Rows
 are listed in the order the file gives them:
@@ -188,6 +206,7 @@ lua test/test_warps.lua     # every warp row builds a /uw the game takes
 lua test/test_toggles.lua   # the layer toggles against the real points
 lua test/test_ring.lua      # the Warp Ring icon's equip-then-use steps
 lua test/test_favs.lua      # favorites: add, remove, reorder and the /uw they send
+lua test/test_unlocks.lua   # the unlock bit test, and every alias Uberwarp knows
 ```
 
 ## Credits
