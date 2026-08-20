@@ -169,21 +169,19 @@ local LABEL_GAP   = 1;  -- screen pixels between the label and the icon
 -- overview never sits underneath the points.
 local ZOOM_POINTS = 1.0;
 
--- Search box, pinned in from the viewport corner by SEARCH_MARGIN screen pixels.
-local SEARCH_MARGIN = 20;
-local SEARCH_W      = 600;
-local SEARCH_MAX    = 256;
-local EDIT_ROW      = 28;  -- editor panel row pitch, screen pixels
+-- Toolbar and editor panel, pinned in from the viewport corner by UI_MARGIN
+-- screen pixels.
+local UI_MARGIN = 20;
+local FIELD_W   = 600;  -- editor text field width, screen pixels
+local FIELD_MAX = 256;  -- editor text field length, bytes
+local EDIT_ROW  = 28;   -- editor panel row pitch, screen pixels
 
--- The search box is drawn this many times the default frame height.  The height
+-- Toolbar rows are drawn this many times the default frame height.  The height
 -- comes from frame padding rather than a font scale: ImGui has one baked font
 -- atlas, so scaling the font up magnifies its bitmap and goes blurry.
-local SEARCH_H_MULT   = 2.0;
-local COL_SEARCH_BG   = { 1.0, 1.0, 1.0, 1.0 };
-local COL_SEARCH_TEXT = { 0.0, 0.0, 0.0, 1.0 };
-local COL_SEARCH_HINT = { 0.45, 0.45, 0.45, 1.0 };
+local ROW_H_MULT = 2.0;
 
--- Layer toggles, drawn on the search box's line.  Clicking one dims its icon;
+-- Layer toggles, drawn on the toolbar row.  Clicking one dims its icon;
 -- the state is kept per file name in cfg.toggle (nil = lit).
 -- Maw.png is left out until maw warps are implemented.
 local TOGGLES      = T{ 'Crystal.png', 'Guide.png', 'Unity.png' };
@@ -326,8 +324,7 @@ local ui = T{
     zoom        = nil,  -- nil until the first frame gives us a viewport size
     pan_x       = 0,
     pan_y       = 0,
-    search      = { '', },
-    search_hot  = false,
+    hot         = false,     -- cursor was over a widget, not the map
     dragging    = false,
     drag_x      = 0,
     drag_y      = 0,
@@ -1167,8 +1164,8 @@ local function icon_button(id, file, x, y, h, tint, tip)
     if (tip ~= nil) then
         item_tip(tip);
     end
-    -- Feeding search_hot keeps the map from panning or zooming underneath.
-    ui.search_hot = ui.search_hot or imgui.IsItemHovered();
+    -- Feeding ui.hot keeps the map from panning or zooming underneath.
+    ui.hot = ui.hot or imgui.IsItemHovered();
     return hit, w;
 end
 
@@ -1322,8 +1319,8 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
     -- Favorites, pinned to the bottom-left corner opposite Multisend.  The
     -- heart opens and shuts the list; the list itself grows upwards from it,
     -- so the heart stays where it was put however long the list gets.
-    local fav_y = view_h - SEARCH_MARGIN - row_h;
-    if (icon_button('favs', FAV_ICON, SEARCH_MARGIN, fav_y, row_h,
+    local fav_y = view_h - UI_MARGIN - row_h;
+    if (icon_button('favs', FAV_ICON, UI_MARGIN, fav_y, row_h,
                     ui.favs_open and COL_MSS_ON or COL_MSS_OFF,
                     ui.favs_open and 'Hide favorites' or 'Show favorites')) then
         ui.favs_open = not ui.favs_open;
@@ -1356,7 +1353,7 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
                       + POPUP_PAD;
         local h = POPUP_ROW * math.max(n, 1);
 
-        local px = origin_x + SEARCH_MARGIN;
+        local px = origin_x + UI_MARGIN;
         -- Clamped so a list longer than the viewport tucks against the top
         -- edge rather than running off it.
         local py = mm.clamp_box(origin_y + fav_y - POPUP_GAP - h,
@@ -1436,7 +1433,7 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
         -- Held on to through a drag as well as a hover: a row dragged past
         -- the ends of the list puts the cursor outside the panel, which would
         -- otherwise hand the same press to the map and pan it.
-        ui.search_hot = ui.search_hot or fav_hot or ui.fav_drag ~= nil;
+        ui.hot = ui.hot or fav_hot or ui.fav_drag ~= nil;
         -- Why a red favorite does not travel.  Vetoed by a warp popup over
         -- this panel, the same way item_tip vetoes: the popup is anchored on a
         -- marker and can land in this corner.
@@ -1602,16 +1599,16 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
             -- An InvisibleButton over the panel takes the press, so it
             -- neither falls through to the map nor starts a window move.
             -- The hover test is the rect and not IsItemHovered: ImGui gives
-            -- hover to the first item that claims it, and the search row is
-            -- submitted before this one.  Feeding search_hot keeps the map
+            -- hover to the first item that claims it, and the toolbar row is
+            -- submitted before this one.  Feeding ui.hot keeps the map
             -- from panning or zooming underneath; a click anywhere else
             -- closes the panel.
             imgui.SetCursorPos({ px - origin_x, py - origin_y });
             imgui.InvisibleButton('##ubermap_warps', { w, h });
             local warp_hot = mouse_x >= px and mouse_x <= px + w
                              and mouse_y >= py and mouse_y <= py + h;
-            ui.search_hot = ui.search_hot or warp_hot;
-            ui.warp_hot   = warp_hot;
+            ui.hot = ui.hot or warp_hot;
+            ui.warp_hot = warp_hot;
             -- Straight from the panel's own button rather than through
             -- item_tip, which vetoes on this very panel lying over things.
             if (hot_lock ~= nil) then
@@ -1680,7 +1677,7 @@ local function draw_ctx_menu(origin_x, origin_y, view_w, view_h, mouse_x, mouse_
 
         imgui.SetCursorPos({ px - origin_x, py - origin_y });
         imgui.InvisibleButton('##ubermap_ctx', { w, h });
-        ui.search_hot = ui.search_hot or ctx_hot;
+        ui.hot = ui.hot or ctx_hot;
 
         -- Any press closes the menu; one on the item runs it first.  Both
         -- buttons, so a second right-click dismisses it rather than leaving
@@ -1717,13 +1714,13 @@ local function draw_map(view_w, view_h)
         bit.bor(ImGuiHoveredFlags_ChildWindows, ImGuiHoveredFlags_RectOnly));
 
     -- Ignore the mouse outside the map, and while shift is held, so a
-    -- shift-drag moves the window instead of panning underneath it.  The search
-    -- box is skipped too, so dragging in it selects text instead of panning.
+    -- shift-drag moves the window instead of panning underneath it.  Widgets are
+    -- skipped too, so a press in one works it instead of panning the map.
     -- IsAnyItemActive cannot stand in for that flag: ImGui sets ActiveId to the
     -- window's MoveId on any press in blank space, NoMove included, so it is
     -- true for exactly the drag that should pan.
     local shift    = imgui.GetIO().KeyShift;
-    local over_map = hovered and not shift and not ui.search_hot
+    local over_map = hovered and not shift and not ui.hot
         and mouse_x >= origin_x and mouse_x < origin_x + view_w
         and mouse_y >= origin_y and mouse_y < origin_y + view_h;
 
@@ -1812,47 +1809,31 @@ local function draw_map(view_w, view_h)
             ui.press = nil;
         end
 
-        local row_h = imgui.GetFrameHeight() * SEARCH_H_MULT;
+        local row_h = imgui.GetFrameHeight() * ROW_H_MULT;
 
-        -- Every widget on the row below ORs into search_hot, which is what
+        -- Every widget on the row below ORs into ui.hot, which is what
         -- keeps the map from panning or zooming underneath one.  Cleared here
         -- rather than assigned by whichever widget happens to be first.  Read a
         -- frame late by over_map above, which is fine: a click focuses a widget
         -- before the drag threshold is ever crossed.
-        ui.search_hot = false;
+        ui.hot = false;
 
-        -- Past/present switch, first on the search row.  The art names the map
+        -- Past/present switch, first on the toolbar row.  The art names the map
         -- you are on, not the one the press takes you to.  The switch is
         -- recorded and applied after the frame, because set_time clears the
         -- zoom that the rest of this frame still reads.
         local other = (ui.time == 'present') and 'past' or 'present';
         local time_hit, time_w = icon_button('time', ui.time .. '.png',
-                                             SEARCH_MARGIN, SEARCH_MARGIN, row_h, COL_ICON,
+                                             UI_MARGIN, UI_MARGIN, row_h, COL_ICON,
                                              'Switch to a map of the ' .. other);
         if (time_hit) then
             ui.next_time = other;
         end
-        local search_x = SEARCH_MARGIN + time_w + TOGGLE_GAP;
-
-        imgui.PushStyleVar(ImGuiStyleVar_FramePadding,
-                           { 6, (row_h - imgui.GetFontSize()) / 2 });
-        imgui.PushStyleColor(ImGuiCol_FrameBg, COL_SEARCH_BG);
-        imgui.PushStyleColor(ImGuiCol_FrameBgHovered, COL_SEARCH_BG);
-        imgui.PushStyleColor(ImGuiCol_FrameBgActive, COL_SEARCH_BG);
-        imgui.PushStyleColor(ImGuiCol_Text, COL_SEARCH_TEXT);
-        imgui.PushStyleColor(ImGuiCol_TextDisabled, COL_SEARCH_HINT);
-        imgui.SetCursorPos({ search_x, SEARCH_MARGIN });
-        imgui.SetNextItemWidth(SEARCH_W);
-        imgui.InputTextWithHint('##ubermap_search', 'Search', ui.search, SEARCH_MAX);
-        imgui.PopStyleColor(5);
-        imgui.PopStyleVar();
-        ui.search_hot = ui.search_hot or imgui.IsItemActive() or imgui.IsItemHovered();
-
-        -- Toggle icons, sharing the search box's line.
-        local tx_at = search_x + SEARCH_W + TOGGLE_GAP;
+        -- Toggle icons, sharing the switch's line.
+        local tx_at = UI_MARGIN + time_w + TOGGLE_GAP;
         for _, file in ipairs(TOGGLES) do
             local hit, tw = icon_button('toggle_' .. file, file,
-                                        tx_at, SEARCH_MARGIN, row_h,
+                                        tx_at, UI_MARGIN, row_h,
                                         cfg.toggle[file] and COL_ICON_OFF or COL_ICON,
                                         (cfg.toggle[file] and 'Show ' or 'Hide ')
                                         .. (TOGGLE_NAME[file] or file));
@@ -1869,7 +1850,7 @@ local function draw_map(view_w, view_h)
         -- filtering the map, so it is drawn dim and takes no press while none
         -- is carried.
         local warp_hit, warp_w =
-            icon_button('warpitem', WARP_ITEM_ICON, tx_at, SEARCH_MARGIN, row_h,
+            icon_button('warpitem', WARP_ITEM_ICON, tx_at, UI_MARGIN, row_h,
                         ui.has_warp and COL_ICON or COL_ICON_OFF,
                         ui.has_warp and 'Use Instant Warp scroll'
                                      or 'No Instant Warp scroll in inventory');
@@ -1889,7 +1870,7 @@ local function draw_map(view_w, view_h)
                       or ui.ring == 'equip' and 'Equip Warp Ring to ring1'
                       or ui.ring == 'wait'  and ('Equipping Warp Ring (%ds)'):fmt(math.max(math.ceil(left), 0))
                       or 'No Warp Ring in inventory or Mog Wardrobe';
-        if (icon_button('warpring', RING_ITEM_ICON, tx_at, SEARCH_MARGIN, row_h,
+        if (icon_button('warpring', RING_ITEM_ICON, tx_at, UI_MARGIN, row_h,
                         ui.ring == 'use' and COL_ICON or COL_ICON_OFF, ring_tip)) then
             if (ui.ring == 'use') then
                 send_cmd(RING_ITEM_CMD);
@@ -1900,27 +1881,27 @@ local function draw_map(view_w, view_h)
             end
         end
 
-        -- Everything below the search row stacks from here.
-        local edit_y = SEARCH_MARGIN + row_h + TOGGLE_GAP;
+        -- Everything below the toolbar row stacks from here.
+        local edit_y = UI_MARGIN + row_h + TOGGLE_GAP;
 
-        -- Editor panel, stacked under the search box.  Its widgets feed
-        -- search_hot too, so dragging in them edits text instead of panning.
+        -- Editor panel, stacked under the toolbar row.  Its widgets feed
+        -- ui.hot too, so dragging in them edits text instead of panning.
         if (ui.edit) then
             if (ui.sel == nil) then
                 outlined_text(imgui.GetWindowDrawList(),
-                              origin_x + SEARCH_MARGIN, origin_y + edit_y,
+                              origin_x + UI_MARGIN, origin_y + edit_y,
                               'ctrl+click the map to add or grab a point');
             else
                 -- Rows are placed by hand rather than by flow, so the panel does
                 -- not depend on the child's cursor advancing a particular amount.
-                imgui.SetCursorPos({ SEARCH_MARGIN, edit_y });
-                imgui.SetNextItemWidth(SEARCH_W);
-                imgui.InputTextWithHint('##ubermap_pt_name', 'Name', ui.edit_name, SEARCH_MAX);
+                imgui.SetCursorPos({ UI_MARGIN, edit_y });
+                imgui.SetNextItemWidth(FIELD_W);
+                imgui.InputTextWithHint('##ubermap_pt_name', 'Name', ui.edit_name, FIELD_MAX);
                 local hot = imgui.IsItemActive() or imgui.IsItemHovered();
 
-                imgui.SetCursorPos({ SEARCH_MARGIN, edit_y + EDIT_ROW });
-                imgui.SetNextItemWidth(SEARCH_W);
-                imgui.InputTextWithHint('##ubermap_pt_group', 'Group', ui.edit_group, SEARCH_MAX);
+                imgui.SetCursorPos({ UI_MARGIN, edit_y + EDIT_ROW });
+                imgui.SetNextItemWidth(FIELD_W);
+                imgui.InputTextWithHint('##ubermap_pt_group', 'Group', ui.edit_group, FIELD_MAX);
                 hot = hot or imgui.IsItemActive() or imgui.IsItemHovered();
 
                 if (ui.edit_name[1] ~= ui.sel.label or ui.edit_group[1] ~= ui.sel.group) then
@@ -1928,14 +1909,14 @@ local function draw_map(view_w, view_h)
                     ui.dirty = true;
                 end
 
-                imgui.SetCursorPos({ SEARCH_MARGIN, edit_y + EDIT_ROW * 2 });
+                imgui.SetCursorPos({ UI_MARGIN, edit_y + EDIT_ROW * 2 });
                 imgui.Text(('%d, %d'):fmt(ui.sel.x, ui.sel.y));
-                imgui.SetCursorPos({ SEARCH_MARGIN, edit_y + EDIT_ROW * 3 });
+                imgui.SetCursorPos({ UI_MARGIN, edit_y + EDIT_ROW * 3 });
                 if (imgui.Button('Delete')) then
                     delete_point(ui.sel);
                     ui.sel = nil;
                 end
-                ui.search_hot = ui.search_hot or hot or imgui.IsItemHovered();
+                ui.hot = ui.hot or hot or imgui.IsItemHovered();
             end
         end
 
@@ -1957,8 +1938,8 @@ local function draw_map(view_w, view_h)
         -- with no icon there is nothing to press and the map keeps sending the
         -- way it always did.
         local mss_w = icon_width(MSS_ICON, row_h);
-        if (icon_button('mss', MSS_ICON, view_w - SEARCH_MARGIN - mss_w,
-                        view_h - SEARCH_MARGIN - row_h, row_h,
+        if (icon_button('mss', MSS_ICON, view_w - UI_MARGIN - mss_w,
+                        view_h - UI_MARGIN - row_h, row_h,
                         cfg.mss and COL_MSS_ON or COL_MSS_OFF,
                         cfg.mss and 'Multisend on: warps go to every character'
                                  or 'Multisend off: warps go to this character only')) then

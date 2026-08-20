@@ -16,7 +16,7 @@ Drop the `UberMap` folder into `Ashita/addons/`, then `/addon load ubermap`.
 Mouse wheel zooms, left-drag pans, **shift**-drag moves the window.  
 Talking to a warp NPC opens it; if it is already open your view is left alone.  
 It closes itself once you walk a yalm from where it opened or a warp is used.  
-The button left of the search row switches **Past**/**Present**.  
+The button at the top left switches **Past**/**Present**.  
 
 ## Warp list
 
@@ -41,7 +41,7 @@ Left-click a zone point — for a panel of that zone's destinations. Clicking a 
 
 | Icon | Where | Does |
 | --- | --- | --- |
-| **Crystal**, **Guide**, **Unity** | Right of search | Dim one to drop that kind of row. A zone with nothing left opens no panel |
+| **Crystal**, **Guide**, **Unity** | Top left, after the Past/Present switch | Dim one to drop that kind of row. A zone with nothing left opens no panel |
 | **Warp** | After them | `/item "Instant Warp" <me>` and closes the map. Lit only while the scroll (4181) is carried |
 | **Warp Ring** | After that | Two steps, see below |
 | **Multisend** | Bottom right | Prefixes every command the map sends with `/mss ` |
@@ -86,7 +86,7 @@ Icons are listed in `ICONS` in `ubermap.lua`, a file in `assets/` plus the coord
 
 ## Placing points in game
 
-`/ubermap edit` turns on the editor. **Ctrl+click** the map to drop a point or grab one, hold to drag; plain drag still pans. The panel under the search box renames, regroups and deletes.
+`/ubermap edit` turns on the editor. **Ctrl+click** the map to drop a point or grab one, hold to drag; plain drag still pans. The panel under the toolbar renames, regroups and deletes.
 
 Changes are written to `lib/points.lua`, which is loaded back at startup, so reloading loses nothing. That file holds `groups` for the overview tiers drawn zoomed out and `points` for the zone markers drawn zoomed in. Every marker carries a `time` tag — `'present'` or `'past'` — and is drawn only on that map; points dropped with the editor take the map on screen, and a row with no tag is drawn on neither.
 
