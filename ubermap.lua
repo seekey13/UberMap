@@ -81,16 +81,11 @@ local WARP_NPC = T{
 -- the server's choice, so all three are watched.
 local NPC_EVENT = T{ [0x032] = 0x08, [0x033] = 0x08, [0x034] = 0x28 };
 
--- The teleport masks, in the same terms: packet 0x63 carries several kinds of
--- miscellaneous data behind a type word, and type 6 is 64 bytes of them - four
--- uint32 of Home Points, four of Survival Guides, then the rest.  The server
--- sends it on zoning in, so the map has one from the first zone after it loads
--- and none before that.
-local MASK_PACKET  = 0x063;
-local MASK_TYPE_AT = 0x04;  -- the type word, past the 4 byte header
-local MASK_TYPE    = 6;
-local MASK_AT      = 0x08;  -- the masks themselves, past the type word
-local MASK_BYTES   = 64;
+-- The teleport masks, in the same terms: packet 0x63 type 6 says which
+-- destinations are registered, and lib/unlocks.lua reads it.  The server sends
+-- it on zoning in, so the map has one from the first zone after it loads and
+-- none before that.
+local MASK_PACKET = 0x063;
 
 -- How close one of those has to be to count as being stood at, in yalms, and
 -- how often the map re-checks while it is open, in seconds.
@@ -340,7 +335,6 @@ local ui = T{
     near_kind   = false,     -- warp type last seen in reach; false until checked
     has_warp    = false,     -- an Instant Warp scroll was in the bag last poll
     masks       = nil,       -- teleport mask block off the last 0x63 type 6
-    mask_seen   = T{},       -- how many 0x63 arrived, counted by type word
     ring        = 'none',    -- Warp Ring step: none, equip or use, as of last poll
     ring_bag    = nil,       -- /equip container number the ring was found in
     -- os.clock() an equip was asked for, for the wait.  Starts a whole wait in
@@ -902,9 +896,8 @@ local UW_TYPE = T{ home = 'hp', guide = 'sg', unity = 'uc' };
 --]]
 local function warp_alias(label, row)
     -- The Campaign zones are named '[S]' throughout, the way Uberwarp spells
-    -- them, so this rewrite is only for favorites saved back when the map
-    -- wrote them '(S)': those keep the old name in the settings file.
-    local zone = (row.zone or label):gsub('%(S%)$', '[S]');
+    -- them; a favorite saved under the old '(S)' was renamed on the way in.
+    local zone = row.zone or label;
     -- The first Home Point of a zone is the bare name: '#1' is the default the
     -- command falls back to, so sending it would be a zone the server rejects.
     local n = (row.type == 'home') and row.label:match('^Home Point #(%d+)') or nil;
@@ -1292,18 +1285,9 @@ end
 * zoned, and would still be showing the state from before a Home Point was
 * registered in the one that did.
 --]]
-local MARKERS_PACKET = 0x114;
-
+-- 0x114 with one dword of size in the top bits is 0x314, little end first.
 local function ask_for_masks()
-    local mgr = AshitaCore:GetPacketManager();
-    if (mgr == nil) then
-        return;
-    end
-    local id = MARKERS_PACKET + 0x200;  -- one dword of size, in the top bits
-    pcall(function ()
-        mgr:AddOutgoingPacket(MARKERS_PACKET,
-                              { id % 256, math.floor(id / 256), 0, 0 });
-    end);
+    AshitaCore:GetPacketManager():AddOutgoingPacket(0x114, { 0x14, 0x03, 0, 0 });
 end
 
 --[[
@@ -1399,9 +1383,7 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
                          and mouse_y >= ry and mouse_y < ry + POPUP_ROW;
             if (over) then
                 hot_i, hot_live = i, live and known;
-                if (not known) then
-                    hot_lock = f.type;
-                end
+                hot_lock = (not known) and LOCK_TIP[f.type] or nil;
             end
             -- Lit: the row under the cursor, or while one is being dragged,
             -- the slot the cursor has carried it to rather than the one it
@@ -1458,8 +1440,8 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
         -- Why a red favorite does not travel.  Vetoed by a warp popup over
         -- this panel, the same way item_tip vetoes: the popup is anchored on a
         -- marker and can land in this corner.
-        if (hot_lock ~= nil and not ui.warp_hot and LOCK_TIP[hot_lock] ~= nil) then
-            imgui.SetTooltip(LOCK_TIP[hot_lock]);
+        if (hot_lock ~= nil and not ui.warp_hot) then
+            imgui.SetTooltip(hot_lock);
         end
 
         -- A warp popup lying over this panel eats its presses, the same way
@@ -1562,8 +1544,8 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
             -- it is live or not, which is what the right-click menu goes
             -- on - a destination can be favorited from anywhere, not only
             -- from in front of the NPC that travels to it.
-            -- hot_lock is the warp type of a red row under the cursor, so
-            -- the tooltip below can say why that row will not travel.
+            -- hot_lock is the tooltip a red row under the cursor should show,
+            -- saying why that row will not travel.
             local hot_row, hot_any, hot_lock = nil, nil, nil;
             for i, r in ipairs(rows) do
                 local ry = py + POPUP_ROW * (i - 1);
@@ -1585,10 +1567,8 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                 local over = mouse_x >= px and mouse_x <= px + w
                              and mouse_y >= ry and mouse_y < ry + POPUP_ROW;
                 if (over) then
-                    hot_any = r;
-                    if (not known) then
-                        hot_lock = r.type;
-                    end
+                    hot_any  = r;
+                    hot_lock = (not known) and LOCK_TIP[r.type] or nil;
                 end
                 if (live and known and over) then
                     hot_row = r;
@@ -1634,8 +1614,8 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
             ui.warp_hot   = warp_hot;
             -- Straight from the panel's own button rather than through
             -- item_tip, which vetoes on this very panel lying over things.
-            if (hot_lock ~= nil and LOCK_TIP[hot_lock] ~= nil) then
-                imgui.SetTooltip(LOCK_TIP[hot_lock]);
+            if (hot_lock ~= nil) then
+                imgui.SetTooltip(hot_lock);
             end
             -- A click while the right-click menu is up belongs to the menu,
             -- which is drawn after this and reads the same press.  Without
@@ -2059,21 +2039,9 @@ ashita.events.register('packet_in', 'ubermap_packet_in', function (e)
     -- the server's own header file, while the copy's is an offset in a struct
     -- that has to be guessed right.
     if (e.id == MASK_PACKET) then
-        -- Every 0x63 is counted by its type word, whether or not it is the one
-        -- wanted: the readout can then tell a packet that never arrives from
-        -- one arriving under a type this is not looking for.
-        local kind = e.data:byte(MASK_TYPE_AT + 1);
-        if (kind ~= nil) then
-            ui.mask_seen[kind] = (ui.mask_seen[kind] or 0) + 1;
-        end
-        if (kind == MASK_TYPE and e.data:byte(MASK_TYPE_AT + 2) == 0) then
-            local m = {};
-            for i = 1, MASK_BYTES do
-                m[i] = e.data:byte(MASK_AT + i);
-            end
-            -- A short packet leaves holes, which would read as unregistered.
-            ui.masks = (m[MASK_BYTES] ~= nil) and m or nil;
-        end
+        -- Every 0x63 that is not the one wanted reads back nil, which would
+        -- throw away a block already in hand, so only a good one is taken.
+        ui.masks = unlocks.read_packet(e.data) or ui.masks;
         return false;
     end
 
@@ -2129,50 +2097,6 @@ ashita.events.register('command', 'ubermap_command', function (e)
             ui.sel = nil;
         end
         notify(('point editor: %s'):fmt(ui.edit and 'on, ctrl+click the map' or 'off'));
-        return;
-    end
-
-    --[[
-    * '/um unlocks [destination]' prints what the red-row test is working
-    * from: where Uberwarp's data was read, how many names came back, and the
-    * two mask blocks as they arrived.  Given a destination - the name the /uw
-    * carries, e.g. 'Xarcabard [S]' - it also says how that one reads.
-    --]]
-    if (sub == 'unlocks') then
-        -- Answered a moment later, so what it fetches shows on the next run of
-        -- this rather than in the lines below.
-        ask_for_masks();
-        notify(('data: %s'):fmt(tostring(unlocks.dir)));
-        notify(('names: %d home, %d guide'):fmt(unlocks.size('home'),
-                                                unlocks.size('guide')));
-        local kinds = T{};
-        for kind, n in pairs(ui.mask_seen) do
-            kinds:append(('%02X x%d'):fmt(kind, n));
-        end
-        notify(('0x63 seen: %s'):fmt(#kinds > 0 and kinds:concat(', ') or 'none'));
-        local m = ui.masks;
-        if (m == nil) then
-            notify('no 0x63 type 6 yet, so nothing is gated - zone once');
-        else
-            local home, guide = T{}, T{};
-            for i = 1, 16 do
-                home:append(('%02X'):fmt(m[i] or 0));
-                guide:append(('%02X'):fmt(m[i + 16] or 0));
-            end
-            notify(('home  %s'):fmt(home:concat(' ')));
-            notify(('guide %s'):fmt(guide:concat(' ')));
-        end
-        -- Rejoined with spaces: the command splits on them and zone names
-        -- have them.
-        local alias = nil;
-        for i = 3, #args do
-            alias = (alias == nil) and args[i] or ('%s %s'):fmt(alias, args[i]);
-        end
-        if (alias ~= nil) then
-            notify(('%q: home %s, guide %s'):fmt(alias,
-                   tostring(unlocks.known('home', alias, m)),
-                   tostring(unlocks.known('guide', alias, m))));
-        end
         return;
     end
 

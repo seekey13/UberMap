@@ -70,7 +70,6 @@ end
 * the warp, so if its data is gone the /uw was never going to land anyway.
 --]]
 function unlocks.load(dir)
-    unlocks.dir = dir;
     for kind, r in pairs(unlocks.REGION) do
         local fh = io.open(dir .. r.file, 'r');
         if (fh ~= nil) then
@@ -81,18 +80,25 @@ function unlocks.load(dir)
     end
 end
 
--- Where load() last read from, and how many names each type came back with,
--- for the '/um unlocks' readout.  Both fail quietly by design - a row that
--- cannot be tested simply stays clickable - so without this there is nothing
--- to look at when the test is not answering.
-unlocks.dir = nil;
+--[[
+* The mask block out of one packet 0x63, or nil when that packet is not the
+* one carrying it.  Packet id 0x63 covers several kinds of miscellaneous data
+* behind a type word: 4 bytes of header, then the type, then 64 bytes of masks.
+*
+* nil for anything else under the same id, and for a type 6 that arrives short
+* -- the missing bytes would read back as unregistered destinations.
+--]]
+local TYPE_AT, TYPE, MASKS_AT, BYTES = 0x04, 6, 0x08, 64;
 
-function unlocks.size(kind)
-    local n = 0;
-    for _ in pairs(BITS[kind] or {}) do
-        n = n + 1;
+function unlocks.read_packet(data)
+    if (data:byte(TYPE_AT + 1) ~= TYPE or data:byte(TYPE_AT + 2) ~= 0) then
+        return nil;
     end
-    return n;
+    local m = {};
+    for i = 1, BYTES do
+        m[i] = data:byte(MASKS_AT + i);
+    end
+    return (m[BYTES] ~= nil) and m or nil;
 end
 
 --[[
