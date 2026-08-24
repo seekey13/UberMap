@@ -386,6 +386,7 @@ local ui = T{
     pan_x       = 0,
     pan_y       = 0,
     search      = { '', },   -- search box text, boxed the way ImGui wants it
+    search_at   = '',        -- search text the view was last framed for
     hot         = false,     -- cursor was over a widget, not the map
     dragging    = false,
     drag_x      = 0,
@@ -1518,12 +1519,32 @@ end
 * which those points are not drawn at all.  Returns false when nothing carries
 * the group, which leaves the view alone.
 --]]
-local ZOOM_PAD = 100;  -- map pixels of margin around the framed group
+local ZOOM_PAD = 100;  -- map pixels of margin around the framed points
 
-local function zoom_to_group(name, view_w, view_h)
+--[[
+* Puts a map-pixel box in the middle of the viewport at the zoom that fits it,
+* ZOOM_PAD of margin included.  The floor is ZOOM_POINTS, below which the zone
+* points are not drawn at all, or the zoom that covers the viewport where that
+* is higher; the ceiling is MAX_ZOOM, so a box of one point does not run away.
+--]]
+local function zoom_to_box(x0, y0, x1, y1, view_w, view_h)
+    local map_w, map_h = map_size();
+    local floor_z = math.max(ZOOM_POINTS, mm.cover_zoom(map_w, map_h, view_w, view_h));
+    local fit = mm.fit_zoom(x1 - x0 + ZOOM_PAD * 2, y1 - y0 + ZOOM_PAD * 2,
+                            view_w, view_h);
+    ui.zoom  = mm.clamp(fit, floor_z, MAX_ZOOM);
+    ui.pan_x = (x0 + x1) / 2 * ui.zoom - view_w / 2;
+    ui.pan_y = (y0 + y1) / 2 * ui.zoom - view_h / 2;
+end
+
+--[[
+* Frames every point 'want' accepts, on the map being shown.  Returns false
+* when nothing is accepted, which leaves the view alone.
+--]]
+local function zoom_to_points(want, view_w, view_h)
     local x0, y0, x1, y1;
     for _, ic in ipairs(ICONS) do
-        if (ic.group == name and ic.time == ui.time) then
+        if (ic.time == ui.time and want(ic)) then
             x0 = math.min(x0 or ic.x, ic.x);
             y0 = math.min(y0 or ic.y, ic.y);
             x1 = math.max(x1 or ic.x, ic.x);
@@ -1533,15 +1554,39 @@ local function zoom_to_group(name, view_w, view_h)
     if (x0 == nil) then
         return false;
     end
+    zoom_to_box(x0, y0, x1, y1, view_w, view_h);
+    return true;
+end
 
-    local map_w, map_h = map_size();
-    local floor_z = math.max(ZOOM_POINTS, mm.cover_zoom(map_w, map_h, view_w, view_h));
-    local fit = mm.fit_zoom(x1 - x0 + ZOOM_PAD * 2, y1 - y0 + ZOOM_PAD * 2,
-                            view_w, view_h);
-    ui.zoom  = mm.clamp(fit, floor_z, MAX_ZOOM);
-    ui.pan_x = (x0 + x1) / 2 * ui.zoom - view_w / 2;
-    ui.pan_y = (y0 + y1) / 2 * ui.zoom - view_h / 2;
+--[[
+* Frames every point whose group matches 'name', so clicking an overview marker
+* opens the zone points it stands for.
+--]]
+local function zoom_to_group(name, view_w, view_h)
+    if (not zoom_to_points(function(ic) return ic.group == name; end,
+                           view_w, view_h)) then
+        return false;
+    end
     ui.focus = name;
+    return true;
+end
+
+--[[
+* Frames every zone point the search box matches, so a search lands on what it
+* found instead of leaving it dimmed somewhere off screen.  Overview markers
+* are left out: they stop being drawn at ZOOM_POINTS, which framing a match
+* always passes, and a region marker sits nowhere near the zone it stands for.
+*
+* Any group focus is dropped on the way, since the search is the subject of the
+* view now and a stale focus would dim the very points just framed.
+--]]
+local function zoom_to_search(view_w, view_h)
+    if (not zoom_to_points(function(ic)
+            return not OVERVIEW[ic.group] and search_hit(ic);
+        end, view_w, view_h)) then
+        return false;
+    end
+    ui.focus = nil;
     return true;
 end
 
@@ -2326,6 +2371,18 @@ local function draw_map(view_w, view_h)
         imgui.PopStyleColor(5);
         imgui.PopStyleVar();
         ui.hot = ui.hot or imgui.IsItemActive() or imgui.IsItemHovered();
+
+        -- Reframed on every change to the text, so narrowing a search closes in
+        -- on what is left.  Only on a change: refitting every frame would fight
+        -- the wheel and the drag for the rest of the search.  An emptied box is
+        -- left where it is rather than thrown back out to the overview, since
+        -- clearing the search is usually the step before clicking what it found.
+        if (ui.search[1] ~= ui.search_at) then
+            ui.search_at = ui.search[1];
+            if (ui.search_at ~= '') then
+                zoom_to_search(view_w, view_h);
+            end
+        end
 
         -- Toggle icons, sharing the search box's line.
         local tx_at = search_x + FIELD_W + TOGGLE_GAP;

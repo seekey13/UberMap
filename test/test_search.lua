@@ -126,6 +126,134 @@ assert(lit() == 0, 'a search nothing matches must fade every marker back');
 search[1] = '';
 assert(lit() == total, 'clearing the search must restore the map');
 
+--[[
+* Framing a search.  Mirrors zoom_to_points/zoom_to_box in ubermap.lua: the
+* matching zone points give a bounding box, which is centred at the zoom that
+* fits it with ZOOM_PAD of margin, floored at ZOOM_POINTS and capped at
+* MAX_ZOOM.  Overview markers are left out of the box.
+--]]
+local mm = assert(loadfile('lib/mapmath.lua'))();
+
+local MAP_W, MAP_H   = 5504, 3072;   -- TIMES.present in ubermap.lua
+local ZOOM_POINTS    = 1.0;
+local MAX_ZOOM       = 2.0;
+local ZOOM_PAD       = 100;
+local VIEW_W, VIEW_H = 1920, 1080;
+
+local function search_box()
+    local x0, y0, x1, y1;
+    for _, ic in ipairs(ICONS) do
+        if (ic.time == time and not OVERVIEW[ic.group] and search_hit(ic)) then
+            x0 = math.min(x0 or ic.x, ic.x);
+            y0 = math.min(y0 or ic.y, ic.y);
+            x1 = math.max(x1 or ic.x, ic.x);
+            y1 = math.max(y1 or ic.y, ic.y);
+        end
+    end
+    return x0, y0, x1, y1;
+end
+
+-- Returns the zoom and pan the box would be framed at, or nil when the search
+-- matched no zone point on this map -- which leaves the view alone.
+local function frame_search()
+    local x0, y0, x1, y1 = search_box();
+    if (x0 == nil) then
+        return nil;
+    end
+    local floor_z = math.max(ZOOM_POINTS, mm.cover_zoom(MAP_W, MAP_H, VIEW_W, VIEW_H));
+    local fit = mm.fit_zoom(x1 - x0 + ZOOM_PAD * 2, y1 - y0 + ZOOM_PAD * 2,
+                            VIEW_W, VIEW_H);
+    local zoom = mm.clamp(fit, floor_z, MAX_ZOOM);
+    return zoom,
+           (x0 + x1) / 2 * zoom - VIEW_W / 2,
+           (y0 + y1) / 2 * zoom - VIEW_H / 2,
+           fit, floor_z, x0, y0, x1, y1;
+end
+
+local function near(a, b)
+    return math.abs(a - b) < 1e-6;
+end
+
+-- A search nothing matches frames nothing, so the view is left where it was.
+search[1] = 'zzz no such place zzz';
+assert(frame_search() == nil, 'a search with no match must leave the view alone');
+
+-- A group name matches every zone under it, so this frames more than one point.
+search[1] = zone.group;
+local zoom, pan_x, pan_y, fit, floor_z, x0, y0, x1, y1 = frame_search();
+assert(zoom ~= nil, ('%s: its own zones must frame'):format(zone.group));
+assert(x1 > x0 or y1 > y0, ('%s: must frame more than one point'):format(zone.group));
+
+-- The box lands in the middle of the viewport, whatever the zoom clamped to.
+assert(near(mm.to_screen((x0 + x1) / 2, pan_x, zoom, 0), VIEW_W / 2),
+       'the framed box must be centred across the viewport');
+assert(near(mm.to_screen((y0 + y1) / 2, pan_y, zoom, 0), VIEW_H / 2),
+       'the framed box must be centred down the viewport');
+
+-- Never below the zoom the zone points are drawn at, or there would be nothing
+-- on screen to have framed.
+assert(zoom >= ZOOM_POINTS and zoom <= MAX_ZOOM,
+       ('%s: framed at %g, outside [%g, %g]'):format(zone.group, zoom, ZOOM_POINTS, MAX_ZOOM));
+
+-- The zone points are dense enough that a real search almost always fits
+-- tighter than MAX_ZOOM and takes the cap, so the on-screen half of the framing
+-- is checked on a span built to land between the floor and the cap.
+local function frame_box(x0, y0, x1, y1)
+    local floor_z = math.max(ZOOM_POINTS, mm.cover_zoom(MAP_W, MAP_H, VIEW_W, VIEW_H));
+    local fit = mm.fit_zoom(x1 - x0 + ZOOM_PAD * 2, y1 - y0 + ZOOM_PAD * 2,
+                            VIEW_W, VIEW_H);
+    local z = mm.clamp(fit, floor_z, MAX_ZOOM);
+    return z, (x0 + x1) / 2 * z - VIEW_W / 2, (y0 + y1) / 2 * z - VIEW_H / 2, fit;
+end
+
+do
+    local bx0, by0, bx1, by1 = 1000, 900, 2400, 1600;   -- 1400 x 700 map pixels
+    local z, px, py, fit = frame_box(bx0, by0, bx1, by1);
+    assert(z > ZOOM_POINTS and z < MAX_ZOOM and z == fit,
+           ('a %dx%d span must frame at its own fit, got %g'):format(
+               bx1 - bx0, by1 - by0, z));
+    -- Both corners on screen, and the margin really is ZOOM_PAD map pixels.
+    for _, corner in ipairs({ { bx0, by0 }, { bx1, by1 } }) do
+        local sx = mm.to_screen(corner[1], px, z, 0);
+        local sy = mm.to_screen(corner[2], py, z, 0);
+        assert(sx >= 0 and sx <= VIEW_W and sy >= 0 and sy <= VIEW_H,
+               ('corner framed off screen at %d, %d'):format(sx, sy));
+    end
+    local pad_x = mm.to_screen(bx0, px, z, 0);
+    assert(pad_x >= ZOOM_PAD * z - 1e-6,
+           ('the framed box must keep its margin, got %g'):format(pad_x));
+    print(('framed a 1400x700 span at zoom %.3f, %.0fpx of margin'):format(z, pad_x));
+end
+
+-- Nothing a real search frames is allowed outside the zoom range, however far
+-- apart or close together the matches are.
+for _, q in ipairs({ zone.group, zone.label, 'Ronfaure', 'a', 'e' }) do
+    search[1] = q;
+    local z = frame_search();
+    if (z ~= nil) then
+        assert(z >= ZOOM_POINTS and z <= MAX_ZOOM,
+               ('%s: framed at %g, outside [%g, %g]'):format(q, z, ZOOM_POINTS, MAX_ZOOM));
+    end
+end
+
+-- One point is a box of nothing, which fits at any zoom, so it takes the cap
+-- rather than running away.
+search[1] = zone.label;
+local one = 0;
+for _, ic in ipairs(ICONS) do
+    if (ic.time == time and not OVERVIEW[ic.group] and search_hit(ic)) then
+        one = one + 1;
+    end
+end
+if (one == 1) then
+    local z = frame_search();
+    assert(near(z, MAX_ZOOM),
+           ('%s: a lone match must frame at MAX_ZOOM, got %g'):format(zone.label, z));
+    print(('framed %q: lone match at zoom %.3f'):format(zone.label, z));
+end
+
+search[1] = '';
+
 print(('ok: %d markers searched, %q lit %d of them'):format(
     total, zone.label, (function()
         search[1] = zone.label;
