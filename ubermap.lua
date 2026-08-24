@@ -26,6 +26,7 @@ local ffi   = require('ffi');
 local d3d   = require('d3d8');
 local mm    = require('lib.mapmath');
 local unlocks = require('lib.unlocks');
+local guide   = require('lib.guide');
 
 local C       = ffi.C;
 local d3d8dev = d3d.get_device();
@@ -90,7 +91,9 @@ local MASK_PACKET = 0x063;
 -- How close one of those has to be to count as being stood at, in yalms, and
 -- how often the map re-checks while it is open, in seconds.
 local WARP_NPC_NEAR = 7;
-local NEAR_POLL     = 0.5;
+-- Both pollers run on the errand's cadence: one source for the one fact, which
+-- is how often reading a thousand-odd entity slots is worth it.
+local NEAR_POLL     = guide.NEAR_POLL;
 
 -- How far the player has to travel from where the map went up before it closes
 -- itself again, in yalms.  Far enough that a nudge from a passing mob or the
@@ -122,11 +125,31 @@ local STATUS_EVENT = 4;
 -- because a menu can be more than one deep and each press backs out one level;
 -- the total is a give-up, so a menu that will not close cannot strand the
 -- command until the next one replaces it.
-local ESCAPE_RETRY, ESCAPE_WAIT = 0.5, 2.0;
+-- ESCAPE_RETRY comes from the errand for the same reason: one fact about how
+-- fast the client will take a second Escape, read by both menu exits.
+local ESCAPE_RETRY, ESCAPE_WAIT = guide.ESCAPE_RETRY, 2.0;
 
 -- NPCs and mobs occupy the bottom of the entity array; players start at 0x400
 -- and pets and trusts above them, so the walk stops before either.
 local NPC_FIRST, NPC_LAST = 0x000, 0x3FF;
+
+-- The EXP Guides hand an Instant Warp scroll to anyone who asks, so one is
+-- asked whenever the bag has no scroll and a slot to put one in.  Two entities
+-- carry the name - 'EXP Guide' and 'EXP Guide (S)' - so the pattern matches the
+-- start of both.  They are spawned rather than placed, which puts them in the
+-- dynamic block above the players instead of among the NPCs, so their scan runs
+-- the whole array out rather than stopping at NPC_LAST.
+local EXP_GUIDE_NAME = '^EXP Guide';
+
+-- And the zones they stand in: Ru'Lude Gardens holds the (S), Lower Jeuno the
+-- other.  Checked before the entity walk, which turns the errand's standing
+-- cost outside these two into one integer compare instead of a scan of the
+-- whole array -- and a character carrying a scroll is not the common case, so
+-- the bag gate alone was leaving that scan running most of the time.  A server
+-- that puts its guides elsewhere adds the zone here, the same way it fixes the
+-- name above.
+local EXP_GUIDE_ZONES = { [243] = true, [245] = true };
+local ENT_LAST       = 0x8FF;
 
 local MAX_ZOOM  = 2.0;  -- two screen pixels per source map pixel
 local ZOOM_STEP = 1.15; -- per wheel notch
@@ -204,10 +227,11 @@ local WARP_ICON = T{ home = 'Crystal.png', guide = 'Guide.png', unity = 'Unity.p
 local WARP_ITEM_ICON = 'Warp.png';
 local WARP_ITEM_ID   = 4181;
 local WARP_ITEM_CMD  = '/item "Instant Warp" <me>';
--- Inventory container 0 - the bag, which is what /item reads from - and its
--- slot count.  Slot 0 is the gil slot rather than an item, so the walk starts
--- at 1.
-local BAG, BAG_SLOTS = 0, 80;
+-- Inventory container 0 - the bag, which is what /item reads from.  Its slot
+-- count is read off the container rather than fixed here, since a bag can be
+-- smaller than the eighty slots it tops out at.  Slot 0 is the gil slot rather
+-- than an item, so the walk starts at 1.
+local BAG = 0;
 
 -- The Warp Ring, drawn after the scroll.  Unlike the scroll it has to be worn
 -- before it can be used, so the icon walks the player through that: it looks
@@ -266,6 +290,23 @@ local COL_MSS_OFF = 0x40FFFFFF;  -- half that again, i.e. dimmed off
 local FAV_ICON     = 'heart.png';
 local FAV_EMPTY    = 'Right-click a warp to add it here';
 
+-- The favorites widget: the same saved list, drawn as a small window of its own
+-- and driven from the gamepad.  It comes up only where it can be used -- stood
+-- at a Home Point, Survival Guide or Unity Concord -- because it swallows the
+-- buttons it reads, and the D-pad belongs to the game's own menus everywhere
+-- else.  Off by default for the same reason: taking buttons off the client is
+-- the surprising thing to do, so it has to be asked for.
+--
+-- Keyed by the XInput button index Ashita's xinput_button event delivers, so
+-- one lookup answers both questions the handler has: whether the button is the
+-- widget's, and which of the four it is.
+local FW = {
+    [0]  = 'up',
+    [1]  = 'down',
+    [12] = 'a',
+    [13] = 'b',
+};
+
 -- The map data lives in lib/points.lua under the addon: the overview groups, in
 -- draw order so later groups land on top of earlier ones where they overlap,
 -- and the zone points placed with /um edit.  Editing writes the file back out.
@@ -291,6 +332,12 @@ local default_settings = T{
     mss    = false,  -- send through Multisend
     toggle = T{ },   -- toggle file name -> true when dimmed off
     favs   = T{ },   -- saved warp rows, in the order they are listed in
+    widget = false,  -- the gamepad favorites widget is on
+    -- The EXP Guide errand.  On by default, unlike the widget: that one takes
+    -- buttons off the client everywhere it is up, while this one acts only on
+    -- the walk past a guide and can be watched happening.  A toggle all the
+    -- same, because it sends a packet and a keystroke with no click behind it.
+    guide  = true,
 };
 -- Loaded from a copy of the defaults, because the library hands its own default
 -- table back for a key the file has no entry for: without the copy the first
@@ -305,6 +352,12 @@ local cfg = settings.load(default_settings:copy(true));
 local function fill_defaults()
     cfg.toggle = cfg.toggle or T{};
     cfg.favs   = cfg.favs   or T{};
+    -- A settings file written before the errand existed has no entry for it,
+    -- and a nil there is not the same as off: the default is on.  Written back
+    -- as a real boolean so the next save records the answer either way.
+    if (cfg.guide == nil) then
+        cfg.guide = true;
+    end
     -- The map used to write the Campaign zones '(S)' and rewrite them to '[S]'
     -- on the way out; it names them '[S]' throughout now.  A favorite saved
     -- under the old name still travels, but nothing else about it looks up any
@@ -332,7 +385,10 @@ local ui = T{
     drag_y      = 0,
     press       = nil,       -- marker the left button went down on
     near_kind   = false,     -- warp type last seen in reach; false until checked
-    has_warp    = false,     -- an Instant Warp scroll was in the bag last poll
+    -- The EXP Guide errand's whole state, shaped and stepped by lib/guide.lua.
+    -- Kept out here rather than inside that file so the map can read
+    -- errand.has_warp for the Instant Warp icon it draws.
+    errand      = guide.state(),
     masks       = nil,       -- teleport mask block off the last 0x63 type 6
     ring        = 'none',    -- Warp Ring step: none, equip or use, as of last poll
     ring_bag    = nil,       -- /equip container number the ring was found in
@@ -351,6 +407,14 @@ local ui = T{
     warp        = nil,       -- zone point whose warp popup is open
     warp_hot    = false,     -- cursor was inside that popup last frame
     favs_open   = false,     -- favorites panel is up
+    -- The gamepad widget.  fw_on is what the xinput handler reads to decide
+    -- whether a button is its to take, and is written by the draw each frame,
+    -- so the buttons are taken exactly while the list they drive is on screen.
+    fw_on       = false,
+    fw_shown    = false,     -- it was up last frame, i.e. this is not its first
+    fw_sel      = 1,         -- the row the D-pad has landed on, 1-based
+    fw_hide     = false,     -- B put it away until the player walks off the NPC
+    fw_held     = {},        -- buttons whose press the widget took, by index
     -- The favorite being dragged, as { i, live, moved } of the row that was
     -- pressed: i follows the cursor as the list reorders under it, live is
     -- whether it can travel, and moved tells a reorder from a plain click.
@@ -405,18 +469,56 @@ local function in_event()
 end
 
 --[[
+* True while FFXI is the window the OS is sending keys to.
+*
+* keybd_event is process-global and window-agnostic: it goes wherever the focus
+* is, not to the game.  So an Escape sent while the player has alt-tabbed away
+* lands in their browser instead - closing a dialog, cancelling a form, leaving
+* a fullscreen video.  Every press the map itself sends follows a click on the
+* map and so cannot happen alt-tabbed, but the guide errand presses with no
+* click behind it at all, on a walk the player may well be watching from
+* another window.
+*
+* Fails open: a build where these two cannot be read behaves as it always did
+* rather than losing Escape entirely.
+--]]
+local function game_focused()
+    local ok, same = pcall(function ()
+        local fg   = ffi.cast('uintptr_t', AshitaCore:GetForegroundWindow());
+        local game = ffi.cast('uintptr_t',
+                              AshitaCore:GetProperties():GetFinalFantasyHwnd());
+        return tonumber(fg) == tonumber(game);
+    end);
+    return (not ok) or same;
+end
+
+--[[
 * Press Escape, to be released ESCAPE_HOLD frames later.  Refuses to start a
 * second press while one is still held: a repeat would keep resetting the frame
 * count, the release would never fire, and Escape would be left down for the
-* whole system.
+* whole system.  Refuses while the game is not the focused window for the same
+* reason it refuses a double press: the key would land somewhere it was never
+* meant for.
 --]]
 local function press_escape(now)
-    if (user32 == nil or ui.esc_frames > 0) then
+    if (user32 == nil or ui.esc_frames > 0 or not game_focused()) then
         return;
     end
     user32.keybd_event(VK_ESCAPE, ESCAPE_SCAN, 0, 0);
     ui.esc_frames = ESCAPE_HOLD;
     ui.esc_at     = now;
+end
+
+--[[
+* Let Escape back up.  Safe to call when nothing is held, so a caller that is
+* only making sure the key is not down does not have to check first.
+--]]
+local function release_escape()
+    if (user32 == nil or ui.esc_frames == 0) then
+        return;
+    end
+    user32.keybd_event(VK_ESCAPE, ESCAPE_SCAN, KEYEVENTF_KEYUP, 0);
+    ui.esc_frames = 0;
 end
 
 --[[
@@ -524,6 +626,61 @@ local function near_warp_type()
 end
 
 --[[
+* The server id and target index of the nearest EXP Guide within WARP_NPC_NEAR,
+* or nil when none is in reach.  Nearest for the same reason the warp NPCs are:
+* the two guides can both be inside the radius, and the one being stood at is
+* the one meant.
+*
+* Walks the whole array rather than stopping at NPC_LAST, since a guide is a
+* spawned entity and sits above the players.  Two gates stand in front of that
+* walk: the zone, checked here, and the bag, checked by lib/guide.lua before it
+* calls at all.  The zone is the one that matters -- carrying a scroll is the
+* state most players are in least often, so the bag gate alone left the scan
+* running nearly everywhere.
+--]]
+local function near_exp_guide()
+    local party = AshitaCore:GetMemoryManager():GetParty();
+    if (party == nil or not EXP_GUIDE_ZONES[party:GetMemberZone(0)]) then
+        return nil;
+    end
+    local ent = AshitaCore:GetMemoryManager():GetEntity();
+    if (ent == nil) then
+        return nil;
+    end
+    local id, index, near = nil, nil, WARP_NPC_NEAR * WARP_NPC_NEAR;
+    for i = NPC_FIRST, ENT_LAST do
+        -- Squared yalms against a squared radius, and the rendered bit, for the
+        -- same reasons near_warp_type reads them that way.
+        local d = ent:GetDistance(i);
+        if (d < near and bit.band(ent:GetRenderFlags0(i), 0x200) == 0x200
+            and (ent:GetName(i) or ''):match(EXP_GUIDE_NAME)) then
+            id, index, near = ent:GetServerId(i), i, d;
+        end
+    end
+    return id, index;
+end
+
+--[[
+* Ask an NPC for whatever it hands out, which is the packet the client sends
+* when its target is pressed: the entity's server id, its index, and a category
+* of zero for a plain talk.  Seven dwords, the rest of them zero - no menu
+* parameter and no position.
+--]]
+local function poke_npc(id, index)
+    local p = { 0x1A, 0x07, 0, 0 };
+    for i = 0, 3 do
+        p[#p + 1] = bit.band(bit.rshift(id, i * 8), 0xFF);
+    end
+    p[#p + 1] = bit.band(index, 0xFF);
+    p[#p + 1] = bit.band(bit.rshift(index, 8), 0xFF);
+    -- Category, parameter and the three position floats, all left at zero.
+    for _ = 1, 18 do
+        p[#p + 1] = 0;
+    end
+    AshitaCore:GetPacketManager():AddOutgoingPacket(0x01A, p);
+end
+
+--[[
 * Narrow the map to one kind of warp, or light every kind again when given nil.
 --]]
 local function filter_to(kind)
@@ -533,23 +690,39 @@ local function filter_to(kind)
 end
 
 --[[
-* True while an Instant Warp scroll sits in the bag.  Matched by item id rather
-* than by name: the resource name a server gives an item need not be the string
-* a name lookup wants.  pcall'd whole because the inventory is not readable
-* while zoning.
+* Both answers the bag holds, in one walk of it: whether an Instant Warp scroll
+* is carried, and whether every slot is taken.  Walked together because they
+* read the same slots, and this runs whether the map is up or not.  The scroll
+* is matched by item id rather than by name: the resource name a server gives an
+* item need not be the string a name lookup wants.  The count comes from the
+* container rather than fixed, since a bag can be smaller than the eighty slots
+* it tops out at.
+*
+* pcall'd whole because the inventory is not readable while zoning.  A read that
+* failed is reported as carried and full - the one pair of answers that asks a
+* guide for nothing - and the third return says which it was, because that same
+* pair read as an arrival would start the errand pressing Escape at a talk that
+* was never opened.  Zoning is when the read fails and when a stray press is
+* worst, so the two have to be told apart.
 --]]
-local function have_warp_item()
-    local ok, found = pcall(function()
+local function bag_state()
+    local ok, has, full = pcall(function()
         local inv = AshitaCore:GetMemoryManager():GetInventory();
-        for i = 1, BAG_SLOTS do
+        local carried, free = false, false;
+        for i = 1, inv:GetContainerCountMax(BAG) do
             local it = inv:GetContainerItem(BAG, i);
-            if (it ~= nil and it.Id == WARP_ITEM_ID and it.Count > 0) then
-                return true;
+            if (it == nil or it.Id == 0) then
+                free = true;
+            elseif (it.Id == WARP_ITEM_ID and it.Count > 0) then
+                carried = true;
             end
         end
-        return false;
+        return carried, not free;
     end);
-    return ok and found;
+    if (not ok) then
+        return true, true, false;
+    end
+    return has, full, true;
 end
 
 --[[
@@ -618,7 +791,6 @@ local function poll_near(now)
         return;
     end
     ui.near_at = now;
-    ui.has_warp = have_warp_item();
     ui.ring_bag = ring_bag();
     ui.ring     = ring_step(ui.ring_bag ~= nil, ring_worn(),
                             now - ui.ring_at < RING_EQUIP_WAIT);
@@ -726,9 +898,10 @@ end
 --]]
 local function pump_escape(now)
     if (ui.esc_frames > 0) then
-        ui.esc_frames = ui.esc_frames - 1;
-        if (ui.esc_frames == 0) then
-            user32.keybd_event(VK_ESCAPE, ESCAPE_SCAN, KEYEVENTF_KEYUP, 0);
+        if (ui.esc_frames == 1) then
+            release_escape();
+        else
+            ui.esc_frames = ui.esc_frames - 1;
         end
         return;
     end
@@ -756,6 +929,61 @@ local function pump_escape(now)
     end
 end
 
+--[[
+* The world lib/guide.lua reads and acts on, wired to the game.  One table
+* built once: the errand runs every frame, and rebuilding six closures a frame
+* to hand it the same six calls is the sort of garbage a present handler should
+* not be making.
+--]]
+local guide_world = {
+    in_event   = in_event,
+    bag        = bag_state,
+    near_guide = near_exp_guide,
+    poke       = poke_npc,
+    -- Something else owns Escape: a warp command waiting on a menu to close, or
+    -- a press still held down from either exit.
+    blocked    = function ()
+        return ui.pending ~= nil or ui.esc_frames > 0;
+    end,
+    -- press_escape refuses while one is still held, so whether a press actually
+    -- went out is what it reports back -- the errand spaces its retries off the
+    -- presses that landed rather than the ones it asked for.
+    press      = function (now)
+        local before = ui.esc_frames;
+        press_escape(now);
+        return ui.esc_frames > before;
+    end,
+};
+
+--[[
+* Fetch an Instant Warp scroll from an EXP Guide, and leave again, without the
+* player stopping.  The errand itself is lib/guide.lua; this is the gate in
+* front of it.
+*
+* Runs every frame whether the map is up or not: the errand has nothing to do
+* with the map being open, and the walk that starts it is one the player takes
+* on the way past.
+--]]
+local function pump_guide(now)
+    -- Off, or no way to leave the talk the scroll arrives in.  Escape is what
+    -- ends the errand, so without user32 all this could do is drop the player
+    -- into a guide's talk on every walk past with nothing able to close it.
+    -- send_cmd can fall back on the player closing a menu they asked for; this
+    -- one is not asked for, so it does not run at all.
+    if (not cfg.guide or user32 == nil) then
+        -- The map's Instant Warp icon reads has_warp to decide whether it is
+        -- live, so the bag poll outlives the errand it was written for: with
+        -- the errand off the icon still has to know whether a scroll is
+        -- carried.  Nothing else here runs, so this costs one bag walk twice a
+        -- second and no entity scan at all.
+        local st = ui.errand;
+        if (now - st.bag_at >= NEAR_POLL) then
+            st.bag_at, st.has_warp = now, bag_state();
+        end
+        return;
+    end
+    guide.pump(ui.errand, guide_world, now);
+end
 --[[
 * Points placed in game go back to lib/points.lua, so the work survives a reload.
 * Group blocks are re-emitted as they were loaded: only the points list and the
@@ -1311,6 +1539,341 @@ local function show()
 end
 
 --[[
+* Send the selected favorite, if it is one that can travel.  A row that cannot
+* takes no press, the same way a red row in the panel takes no click: the /uw
+* would be turned down at the NPC, and a row that looks live but does nothing
+* reads as a broken list.  The two tests are the ones draw_fav_list colours a
+* row on: a row travels only from the kind of NPC it was saved off, and only to
+* somewhere the player has registered.
+--]]
+local function fw_confirm()
+    local f = cfg.favs[ui.fw_sel];
+    if (f == nil or f.type ~= ui.near_kind or not warp_known(f.key, f)) then
+        return;
+    end
+    local cmd = warp_cmd(f.key, f);
+    if (cmd ~= nil) then
+        send_cmd(cmd);
+        -- The widget has been told what it was up for, so it gets out of the
+        -- way: near_kind does not change until the zone does, so leaving it up
+        -- would swallow A and B for the seconds the warp takes to resolve --
+        -- exactly when the NPC's own menu might want them.  Walking off and
+        -- back arms it again, the same as a B press does.
+        ui.fw_hide = true;
+    end
+end
+
+--[[
+* The favorites list itself, drawn once and used twice: the panel behind the
+* heart and the gamepad widget's window put up the same rows, take the same
+* clicks and reorder on the same drags.  Hand-drawn into whichever window's
+* draw list is current rather than built out of ImGui items, because the panel
+* is a rectangle laid over the map and lines its columns up by hand.
+*
+* Measuring is a call of its own because both callers need the size before
+* they have anywhere to put it: the panel grows upwards out of the heart, and
+* the widget's window sizes itself to whatever it is handed.  A list with
+* nothing in it measures the one row of FAV_EMPTY instructions the panel draws
+* in its place; the widget never sees that case, since an empty list takes it
+* off screen before it measures anything.
+--]]
+local function fav_metrics()
+    local n     = #cfg.favs;
+    local _, th = imgui.CalcTextSize('A');
+    -- Columns: the warp type's icon, then the text.  An empty list is one row
+    -- of instructions with neither, since there is nothing to travel on yet.
+    local lab_x = (n > 0) and (POPUP_PAD + POPUP_ICON + POPUP_PAD) or POPUP_PAD;
+    -- The grid reference is a column of its own, the way the warp popup lays
+    -- it out, so every row's '(F-11)' lines up whatever it is hung off.  A
+    -- list where no row carries one has no column at all.
+    local textw = (n == 0) and (imgui.CalcTextSize(FAV_EMPTY)) or 0;
+    local posw  = 0;
+    for _, f in ipairs(cfg.favs) do
+        -- Parenthesised: CalcTextSize hands back a width and a height, and
+        -- both would otherwise go into math.max.
+        textw = math.max(textw, (imgui.CalcTextSize(fav_text(f))));
+        local p = fav_pos(f);
+        if (p ~= nil) then
+            posw = math.max(posw, (imgui.CalcTextSize(p)));
+        end
+    end
+    local pos_x = lab_x + textw + POPUP_PAD;
+    return { n     = n,
+             th    = th,
+             lab_x = lab_x,
+             pos_x = pos_x,
+             w     = ((posw > 0) and (pos_x + posw) or (lab_x + textw)) + POPUP_PAD,
+             h     = POPUP_ROW * math.max(n, 1) };
+end
+
+--[[
+* Draws the list fav_metrics measured at px, py and takes its presses: hover,
+* drag to reorder, click to travel.  Hands back the row the cursor is on, for
+* whichever right-click menu the caller hangs off it.  In opts:
+*
+*   sel  - a row to keep lit whatever the cursor is doing, i.e. the widget's
+*          D-pad landing.  The panel has no selection of its own.
+*   veto - something lying over the list is eating its presses.
+*   grab - false to draw the rows and take nothing, which is what hands a
+*          press to the window underneath instead.
+*
+* One drag at a time, in ui.fav_drag: only ever one of the two lists is on
+* screen, since turning the widget on takes the heart and its panel away.
+--]]
+local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
+    local dl      = imgui.GetWindowDrawList();
+    local n, w, h = m.n, m.w, m.h;
+    local sel     = opts.sel;
+    local veto    = opts.veto;
+
+    dl:AddRectFilled({ px, py }, { px + w, py + h }, COL_POPUP_BG,
+                     0, ImDrawCornerFlags_All);
+    dl:AddRect({ px, py }, { px + w, py + h }, COL_OUTLINE,
+               0, ImDrawCornerFlags_All, ICON_BORDER);
+    -- Kept inside the outline at both ends, so a lit first or last row does
+    -- not paint over the border it sits against.
+    local function light(ry)
+        dl:AddRectFilled(
+            { px + ICON_BORDER, math.max(ry, py + ICON_BORDER) },
+            { px + w - ICON_BORDER,
+              math.min(ry + POPUP_ROW, py + h - ICON_BORDER) },
+            COL_HOVER, 0, ImDrawCornerFlags_All);
+    end
+
+    -- Which row the cursor is on, read while drawing and acted on after: a
+    -- drag reorders the list the loop is walking.
+    local hot_i, hot_live, hot_lock = nil, false, nil;
+    local drag = ui.fav_drag;
+    for i, f in ipairs(cfg.favs) do
+        local ry = py + POPUP_ROW * (i - 1);
+        -- The same two tests the popup rows use: a favorite travels only from
+        -- the kind of NPC it was saved off, and only to somewhere the player
+        -- has registered.  A favorite can outlive neither, so both are asked
+        -- again every frame rather than saved with the entry.
+        local live  = f.type == ui.near_kind;
+        local known = warp_known(f.key, f);
+        local over  = mouse_x >= px and mouse_x <= px + w
+                      and mouse_y >= ry and mouse_y < ry + POPUP_ROW;
+        if (over) then
+            hot_i, hot_live = i, live and known;
+            hot_lock = (not known) and LOCK_TIP[f.type] or nil;
+        end
+        -- The selection, and over it the row under the cursor -- or while one
+        -- is being dragged, the slot the cursor has carried it to rather than
+        -- the one it was picked up from.  A row that is both reads brighter,
+        -- since the two fills stack.
+        if (i == sel) then
+            light(ry);
+        end
+        if ((drag ~= nil and drag.i == i) or (drag == nil and over)) then
+            light(ry);
+        end
+        local ty = ry + (POPUP_ROW - m.th) / 2;
+
+        -- Unlike a popup row, a favorite comes back off disk, so its type is
+        -- only as good as the settings file: one no toggle names draws no icon
+        -- rather than looking one up under a nil.
+        local art = WARP_ICON[f.type];
+        local tex, iw, ih;
+        if (art ~= nil) then tex, iw, ih = icon_texture(art); end
+        if (tex ~= nil) then
+            local sc = math.min(POPUP_ICON / iw, POPUP_ROW / ih);
+            local ix = px + POPUP_PAD + (POPUP_ICON - iw * sc) / 2;
+            local iy = ry + (POPUP_ROW - ih * sc) / 2;
+            dl:AddImage(tonumber(ffi.cast('uint32_t', tex)),
+                        { ix, iy }, { ix + iw * sc, iy + ih * sc },
+                        { 0, 0 }, { 1, 1 },
+                        live and COL_ICON or COL_ICON_OFF);
+        end
+        local col = (not known) and COL_POPUP_LOCK
+                    or live and COL_POPUP_TEXT or COL_POPUP_OFF;
+        dl:AddText({ px + m.lab_x, ty }, col, fav_text(f));
+        local pos = fav_pos(f);
+        if (pos ~= nil) then
+            dl:AddText({ px + m.pos_x, ty }, col, pos);
+        end
+    end
+    if (n == 0) then
+        dl:AddText({ px + m.lab_x, py + (POPUP_ROW - m.th) / 2 },
+                   COL_POPUP_OFF, FAV_EMPTY);
+    end
+
+    -- Same as the warp panel: one InvisibleButton over the whole thing so the
+    -- press neither falls through to the map nor moves the window, with the
+    -- hover tested as a rect rather than off the item.  It is also the last
+    -- item either caller leaves behind, which is what a context popup hangs
+    -- off.
+    --
+    -- A caller that wants the press can ask for a Dummy instead: it holds the
+    -- same space open, so a window sized to its contents still comes out the
+    -- size of the list, but takes no id and so leaves the press to the window
+    -- it is drawn in.
+    imgui.SetCursorScreenPos({ px, py });
+    if (opts.grab == false) then
+        imgui.Dummy({ w, h });
+        return nil;
+    end
+    imgui.InvisibleButton('##ubermap_favs', { w, h });
+    local fav_hot = mouse_x >= px and mouse_x <= px + w
+                    and mouse_y >= py and mouse_y <= py + h;
+    -- Held on to through a drag as well as a hover: a row dragged past the
+    -- ends of the list puts the cursor outside the list, which would otherwise
+    -- hand the same press to the map and pan it.
+    ui.hot = ui.hot or fav_hot or ui.fav_drag ~= nil;
+    -- Why a red favorite does not travel.
+    if (hot_lock ~= nil and not veto) then
+        imgui.SetTooltip(hot_lock);
+    end
+
+    if (ui.fav_drag ~= nil) then
+        if (imgui.IsMouseDown(0)) then
+            -- Held: the row rides to whichever slot the cursor is over, so the
+            -- list reorders under the hand holding it.  Clamped to the list,
+            -- since the cursor is free to leave it.
+            local j = mm.clamp(
+                math.floor((mouse_y - py) / POPUP_ROW) + 1, 1, n);
+            if (j ~= ui.fav_drag.i) then
+                fav_reorder(ui.fav_drag.i, j);
+                ui.fav_drag.i, ui.fav_drag.moved = j, true;
+            end
+        elseif (imgui.IsMouseReleased(0)) then
+            -- Let go: one that moved is a reorder to write out, one that never
+            -- left its row is a plain click, so it travels.
+            if (ui.fav_drag.moved) then
+                settings.save();
+            elseif (ui.fav_drag.live) then
+                -- The saved entry carries every field warp_cmd reads, so it
+                -- travels as the row it was taken from.
+                local f   = cfg.favs[ui.fav_drag.i];
+                local cmd = warp_cmd(f.key, f);
+                if (cmd ~= nil) then
+                    send_cmd(cmd);
+                end
+            end
+            ui.fav_drag = nil;
+        else
+            -- The button came up while this list was not drawn, i.e. the map
+            -- shut mid-drag.  The row keeps where it was dragged to; it just
+            -- does not also travel.
+            ui.fav_drag = nil;
+        end
+    elseif (imgui.IsMouseClicked(0) and hot_i ~= nil
+            and ui.ctx == nil and not veto) then
+        ui.fav_drag = { i = hot_i, live = hot_live, moved = false };
+    end
+    return hot_i;
+end
+
+--[[
+* The gamepad favorites widget.  It rides with the NPC, not the map: up the
+* moment a Home Point, Survival Guide or Unity Concord is in reach, gone the
+* moment it is not, whether or not the map is open.
+*
+* That is also the only time the xinput handler takes a button -- one
+* condition, written here and read there, so the two cannot come apart and
+* leave the D-pad swallowed with nothing on screen to drive.
+--]]
+local function draw_fav_widget()
+    local n = #cfg.favs;
+    -- Only where it can be used -- stood at a warp NPC -- since the buttons it
+    -- swallows are the game's everywhere else.  The map has nothing to do with
+    -- it: walking up to a crystal is what puts it on screen, and the present
+    -- handler polls the world on the frames the map is shut for exactly that.
+    -- near_kind is a warp type, nil for no NPC in reach, or false before the
+    -- first poll: both of the last two are falsy, so one test covers them.
+    local on = cfg.widget and n > 0 and not ui.fw_hide and ui.near_kind;
+    if (not on) then
+        ui.fw_on, ui.fw_shown = false, false;
+        -- Walking off the NPC is what clears a dismissal: B puts the widget
+        -- away for this visit, not for good.
+        if (not ui.near_kind) then
+            ui.fw_hide = false;
+        end
+        return;
+    end
+    ui.fw_on  = true;
+    ui.fw_sel = mm.clamp(ui.fw_sel, 1, n);
+
+    -- Asked for once, on the frame it comes up, and never again.  Ashita gives
+    -- every addon the one ImGui context, and focusing a window closes every
+    -- popup standing over it -- so a window that asks each frame spends the
+    -- whole visit shutting other addons' combos and menus the moment they open,
+    -- and its own along with them.
+    --
+    -- What used to make that per-frame ask look necessary was the map burying
+    -- this on a click; the map carries NoBringToFrontOnFocus now, so a click
+    -- down there leaves the stack alone and one ask on the way up holds.
+    if (not ui.fw_shown) then
+        ui.fw_shown = true;
+        ui.fw_sel   = 1;
+        imgui.SetNextWindowFocus();
+    end
+
+    local display = imgui.GetIO().DisplaySize;
+    imgui.SetNextWindowPos({ UI_MARGIN, display.y * 0.5 }, ImGuiCond_FirstUseEver);
+    -- No title bar, no ground and no border: the list draws its own panel,
+    -- background and outline, and a window drawing its own around that is the
+    -- second border and the margin of dead space outside it.  Sized to
+    -- whatever the list needs, which with no padding is the list exactly.
+    local flags = bit.bor(ImGuiWindowFlags_NoTitleBar,
+                          ImGuiWindowFlags_NoBackground,
+                          ImGuiWindowFlags_AlwaysAutoResize,
+                          ImGuiWindowFlags_NoScrollbar,
+                          ImGuiWindowFlags_NoScrollWithMouse);
+    -- And moved the way the map is moved: a drag on a row belongs to the list
+    -- and reorders it, so the window stays put unless shift is held.  With no
+    -- padding there is no empty part of it left to drag by either, so shift
+    -- also hands the list's own space back to the window below.
+    local shift = imgui.GetIO().KeyShift;
+    if (not shift) then
+        flags = bit.bor(flags, ImGuiWindowFlags_NoMove);
+    end
+    imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, { 0, 0 });
+    -- 'true' rather than nil for the open flag: Ashita's binding reads a nil
+    -- there as the two-argument Begin and throws the flags away, which puts
+    -- back the title bar and the resize grip this is meant to be without.
+    if (imgui.Begin('UberMap Favorites##ubermap_fw', true, flags)) then
+        -- The panel's own list, drawn into this window rather than over the
+        -- map: same rows, same colours, same drag to reorder.  No empty text,
+        -- since a list with nothing in it took the widget down above.
+        local m = fav_metrics();
+        local mouse_x, mouse_y = imgui.GetMousePos();
+        local px, py = imgui.GetCursorScreenPos();
+        local hot_i = draw_fav_list(px, py, m, mouse_x, mouse_y,
+                                    { sel = ui.fw_sel, grab = not shift });
+        -- Mouse and D-pad share the one selection: a press of either button on
+        -- a row moves it there, so A afterwards sends the row last touched
+        -- rather than one the hand has left behind, and a row dragged up or
+        -- down the list carries the selection along with it.
+        if (ui.fav_drag ~= nil) then
+            ui.fw_sel = ui.fav_drag.i;
+        elseif (hot_i ~= nil
+                and (imgui.IsMouseClicked(0) or imgui.IsMouseClicked(1))) then
+            ui.fw_sel = hot_i;
+        end
+        -- Right-click a row for the same one-item menu the map's panel offers.
+        -- An ImGui popup rather than the hand-drawn menu draw_ctx_menu puts
+        -- up: that one is drawn into the map window, which this window stands
+        -- in front of.  It hangs off the list's InvisibleButton, and acts on
+        -- the row the right-click just moved the selection to.
+        if (not shift and imgui.BeginPopupContextItem('##ubermap_fw_ctx')) then
+            if (imgui.MenuItem('Remove point from favorites list')) then
+                local f = cfg.favs[ui.fw_sel];
+                if (f ~= nil) then
+                    -- One shorter from here: the selection is clamped back
+                    -- onto the list at the top of the next draw, and an
+                    -- emptied list takes the widget down with it.
+                    fav_toggle(f.key, f);
+                end
+            end
+            imgui.EndPopup();
+        end
+    end
+    imgui.End();
+    imgui.PopStyleVar();
+end
+
+--[[
 * draw_map's panels live out here rather than inside it, and take the viewport
 * they draw into as arguments.  Not for tidiness: Lua caps a function at 60
 * upvalues, and one function holding every constant and helper the whole map
@@ -1319,6 +1882,15 @@ end
 --]]
 
 local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, row_h)
+    -- The widget lists the same favorites in a window of its own, so the heart
+    -- and the panel behind it stand down while it is on rather than putting
+    -- one list on screen twice.  The panel is shut as well as hidden, so
+    -- turning the widget back off does not bring a stale one back up.
+    if (cfg.widget) then
+        ui.favs_open = false;
+        return;
+    end
+
     -- Favorites, pinned to the bottom-left corner opposite Multisend.  The
     -- heart opens and shuts the list; the list itself grows upwards from it,
     -- so the heart stays where it was put however long the list gets.
@@ -1330,160 +1902,22 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
     end
 
     if (ui.favs_open) then
-        local fdl   = imgui.GetWindowDrawList();
-        local _, th = imgui.CalcTextSize(FAV_EMPTY);
-        local n     = #cfg.favs;
-
-        -- Columns: the warp type's icon, then the text.  An empty list is
-        -- one row of instructions with neither, since there is nothing to
-        -- travel on yet.
-        local lab_x = (n > 0) and (POPUP_PAD + POPUP_ICON + POPUP_PAD)
-                              or POPUP_PAD;
-        -- The grid reference is a column of its own, the way the warp popup
-        -- lays it out, so every row's '(F-11)' lines up whatever it is hung
-        -- off.  A list where no row carries one has no column at all.
-        local textw = (n > 0) and 0 or imgui.CalcTextSize(FAV_EMPTY);
-        local posw  = 0;
-        for _, f in ipairs(cfg.favs) do
-            textw = math.max(textw, imgui.CalcTextSize(fav_text(f)));
-            local p = fav_pos(f);
-            if (p ~= nil) then
-                posw = math.max(posw, imgui.CalcTextSize(p));
-            end
-        end
-        local pos_x = lab_x + textw + POPUP_PAD;
-        local w     = ((posw > 0) and (pos_x + posw) or (lab_x + textw))
-                      + POPUP_PAD;
-        local h = POPUP_ROW * math.max(n, 1);
-
+        -- The list the widget also puts up, drawn over the map: the panel is
+        -- the frame around it, and everything inside -- rows, hover, drag to
+        -- reorder, click to travel -- is draw_fav_list's.
+        local m  = fav_metrics();
         local px = origin_x + UI_MARGIN;
         -- Clamped so a list longer than the viewport tucks against the top
         -- edge rather than running off it.
-        local py = mm.clamp_box(origin_y + fav_y - POPUP_GAP - h,
-                                h, origin_y, view_h);
-
-        fdl:AddRectFilled({ px, py }, { px + w, py + h }, COL_POPUP_BG,
-                          0, ImDrawCornerFlags_All);
-        fdl:AddRect({ px, py }, { px + w, py + h }, COL_OUTLINE,
-                    0, ImDrawCornerFlags_All, ICON_BORDER);
-
-        -- Which row the cursor is on, read while drawing and acted on after:
-        -- a drag reorders the list the loop is walking.
-        local hot_i, hot_live, hot_lock = nil, false, nil;
-        local drag = ui.fav_drag;
-        for i, f in ipairs(cfg.favs) do
-            local ry   = py + POPUP_ROW * (i - 1);
-            -- The same two tests the popup rows use: a favorite travels only
-            -- from the kind of NPC it was saved off, and only to somewhere the
-            -- player has registered.  A favorite can outlive neither, so both
-            -- are asked again every frame rather than saved with the entry.
-            local live  = f.type == ui.near_kind;
-            local known = warp_known(f.key, f);
-            local over = mouse_x >= px and mouse_x <= px + w
-                         and mouse_y >= ry and mouse_y < ry + POPUP_ROW;
-            if (over) then
-                hot_i, hot_live = i, live and known;
-                hot_lock = (not known) and LOCK_TIP[f.type] or nil;
-            end
-            -- Lit: the row under the cursor, or while one is being dragged,
-            -- the slot the cursor has carried it to rather than the one it
-            -- was picked up from.
-            if ((drag ~= nil and drag.i == i) or (drag == nil and over)) then
-                fdl:AddRectFilled(
-                    { px + ICON_BORDER, math.max(ry, py + ICON_BORDER) },
-                    { px + w - ICON_BORDER,
-                      math.min(ry + POPUP_ROW, py + h - ICON_BORDER) },
-                    COL_HOVER, 0, ImDrawCornerFlags_All);
-            end
-
-            local ty = ry + (POPUP_ROW - th) / 2;
-
-            -- Unlike a popup row, a favorite comes back off disk, so its
-            -- type is only as good as the settings file: one no toggle
-            -- names draws no icon rather than looking one up under a nil.
-            local art = WARP_ICON[f.type];
-            local tex, iw, ih;
-            if (art ~= nil) then tex, iw, ih = icon_texture(art); end
-            if (tex ~= nil) then
-                local sc = math.min(POPUP_ICON / iw, POPUP_ROW / ih);
-                local ix = px + POPUP_PAD + (POPUP_ICON - iw * sc) / 2;
-                local iy = ry + (POPUP_ROW - ih * sc) / 2;
-                fdl:AddImage(tonumber(ffi.cast('uint32_t', tex)),
-                             { ix, iy }, { ix + iw * sc, iy + ih * sc },
-                             { 0, 0 }, { 1, 1 },
-                             live and COL_ICON or COL_ICON_OFF);
-            end
-            local col = (not known) and COL_POPUP_LOCK
-                        or live and COL_POPUP_TEXT or COL_POPUP_OFF;
-            fdl:AddText({ px + lab_x, ty }, col, fav_text(f));
-            local pos = fav_pos(f);
-            if (pos ~= nil) then
-                fdl:AddText({ px + pos_x, ty }, col, pos);
-            end
-        end
-        if (n == 0) then
-            fdl:AddText({ px + lab_x, py + (POPUP_ROW - th) / 2 },
-                        COL_POPUP_OFF, FAV_EMPTY);
-        end
-
-        -- Same as the warp panel: one InvisibleButton over the whole thing
-        -- so the press neither falls through to the map nor moves the
-        -- window, with the hover tested as a rect rather than off the item.
-        imgui.SetCursorPos({ px - origin_x, py - origin_y });
-        imgui.InvisibleButton('##ubermap_favs', { w, h });
-        local fav_hot = mouse_x >= px and mouse_x <= px + w
-                        and mouse_y >= py and mouse_y <= py + h;
-        -- Held on to through a drag as well as a hover: a row dragged past
-        -- the ends of the list puts the cursor outside the panel, which would
-        -- otherwise hand the same press to the map and pan it.
-        ui.hot = ui.hot or fav_hot or ui.fav_drag ~= nil;
-        -- Why a red favorite does not travel.  Vetoed by a warp popup over
-        -- this panel, the same way item_tip vetoes: the popup is anchored on a
-        -- marker and can land in this corner.
-        if (hot_lock ~= nil and not ui.warp_hot) then
-            imgui.SetTooltip(hot_lock);
-        end
-
+        local py = mm.clamp_box(origin_y + fav_y - POPUP_GAP - m.h,
+                                m.h, origin_y, view_h);
         -- A warp popup lying over this panel eats its presses, the same way
-        -- one over a toggle does: the popup is anchored on a marker, which
-        -- can put it in this corner.  Read a frame late, which is harmless
-        -- since neither panel moves while it is open.
-        if (ui.fav_drag ~= nil) then
-            if (imgui.IsMouseDown(0)) then
-                -- Held: the row rides to whichever slot the cursor is over, so
-                -- the list reorders under the hand holding it.  Clamped to the
-                -- list, since the cursor is free to leave the panel.
-                local j = mm.clamp(
-                    math.floor((mouse_y - py) / POPUP_ROW) + 1, 1, n);
-                if (j ~= ui.fav_drag.i) then
-                    fav_reorder(ui.fav_drag.i, j);
-                    ui.fav_drag.i, ui.fav_drag.moved = j, true;
-                end
-            elseif (imgui.IsMouseReleased(0)) then
-                -- Let go: one that moved is a reorder to write out, one that
-                -- never left its row is a plain click, so it travels.
-                if (ui.fav_drag.moved) then
-                    settings.save();
-                elseif (ui.fav_drag.live) then
-                    -- The saved entry carries every field warp_cmd reads, so
-                    -- it travels as the row it was taken from.
-                    local f   = cfg.favs[ui.fav_drag.i];
-                    local cmd = warp_cmd(f.key, f);
-                    if (cmd ~= nil) then
-                        send_cmd(cmd);
-                    end
-                end
-                ui.fav_drag = nil;
-            else
-                -- The button came up while this panel was not drawn, i.e. the
-                -- map shut mid-drag.  The row keeps where it was dragged to;
-                -- it just does not also travel.
-                ui.fav_drag = nil;
-            end
-        elseif (imgui.IsMouseClicked(0) and hot_i ~= nil
-                and ui.ctx == nil and not ui.warp_hot) then
-            ui.fav_drag = { i = hot_i, live = hot_live, moved = false };
-        end
+        -- one over a toggle does: the popup is anchored on a marker, which can
+        -- put it in this corner.  Read a frame late, which is harmless since
+        -- neither panel moves while it is open.
+        local hot_i = draw_fav_list(px, py, m, mouse_x, mouse_y,
+                                    { veto = ui.warp_hot });
+
         -- Right-click a listed favorite to take it back off the list, the
         -- same menu that put it on.
         if (imgui.IsMouseClicked(1) and hot_i ~= nil and not ui.warp_hot) then
@@ -1854,10 +2288,10 @@ local function draw_map(view_w, view_h)
         -- is carried.
         local warp_hit, warp_w =
             icon_button('warpitem', WARP_ITEM_ICON, tx_at, UI_MARGIN, row_h,
-                        ui.has_warp and COL_ICON or COL_ICON_OFF,
-                        ui.has_warp and 'Use Instant Warp scroll'
-                                     or 'No Instant Warp scroll in inventory');
-        if (warp_hit and ui.has_warp) then
+                        ui.errand.has_warp and COL_ICON or COL_ICON_OFF,
+                        ui.errand.has_warp and 'Use Instant Warp scroll'
+                            or 'No Instant Warp scroll in inventory');
+        if (warp_hit and ui.errand.has_warp) then
             send_cmd(WARP_ITEM_CMD);
         end
         if (warp_w > 0) then
@@ -1971,7 +2405,23 @@ local function draw_map(view_w, view_h)
 end
 
 ashita.events.register('d3d_present', 'ubermap_present', function ()
-    pump_escape(os.clock());
+    local now = os.clock();
+    pump_escape(now);
+    pump_guide(now);
+
+    -- Ahead of everything else, and unconditionally: the widget is up on the
+    -- NPC alone, so it has to be drawn on the frames the map returns out of
+    -- below as well as the ones it does not.
+    --
+    -- Which means the world has to be read on those frames too, since that is
+    -- what puts the widget up.  Kept behind the toggle: with the widget off
+    -- nothing outside the map reads this, and the poll walks a thousand-odd
+    -- entity slots.  The map's own call below stands for when it is off, and
+    -- costs nothing extra here -- poll_near rate-limits itself.
+    if (cfg.widget) then
+        poll_near(now);
+    end
+    draw_fav_widget();
 
     if (not ui.is_open[1]) then
         return;
@@ -1984,7 +2434,7 @@ ashita.events.register('d3d_present', 'ubermap_present', function ()
         return;
     end
 
-    poll_near(os.clock());
+    poll_near(now);
 
     load_texture();
     if (ui.texture == nil) then
@@ -1999,8 +2449,14 @@ ashita.events.register('d3d_present', 'ubermap_present', function ()
     -- ImGui moves a window when you drag any empty part of it, child windows
     -- included, which fights the map's own panning.  Hold shift to move the
     -- window; otherwise it stays put and a drag pans the map instead.
+    --
+    -- And it never raises itself over anything, because it takes its clicks by
+    -- hover rather than focus and has no use for being in front: at 90% of the
+    -- screen it would otherwise bury the favorites widget, and every other
+    -- addon's window with it, on the first click anywhere in it.
     local flags = bit.bor(ImGuiWindowFlags_NoTitleBar, ImGuiWindowFlags_NoScrollbar,
-                          ImGuiWindowFlags_NoScrollWithMouse);
+                          ImGuiWindowFlags_NoScrollWithMouse,
+                          ImGuiWindowFlags_NoBringToFrontOnFocus);
     if (not imgui.GetIO().KeyShift) then
         flags = bit.bor(flags, ImGuiWindowFlags_NoMove);
     end
@@ -2073,6 +2529,28 @@ ashita.events.register('command', 'ubermap_command', function (e)
 
     local sub = args[2] ~= nil and args[2]:lower() or nil;
 
+    if (sub == 'widget') then
+        cfg.widget = not cfg.widget;
+        -- Asking for it back is asking to see it: a B press earlier in this
+        -- visit would otherwise leave it hidden with nothing on screen saying
+        -- why, since only walking off the NPC clears that.
+        ui.fw_hide = false;
+        settings.save();
+        notify(('favorites widget: %s'):fmt(cfg.widget
+            and 'on, shows at a Home Point, Survival Guide or Unity Concord'
+            or 'off'));
+        return;
+    end
+
+    if (sub == 'guide') then
+        cfg.guide = not cfg.guide;
+        settings.save();
+        notify(('EXP Guide scroll pickup: %s'):fmt(cfg.guide
+            and 'on, fetches an Instant Warp scroll when you pass a guide'
+            or 'off'));
+        return;
+    end
+
     if (sub == 'edit') then
         ui.edit = not ui.edit;
         if (ui.edit) then
@@ -2092,13 +2570,60 @@ ashita.events.register('command', 'ubermap_command', function (e)
     end
 end);
 
+--[[
+* event: xinput_button
+* desc : D-pad up and down walk the favorites widget, A sends the row it has
+*        landed on and B puts the widget away.  Only while the widget is on
+*        screen, which is only while a warp NPC is in reach; every other button,
+*        and every button at all outside that, is left to the client.
+--]]
+ashita.events.register('xinput_button', 'ubermap_xinput', function (e)
+    local act = FW[e.button];
+    if (act == nil) then
+        return;
+    end
+
+    -- Both edges: the client never saw the press, so it is not handed the
+    -- release either.  Which edge was taken is remembered rather than re-tested
+    -- against ui.fw_on, because the press is what takes the widget off screen
+    -- in two of the four cases -- B dismisses it and A warps out of range of
+    -- the NPC holding it up -- and a release matched against the state after
+    -- that would leak a button-up the client never got the button-down for.
+    if (e.state ~= 1) then
+        if (ui.fw_held[e.button]) then
+            ui.fw_held[e.button] = nil;
+            e.blocked = true;
+        end
+        return;
+    end
+
+    local n = #cfg.favs;
+    if (not ui.fw_on or n == 0) then
+        return;
+    end
+    e.blocked = true;
+    ui.fw_held[e.button] = true;
+
+    if (act == 'up') then
+        -- Wraps at both ends, the way the game's own menus do.  ponytail: one
+        -- step a press; a held-D-pad repeat if a list ever gets long enough to
+        -- want one.
+        ui.fw_sel = (ui.fw_sel - 2) % n + 1;
+    elseif (act == 'down') then
+        ui.fw_sel = ui.fw_sel % n + 1;
+    elseif (act == 'a') then
+        fw_confirm();
+    else
+        -- The way back to the NPC's own menu: with A swallowed there would
+        -- otherwise be no reaching it from a controller while stood here.
+        ui.fw_hide = true;
+    end
+end);
+
 ashita.events.register('unload', 'ubermap_unload', function ()
     -- Unloading mid-press would leave Escape held down for the whole system,
     -- since nothing is left to run the frame that releases it.
-    if (user32 ~= nil and ui.esc_frames > 0) then
-        user32.keybd_event(VK_ESCAPE, ESCAPE_SCAN, KEYEVENTF_KEYUP, 0);
-        ui.esc_frames = 0;
-    end
+    release_escape();
     ui.texture = nil;
     icon_tex = T{};
 end);

@@ -10,6 +10,8 @@ Drop the `UberMap` folder into `Ashita/addons/`, then `/addon load ubermap`.
 | --- | --- |
 | `/ubermap`, `/um` | Toggle the map |
 | `/ubermap edit` | Toggle the point editor |
+| `/ubermap widget` | Toggle the gamepad favorites widget |
+| `/ubermap guide` | Toggle the EXP Guide scroll pickup (on by default) |
 
 ## The map
 
@@ -46,13 +48,41 @@ Left-click a zone point — for a panel of that zone's destinations. Clicking a 
 | **Warp** | After them | `/item "Instant Warp" <me>` and closes the map. Lit only while the scroll (4181) is carried |
 | **Warp Ring** | After that | Two steps, see below |
 | **Multisend** | Bottom right | Prefixes every command the map sends with `/mss ` |
-| **Heart** | Bottom left | Opens favorites |
+| **Heart** | Bottom left | Opens favorites. Hidden while the gamepad widget is on, since that lists the same rows |
 
 **Warp Ring** works in two steps, since a ring must be worn before use. It looks for item 28540 in your bag and the eight Mog Wardrobes the client will equip out of, re-read twice a second like the scroll. Carrying none: dimmed and dead. Carrying one unworn: dimmed, and clicking sends `/equip ring1 "Warp Ring" <container>`, keeps the map open and goes dead for nine seconds while the ring lands. Wearing one: lit, and clicking sends `/item "Warp Ring" <me>` and closes the map. Hovering says which step it is on.
 
 While **Multisend** is lit every command — warp rows, scroll and ring alike — goes out through [Multisend](https://github.com/ThornyFFXI/Multisend) and repeats on every logged-in character. Off and dimmed until clicked.
 
-**Favorites** are warp rows you saved, in your order. Right-click any row for *Add point to favorites list* — a row you cannot travel on right now works too, so a destination can be saved from anywhere. Each is named by its zone and row, e.g. `Windurst Woods - Home Point #2`. Clicking one warps exactly as its original row would, and it reads grey or red on the same two tests. `^` and `v` reorder; right-click offers *Remove point from favorites list*.
+**Favorites** are warp rows you saved, in your order. Right-click any row for *Add point to favorites list* — a row you cannot travel on right now works too, so a destination can be saved from anywhere. Each is named by its zone and row, e.g. `Windurst Woods - Home Point #2`. Clicking one warps exactly as its original row would, and it reads grey or red on the same two tests. Drag a row up or down to reorder the list; right-click offers *Remove point from favorites list*.
+
+## Scroll pickup
+
+Walk within 7 yalms of an **EXP Guide** or **EXP Guide (S)** carrying no Instant Warp scroll and with a free inventory slot, and one is asked for and taken without you stopping: the guide is poked with the same packet pressing its target sends, and Escape backs out of the talk the scroll arrives in.
+
+The guide answers about two seconds after the poke, and puts its talk on screen about half a second after the scroll reaches your bag — so the exit waits for that talk rather than pressing the moment the bag changes, which would send the key into the gap ahead of it and leave the window sitting open. It presses again every half second until the talk is gone, and gives up after three. A guide whose talk never registers as an event at all still gets one press on the way past. If a guide puts a menu up instead of handing the scroll over, the same Escape backs out of that rather than leaving you standing in it.
+
+`/um guide` turns the pickup off, and it is on by default. All three have to be true — no scroll (4181) in the bag, a slot free for one, a guide in reach — and they get **one** poke between them. Any of the three going false arms the next one, so spending a scroll or walking off and back asks again, while standing at a guide that answered with nothing does not: it is given up on after five seconds and then left alone. So the packet count is one per scroll you actually collect, on no timer of its own.
+
+The guides stand in **Ru'Lude Gardens** and **Lower Jeuno**, and the zone is checked before anything else, so everywhere else in the world the pickup costs one integer compare twice a second. Inside those two, carrying a scroll or a full bag skips the entity scan as well, leaving a bag read. Escape is only sent while FFXI is the focused window, so a pickup that finishes while you are alt-tabbed leaves the talk for you rather than firing the key into whatever you switched to.
+
+Renamed or relocated on your server? `EXP_GUIDE_NAME` and `EXP_GUIDE_ZONES` in `ubermap.lua` hold the pattern and the zone ids.
+
+## Gamepad favorites widget
+
+`/um widget` turns on a small window listing the same favorites, built for a controller. It comes up on its own the moment you walk up to a Home Point, Survival Guide or Unity Concord — map open or not — and goes away the moment you walk off. Never wider than that, because it swallows the buttons it reads and the D-pad belongs to the game's menus everywhere else.
+
+| Button | Effect |
+| --- | --- |
+| D-pad up / down | Move the selection, wrapping at both ends |
+| A | Warp to the selected row |
+| B | Put the widget away until you walk off the NPC |
+
+The widget and the map's panel are one list drawn twice, so the mouse works the same in either: click a row to warp, drag it up or down to reorder, right-click for *Remove point from favorites list*. Turning the widget on hides the heart and its panel, so the list is on screen in one place, not two.
+
+Rows read grey or red on the same two tests the panel uses, and A refuses a row that reads either way — a favorite travels only from the kind of NPC it was saved off, and only to a destination you have registered. The window has no title bar and sizes itself to the list; like the map, hold shift to drag it somewhere else. Off by default, and saved per character with the rest of the settings.
+
+XInput only: an Xbox pad, or anything Windows presents as one. A DirectInput controller (DualShock, DualSense) still works by mouse.
 
 ## Filters set themselves
 
@@ -106,6 +136,8 @@ lua test/test_warps.lua     # every warp row builds a /uw the game takes
 lua test/test_toggles.lua   # the layer toggles against the real points
 lua test/test_ring.lua      # the Warp Ring icon's equip-then-use steps
 lua test/test_favs.lua      # favorites: add, remove, reorder and the /uw they send
+lua test/test_widget.lua    # the widget's D-pad wrap and its A-button gate
+lua test/test_guide.lua     # lib/guide.lua, the EXP Guide errand end to end
 lua test/test_unlocks.lua   # the unlock bit test, and every alias Uberwarp knows
 ```
 
