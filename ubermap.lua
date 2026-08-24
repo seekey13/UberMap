@@ -379,7 +379,7 @@ local function fill_defaults()
         cfg.guide = true;
     end
     if (cfg.quiet == nil) then
-        cfg.quiet = true;
+        cfg.quiet = false;
     end
     -- The map used to write the Campaign zones '(S)' and rewrite them to '[S]'
     -- on the way out; it names them '[S]' throughout now.  A favorite saved
