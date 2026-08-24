@@ -2450,13 +2450,19 @@ local function draw_map(view_w, view_h)
 
         -- Reframed on every change to the text, so narrowing a search closes in
         -- on what is left.  Only on a change: refitting every frame would fight
-        -- the wheel and the drag for the rest of the search.  An emptied box is
-        -- left where it is rather than thrown back out to the overview, since
-        -- clearing the search is usually the step before clicking what it found.
+        -- the wheel and the drag for the rest of the search.  Emptying the box
+        -- goes the other way and pulls all the way back out to the whole map:
+        -- clearing a search is how the next one starts, so the view starts over
+        -- with it rather than being left inside the last match.
         if (ui.search[1] ~= ui.search_at) then
             ui.search_at = ui.search[1];
             if (ui.search_at ~= '') then
                 zoom_to_search(view_w, view_h);
+            else
+                ui.zoom  = cover;
+                ui.pan_x = (map_w * cover - view_w) / 2;
+                ui.pan_y = (map_h * cover - view_h) / 2;
+                ui.focus = nil;
             end
         end
 
