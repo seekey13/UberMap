@@ -1,6 +1,8 @@
 # UberMap
 
-Ashita v4 addon by Seekey. A zoomable, pannable map of Vana'diel that pops up when you talk to a Home Point, Survival Guide or Unity Concord, and warps you from it (using Uberwarp).
+Ashita v4 addon by Seekey. A zoomable, pannable map of Vana'diel that pops up when you talk to a Home Point, Survival Guide or Unity Concord, and warps you (using [Uberwarp](https://github.com/ThornyFFXI/Uberwarp)).   This is created for ACE players on the [CatsEye[(https://catseyexi.com/) private server.
+<img width="1748" height="977" alt="image" src="https://github.com/user-attachments/assets/bf20febe-6030-4eea-a17d-77ac633817c3" />
+
 
 ## Install
 
@@ -10,28 +12,22 @@ Drop the `UberMap` folder into `Ashita/addons/`, then `/addon load ubermap`.
 | --- | --- |
 | `/ubermap`, `/um` | Toggle the map |
 | `/ubermap edit` | Toggle the point editor |
-| `/ubermap widget` | Toggle the gamepad favorites widget |
+| `/ubermap widget` | Toggle the gamepad friendly favorites widget (off by default) |
 | `/ubermap guide` | Toggle the EXP Guide scroll pickup (on by default) |
 | `/ubermap focus` | Toggle the search box taking the keyboard when the map opens (off by default) |
 
 ## The map
 
-Mouse wheel zooms, left-drag pans, **shift**-drag moves the window.  
+Mouse wheel zooms, left-drag pans, **shift**-drag moves the window/widget.  
 Talking to a warp NPC opens it; or use the command `/uw`.  
 It closes itself once you walk away or a warp is used.  
+The UberMap widget will open when approaching a warp point.
 
 **Past**/**Present**.  
 
 ## Warp list
 
-Left-click a zone point — for a panel of that zone's destinations. Clicking a row sends its command and closes the panel:
-
-| Kind | Command |
-| --- | --- |
-| Home Point #1 | `/uw hp <zone>` |
-| Home Point #3 | `/uw hp <zone>3` |
-| Survival Guide | `/uw sg <zone>` |
-| Unity Concord | `/uw uc <zone>` |
+Left-click a zone point — for a panel of that zone's destinations. Clicking a row sends a Uberwarp command and closes the panel:
 
 ### Row states
 
@@ -45,18 +41,18 @@ Left-click a zone point — for a panel of that zone's destinations. Clicking a 
 
 | Icon | Where | Does |
 | --- | --- | --- |
-| **Search** | After the past/present switch | Type to fade back every marker whose name does not match, and frame what is left: the view zooms to fit the matching zones on every keystroke. A region stays lit while a zone under it matches, so the overview still points the way. Spelling is forgiven once nothing on the map is spelled the way you typed it, so `juno` and `windhurst` still land where they were meant to -- but `norg` finds Norg rather than every Nor- zone near it. A forgiven search frames the region holding the most of its matches, so one zone it only brushed past cannot pull the view out to the whole world. Naming a region rather than a zone -- `Vollbow`, `Derfland` -- frames the zones under it, since no zone carries the region's name. A search nothing answers goes back to the whole map rather than sitting where the last one left it. Clearing it lights the map again and pulls the view back out to the whole map, ready for the next search |
+| **Search** | After the past/present switch | Type to fade back every marker whose name does not match, and frame what is left: the view zooms to fit the matching zones on every keystroke. Spelling is forgiven once nothing on the map is spelled the way you typed it, so `juno` and `windhurst` still land where they were meant to -- but `norg` finds Norg rather than every Nor- zone near it.  Clearing search pulls the view back out to the whole map. |
 | **Crystal**, **Guide**, **Unity** | Right of search | Dim one to drop that kind of row. A zone with nothing left opens no panel |
 | **Warp** | After them | `/item "Instant Warp" <me>` and closes the map. Lit only while the scroll (4181) is carried |
 | **Warp Ring** | After that | Two steps, see below |
 | **Multisend** | Bottom right | Prefixes every command the map sends with `/mss ` |
-| **Heart** | Bottom left | Opens favorites. Hidden while the gamepad widget is on, since that lists the same rows |
+| **Heart** | Bottom left | Opens favorites. Hidden while the gamepad widget is on, since that lists the same rows.  Filters will completely hide results on this list |
 
-`/um quiet` toggles Uberwarp's chat lines. On by default: the plugin narrates every step of a warp the map asked for, and the commentary is noise once the warp is yours. Only its own stamped lines go — `[Uberwarp:<module>]`, matched on the plugin name plus one of its task modules — so anything that merely says the word, this addon included, still prints. Turning it off shows them again, errors included, which is what you want when a warp is failing and the reason matters.
+`/um quiet` hides Uberwarp's chat lines. Off by default: `[Uberwarp:<module>]`, enable this if you want to clean up the chat log on warps.  Keep in mind you will no longer get error messages.
 
-`/um focus` makes the map open with the cursor already in the search box, so it can be typed into without clicking first. Off by default: while the box holds the keyboard it swallows every key, movement included, and Escape or a click on the map hands them back.
+`/um focus` sets search to focus on open. Off by default: makes it feel better for users who plan on type filtering most of their navigation, you will need to click the map to pan/zoom.
 
-**Warp Ring** works in two steps, since a ring must be worn before use. It looks for item 28540 in your bag and the eight Mog Wardrobes the client will equip out of, re-read twice a second like the scroll. Carrying none: dimmed and dead. Carrying one unworn: dimmed, and clicking sends `/equip ring1 "Warp Ring" <container>`, keeps the map open and goes dead for nine seconds while the ring lands. Wearing one: lit, and clicking sends `/item "Warp Ring" <me>` and closes the map. Hovering says which step it is on.
+**Warp Ring** works in two steps, since a ring must be worn before use. It looks for item 28540 in your bag and the eight Mog Wardrobes the client will equip out of, re-read twice a second like the scroll. Carrying none: dimmed and dead. Carrying one unworn: dimmed, and clicking sends `/equip ring1 "Warp Ring" <container>`, keeps the map open and goes dead for nine seconds while the ring lands. Wearing one: lit, and clicking sends `/item "Warp Ring" <me>` and closes the map. Hovering says which step it is on.  If you use LuAshitacast keep in mind they will battle each other.
 
 While **Multisend** is lit every command — warp rows, scroll and ring alike — goes out through [Multisend](https://github.com/ThornyFFXI/Multisend) and repeats on every logged-in character. Off and dimmed until clicked.
 
@@ -66,15 +62,12 @@ While **Multisend** is lit every command — warp rows, scroll and ring alike �
 
 Walk within 7 yalms of an **EXP Guide** or **EXP Guide (S)** carrying no Instant Warp scroll and with a free inventory slot, and one is asked for and taken without you stopping: the guide is poked with the same packet pressing its target sends, and Escape backs out of the talk the scroll arrives in.
 
-The guide answers about two seconds after the poke, and puts its talk on screen about half a second after the scroll reaches your bag — so the exit waits for that talk rather than pressing the moment the bag changes, which would send the key into the gap ahead of it and leave the window sitting open. It presses again every half second until the talk is gone, and gives up after three. A guide whose talk never registers as an event at all still gets one press on the way past. If a guide puts a menu up instead of handing the scroll over, the same Escape backs out of that rather than leaving you standing in it.
-
 `/um guide` turns the pickup off, and it is on by default. All three have to be true — no scroll (4181) in the bag, a slot free for one, a guide in reach — and they get **one** poke between them. Any of the three going false arms the next one, so spending a scroll or walking off and back asks again, while standing at a guide that answered with nothing does not: it is given up on after five seconds and then left alone. So the packet count is one per scroll you actually collect, on no timer of its own.
 
-The guides stand in **Ru'Lude Gardens** and **Lower Jeuno**, and the zone is checked before anything else, so everywhere else in the world the pickup costs one integer compare twice a second. Inside those two, carrying a scroll or a full bag skips the entity scan as well, leaving a bag read. Escape is only sent while FFXI is the focused window, so a pickup that finishes while you are alt-tabbed leaves the talk for you rather than firing the key into whatever you switched to.
-
-Renamed or relocated on your server? `EXP_GUIDE_NAME` and `EXP_GUIDE_ZONES` in `ubermap.lua` hold the pattern and the zone ids.
+The guides stand in **Ru'Lude Gardens** and **Lower Jeuno**, and the zone is checked before anything else.
 
 ## Gamepad favorites widget
+<img width="414" height="118" alt="image" src="https://github.com/user-attachments/assets/eeb0dc76-6626-4547-a3e2-79f9441dd8ef" />
 
 `/um widget` turns on a small window listing the same favorites, built for a controller. It comes up on its own the moment you walk up to a Home Point, Survival Guide or Unity Concord — map open or not — and goes away the moment you walk off. Never wider than that, because it swallows the buttons it reads and the D-pad belongs to the game's menus everywhere else.
 
