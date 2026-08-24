@@ -57,7 +57,9 @@ While **Multisend** is lit every command — warp rows, scroll and ring alike �
 
 ## Scroll pickup
 
-Walk within 7 yalms of an **EXP Guide** or **EXP Guide (S)** carrying no Instant Warp scroll and with a free inventory slot, and one is asked for and taken without you stopping: the guide is poked with the same packet pressing its target sends, and the moment the scroll lands Escape backs out of the talk it arrived in.
+Walk within 7 yalms of an **EXP Guide** or **EXP Guide (S)** carrying no Instant Warp scroll and with a free inventory slot, and one is asked for and taken without you stopping: the guide is poked with the same packet pressing its target sends, and Escape backs out of the talk the scroll arrives in.
+
+The guide answers about two seconds after the poke, and puts its talk on screen about half a second after the scroll reaches your bag — so the exit waits for that talk rather than pressing the moment the bag changes, which would send the key into the gap ahead of it and leave the window sitting open. It presses again every half second until the talk is gone, and gives up after three. A guide whose talk never registers as an event at all still gets one press on the way past.
 
 Nothing to configure. All three have to be true — no scroll (4181) in the bag, a slot free for one, a guide in reach — and they get **one** poke between them. Any of the three going false arms the next one, so spending a scroll or walking off and back asks again, while standing at a guide that answered with nothing does not: it is given up on after five seconds and then left alone. So the packet count is one per scroll you actually collect, on no timer of its own.
 

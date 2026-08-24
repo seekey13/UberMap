@@ -143,6 +143,12 @@ local ENT_LAST       = 0x8FF;
 -- not asked again for the same walk-up either.
 local GUIDE_WAIT = 5.0;
 
+-- How long the exit has to see the guide's talk come up and go away again, in
+-- seconds.  Longer than ESCAPE_WAIT, which measures a menu already on screen:
+-- the scroll can land a moment before the talk it came in is up, so this covers
+-- the wait for it as well as the backing out afterwards.
+local GUIDE_EXIT = 1.0;
+
 local MAX_ZOOM  = 2.0;  -- two screen pixels per source map pixel
 local ZOOM_STEP = 1.15; -- per wheel notch
 
@@ -379,6 +385,7 @@ local ui = T{
     guide_ix    = nil,
     guide_asked = false,     -- this line-up has had its one ask
     guide_esc   = 0,         -- Escapes pressed so far leaving the guide's talk
+    guide_seen  = false,     -- and whether that talk was ever seen on screen
     masks       = nil,       -- teleport mask block off the last 0x63 type 6
     ring        = 'none',    -- Warp Ring step: none, equip or use, as of last poll
     ring_bag    = nil,       -- /equip container number the ring was found in
@@ -904,30 +911,56 @@ local function pump_guide(now)
     -- 2304 slot entity walk off the frames of a character already carrying one,
     -- and it leaves guide_id nil for every reason not to ask rather than only
     -- for the guide being out of reach.
-    if (now - ui.bag_at >= NEAR_POLL) then
+    local poll = now - ui.bag_at >= NEAR_POLL;
+    -- While an ask is in flight the bag is read every frame instead of twice a
+    -- second.  The scroll landing is what starts the exit, so latency here is
+    -- the guide's talk left open, and eighty slot reads for the second or two
+    -- an errand lasts is cheaper than that.
+    if (poll or ui.guide == 'wait') then
         ui.bag_at = now;
         ui.has_warp, ui.bag_full = bag_state();
+    end
+    -- The entity scan stays on the slower cadence whatever the errand is doing:
+    -- walking up to a guide happens on a human timescale, and the walk is 2304
+    -- slots rather than eighty.
+    if (poll) then
         ui.guide_id, ui.guide_ix = nil, nil;
         if (not (ui.has_warp or ui.bag_full)) then
             ui.guide_id, ui.guide_ix = near_exp_guide();
         end
     end
 
-    -- The scroll landed, so back out of the talk it landed in.  The first press
-    -- is unconditional: the scroll arriving is itself the proof that the guide
-    -- put something up, and not every server marks that something as an event
-    -- the way a warp NPC's menu is marked - waiting on in_event to agree is how
-    -- this managed to end the errand having pressed nothing at all.
+    -- The scroll landed, so back out of the talk it came in.  Escape is only
+    -- pressed while the client says there is a talk to leave: the scroll can
+    -- land a moment before the talk is up, and a press into that gap is a press
+    -- the client never has anything to spend on - which is exactly how this
+    -- managed to fire once, land early and leave the talk sitting open.
     --
-    -- After that press in_event is worth reading, since it is what says the
-    -- talk actually closed.  Presses repeat while it has not, because a talk can
-    -- be more than one level deep, and ESCAPE_WAIT gives up so one that will not
-    -- close cannot hold the errand open.
+    -- So the exit watches instead: presses while in an event, and finishes once
+    -- one has been seen and is gone.  Presses repeat because a talk can be more
+    -- than one level deep.
     if (ui.guide == 'exit') then
-        if ((ui.guide_esc > 0 and not in_event())
-            or now - ui.guide_at > ESCAPE_WAIT) then
+        local talking = in_event();
+        ui.guide_seen = ui.guide_seen or talking;
+
+        if (ui.guide_seen and not talking) then
+            ui.guide = nil;                 -- the talk came up and closed
+            return;
+        end
+
+        if (now - ui.guide_at > GUIDE_EXIT) then
+            -- Out of time.  If no talk ever registered as an event, one press
+            -- still goes out on the way past: a server can put the scroll up in
+            -- something the client does not mark, and a press into nothing
+            -- costs nothing.
+            if (ui.guide_esc == 0) then
+                press_escape(now);
+            end
             ui.guide = nil;
-        elseif (ui.esc_frames == 0 and now - ui.esc_at > ESCAPE_RETRY) then
+            return;
+        end
+
+        if (talking and ui.esc_frames == 0 and now - ui.esc_at > ESCAPE_RETRY) then
             press_escape(now);
             -- Counted here rather than read back off esc_frames, which the next
             -- frame's pump_escape has already begun taking down.
@@ -938,7 +971,8 @@ local function pump_guide(now)
 
     if (ui.guide == 'wait') then
         if (ui.has_warp) then
-            ui.guide, ui.guide_at, ui.guide_esc = 'exit', now, 0;
+            ui.guide, ui.guide_at = 'exit', now;
+            ui.guide_esc, ui.guide_seen = 0, false;
         elseif (now - ui.guide_at > GUIDE_WAIT) then
             ui.guide = nil;
         end

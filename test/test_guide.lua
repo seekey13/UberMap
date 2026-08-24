@@ -4,15 +4,28 @@
 * pump_guide in ubermap.lua, driven by a fake world instead of the entity array
 * and the bag.
 *
-* The contract these check is one ask per line-up of the three conditions - no
-* scroll carried, a slot free for one, a guide in reach - and no ask at all
-* while any of them is false.  Run with any Lua 5.1+:
+* Two contracts here.  One ask per line-up of the three conditions - no scroll
+* carried, a slot free for one, a guide in reach - and no ask at all while any
+* of them is false.  And an Escape that lands on the talk rather than in front
+* of it: the guide answers a couple of seconds after the ask, and puts its talk
+* up a moment after the scroll it hands over, so the exit waits for the talk to
+* be on screen rather than pressing the moment the bag changes.
+*
+* Run with any Lua 5.1+:
 *     lua test/test_guide.lua
 --]]
 
 local NEAR_POLL  = 0.5;
 local GUIDE_WAIT = 5.0;
-local ESCAPE_RETRY, ESCAPE_WAIT = 0.5, 2.0;
+local GUIDE_EXIT = 1.0;
+local ESCAPE_RETRY = 0.5;
+
+-- The two timings measured by hand in game, in seconds: how long the guide takes
+-- to answer an ask, and how long after the scroll reaches the bag its talk
+-- reaches the screen.  The checks run against these rather than an instant
+-- reply, since instant is the one shape the timing bug never showed up in - the
+-- press went out into the gap the skew opens and the talk was left sitting.
+local REPLY, TALK_SKEW = 2.0, 0.5;
 
 -- The world the errand reads: whether the player is in a talk, whether a guide
 -- is in reach, and what the bag holds.  Every ask and every Escape press lands
@@ -40,6 +53,7 @@ local function ui_new()
         guide_ix    = nil,
         guide_asked = false,
         guide_esc   = 0,
+        guide_seen  = false,
         pending     = nil,
         esc_frames  = 0,
     };
@@ -47,9 +61,12 @@ end
 
 -- pump_guide, with the reads it makes of the game replaced by w.
 local function pump_guide(ui, w, now)
-    if (now - ui.bag_at >= NEAR_POLL) then
+    local poll = now - ui.bag_at >= NEAR_POLL;
+    if (poll or ui.guide == 'wait') then
         ui.bag_at = now;
         ui.has_warp, ui.bag_full = w.has_warp, w.bag_full;
+    end
+    if (poll) then
         ui.guide_id, ui.guide_ix = nil, nil;
         if (not (ui.has_warp or ui.bag_full)) then
             ui.guide_id, ui.guide_ix = w.guide, 0x705;
@@ -57,10 +74,23 @@ local function pump_guide(ui, w, now)
     end
 
     if (ui.guide == 'exit') then
-        if ((ui.guide_esc > 0 and not w.in_event)
-            or now - ui.guide_at > ESCAPE_WAIT) then
+        local talking = w.in_event;
+        ui.guide_seen = ui.guide_seen or talking;
+
+        if (ui.guide_seen and not talking) then
             ui.guide = nil;
-        elseif (ui.esc_frames == 0 and now - w.esc_at > ESCAPE_RETRY) then
+            return;
+        end
+
+        if (now - ui.guide_at > GUIDE_EXIT) then
+            if (ui.guide_esc == 0) then
+                w.presses, w.esc_at = w.presses + 1, now;
+            end
+            ui.guide = nil;
+            return;
+        end
+
+        if (talking and ui.esc_frames == 0 and now - w.esc_at > ESCAPE_RETRY) then
             w.presses, w.esc_at = w.presses + 1, now;
             ui.guide_esc = ui.guide_esc + 1;
         end
@@ -69,7 +99,8 @@ local function pump_guide(ui, w, now)
 
     if (ui.guide == 'wait') then
         if (ui.has_warp) then
-            ui.guide, ui.guide_at, ui.guide_esc = 'exit', now, 0;
+            ui.guide, ui.guide_at = 'exit', now;
+            ui.guide_esc, ui.guide_seen = 0, false;
         elseif (now - ui.guide_at > GUIDE_WAIT) then
             ui.guide = nil;
         end
@@ -83,7 +114,6 @@ local function pump_guide(ui, w, now)
     if (ui.guide_asked) then
         return;
     end
-
     if (ui.pending ~= nil or ui.esc_frames > 0 or w.in_event) then
         return;
     end
@@ -100,6 +130,15 @@ local function check(name, got, want)
     end
 end
 
+-- Frame timing puts an exact press count on a knife edge, so a repeat that is
+-- meant to be paced rather than counted is checked as a band.
+local function between(name, got, lo, hi)
+    if (got < lo or got > hi) then
+        print(('FAIL %s: got %s, wanted %d..%d'):format(name, tostring(got), lo, hi));
+        fails = fails + 1;
+    end
+end
+
 -- Runs the pump over a span of frames, 1/30s apart, starting at t0.
 local function run(ui, w, t0, frames)
     for i = 0, frames - 1 do
@@ -109,6 +148,74 @@ local function run(ui, w, t0, frames)
 end
 
 local GUIDE_A, GUIDE_B = 17774597, 17782790;
+
+--[[
+* A whole errand against a server that answers `reply` seconds after the ask,
+* puts its talk on screen `skew` seconds after the scroll reaches the bag, and
+* closes that talk `close` seconds after an Escape reaches it.  A nil close is a
+* talk that never closes; a nil reply is a guide that never answers at all.
+--]]
+local function errand(opts)
+    local ui, w = ui_new(), world();
+    w.guide = GUIDE_A;
+    local scroll_at, talk_at, close_at;
+    for i = 0, 30 * (opts.secs or 20) do
+        local now = 100 + i / 30;
+        if (scroll_at and now >= scroll_at) then
+            w.has_warp, scroll_at = true, nil;
+        end
+        if (talk_at and now >= talk_at) then
+            w.in_event, talk_at = true, nil;
+        end
+        if (close_at and now >= close_at) then
+            w.in_event, close_at = false, nil;
+        end
+        local poked, pressed = w.pokes, w.presses;
+        pump_guide(ui, w, now);
+        if (w.pokes > poked and opts.reply ~= nil) then
+            scroll_at = now + opts.reply;
+            talk_at   = now + opts.reply + (opts.skew or 0);
+        end
+        if (w.presses > pressed and opts.close ~= nil and w.in_event) then
+            close_at = now + opts.close;
+        end
+    end
+    return w, ui;
+end
+
+-- The real shape of it, on the timings measured in game: ask, the scroll lands
+-- two seconds later, the talk half a second after that, one Escape closes it.
+local w, ui = errand({ reply = REPLY, skew = TALK_SKEW, close = 0.2 });
+check('real ask',    w.pokes, 1);
+check('real press',  w.presses, 1);
+check('real seen',   ui.guide_seen, true);
+check('real done',   ui.guide, nil);
+
+-- The same errand with the talk already up when the scroll lands: still one
+-- press, so waiting for the talk has not cost the case that never needed it.
+local w = errand({ reply = REPLY, skew = 0, close = 0.2 });
+check('no skew press', w.presses, 1);
+
+-- The window has to outlast the skew with room over, and the wait the reply.
+check('exit outlasts skew',  GUIDE_EXIT > TALK_SKEW * 2, true);
+check('wait outlasts reply', GUIDE_WAIT > REPLY * 2, true);
+
+-- A guide that hands the scroll over without its talk ever registering as an
+-- event: one press still goes out on the way past, and the errand ends rather
+-- than hanging on a talk the client never admits to.
+local u, x = ui_new(), world();
+x.guide = GUIDE_A;
+local t = run(u, x, 100, 2);
+x.has_warp = true;
+t = run(u, x, t, 30 * 5);
+check('no talk press', x.presses, 1);
+check('no talk done',  u.guide, nil);
+
+-- A talk that will not close is pressed at ESCAPE_RETRY across the window and
+-- then given up on, rather than pressed forever.
+local w, ui = errand({ reply = REPLY, skew = TALK_SKEW, close = nil, secs = 12 });
+between('stuck talk presses', w.presses, 3, 7);
+check('stuck talk done', ui.guide, nil);
 
 -- Standing at a guide with an empty slot and no scroll: asked once, and once
 -- only however many frames go by.
@@ -156,18 +263,30 @@ for _, case in ipairs({
     check('ask after ' .. case[1], x.pokes, 1);
 end
 
--- The scroll arriving inside the talk moves the errand on to leaving it, and
--- Escape repeats no faster than ESCAPE_RETRY while the talk is still up.
+-- An Escape already held by the map is not spent as this errand's press: the
+-- errand waits for the key to come back up rather than counting one that never
+-- went out.
 local ui, w = ui_new(), world();
 w.guide = GUIDE_A;
 local t = run(ui, w, 100, 2);
-check('asked', w.pokes, 1);
-w.in_event, w.has_warp = true, true;
-t = run(ui, w, t, 15);
-check('exit', ui.guide, 'exit');
+w.has_warp, w.in_event, ui.esc_frames = true, true, 3;
+t = run(ui, w, t, 10);
+check('held escape presses none', w.presses, 0);
+check('held escape still exiting', ui.guide, 'exit');
+ui.esc_frames = 0;
+t = run(ui, w, t, 10);
+check('held escape presses after', w.presses, 1);
+
+-- Escape repeats no faster than ESCAPE_RETRY while a talk is still up.
+local ui, w = ui_new(), world();
+w.guide = GUIDE_A;
+local t = run(ui, w, 100, 2);
+w.has_warp, w.in_event = true, true;
+t = run(ui, w, t, 3);
 check('press once', w.presses, 1);
--- A second more: one more press, not one a frame.
-t = run(ui, w, t, 30);
+t = run(ui, w, t, 12);
+check('press not per frame', w.presses, 1);
+t = run(ui, w, t, 5);
 check('press twice', w.presses, 2);
 
 -- The talk closing ends the errand.
@@ -187,44 +306,8 @@ check('respend asks', w.pokes, 2);
 t = run(ui, w, t, 30 * 10);
 check('respend asks once', w.pokes, 2);
 
--- The defect this was written for: a guide whose talk the client never marks as
--- an event.  The scroll landing is what says there is something to leave, so the
--- first press goes out regardless, and one press is enough to end the errand.
-local ui, w = ui_new(), world();
-w.guide = GUIDE_A;
-local t = run(ui, w, 100, 2);
-w.has_warp = true;             -- scroll lands, but in_event stays false
-t = run(ui, w, t, 30);
-check('press without event', w.presses, 1);
-check('press without event done', ui.guide, nil);
-
--- And it is one press, not one a frame, however long the errand is left to run.
-t = run(ui, w, t, 30 * 5);
-check('press without event once', w.presses, 1);
-
--- An Escape already held by the map is not counted as this errand's press: the
--- errand waits for the key to come back up rather than finishing on a press
--- that never went out.
-local ui, w = ui_new(), world();
-w.guide = GUIDE_A;
-local t = run(ui, w, 100, 2);
-w.has_warp, ui.esc_frames = true, 3;
-t = run(ui, w, t, 15);
-check('held escape presses none', w.presses, 0);
-check('held escape still exiting', ui.guide, 'exit');
-ui.esc_frames = 0;
-t = run(ui, w, t, 15);
-check('held escape presses after', w.presses, 1);
-
--- A talk that will not close is given up on rather than pressed forever.
-local ui, w = ui_new(), world();
-ui.guide, ui.guide_at, ui.guide_asked, ui.guide_esc = 'exit', 100, true, 0;
-w.guide, w.in_event, w.has_warp = GUIDE_A, true, true;
-run(ui, w, 100, 30 * 3);
-check('exit gives up', ui.guide, nil);
-
--- A guide that answers with nothing: the wait runs out, and the ask is not
--- repeated for as long as the player stands there.
+-- A guide that answers with nothing at all: the wait runs out, and the ask is
+-- not repeated for as long as the player stands there.
 local ui, w = ui_new(), world();
 w.guide = GUIDE_A;
 local t = run(ui, w, 100, 2);
