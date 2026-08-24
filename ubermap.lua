@@ -443,6 +443,18 @@ local function press_escape(now)
 end
 
 --[[
+* Let Escape back up.  Safe to call when nothing is held, so a caller that is
+* only making sure the key is not down does not have to check first.
+--]]
+local function release_escape()
+    if (user32 == nil or ui.esc_frames == 0) then
+        return;
+    end
+    user32.keybd_event(VK_ESCAPE, ESCAPE_SCAN, KEYEVENTF_KEYUP, 0);
+    ui.esc_frames = 0;
+end
+
+--[[
 * Hand a command to the game.  Multisend is one gate here rather than a prefix
 * remembered at each call site.
 --]]
@@ -749,9 +761,10 @@ end
 --]]
 local function pump_escape(now)
     if (ui.esc_frames > 0) then
-        ui.esc_frames = ui.esc_frames - 1;
-        if (ui.esc_frames == 0) then
-            user32.keybd_event(VK_ESCAPE, ESCAPE_SCAN, KEYEVENTF_KEYUP, 0);
+        if (ui.esc_frames == 1) then
+            release_escape();
+        else
+            ui.esc_frames = ui.esc_frames - 1;
         end
         return;
     end
@@ -2392,10 +2405,7 @@ end);
 ashita.events.register('unload', 'ubermap_unload', function ()
     -- Unloading mid-press would leave Escape held down for the whole system,
     -- since nothing is left to run the frame that releases it.
-    if (user32 ~= nil and ui.esc_frames > 0) then
-        user32.keybd_event(VK_ESCAPE, ESCAPE_SCAN, KEYEVENTF_KEYUP, 0);
-        ui.esc_frames = 0;
-    end
+    release_escape();
     ui.texture = nil;
     icon_tex = T{};
 end);
