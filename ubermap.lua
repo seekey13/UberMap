@@ -202,16 +202,15 @@ local FIELD_W   = 600;  -- search and editor text field width, screen pixels
 local FIELD_MAX = 256;  -- search and editor text field length, bytes
 local EDIT_ROW  = 28;   -- editor panel row pitch, screen pixels
 
--- The search box is the one light widget on the toolbar, so it carries its own
--- colours rather than the dark frame ImGui's default style gives it.
-local COL_SEARCH_BG   = { 1.0, 1.0, 1.0, 1.0 };
-local COL_SEARCH_TEXT = { 0.0, 0.0, 0.0, 1.0 };
-local COL_SEARCH_HINT = { 0.45, 0.45, 0.45, 1.0 };
-
 -- Toolbar rows are drawn this many times the default frame height.  The height
 -- comes from frame padding rather than a font scale: ImGui has one baked font
 -- atlas, so scaling the font up magnifies its bitmap and goes blurry.
 local ROW_H_MULT = 2.0;
+
+-- The search box is shorter than the icons it shares the row with, and centred
+-- against them.  Its own multiplier rather than ROW_H_MULT: the icons want the
+-- height, a one-line text field does not.
+local SEARCH_H_MULT = 1.5;
 
 -- Layer toggles, drawn on the toolbar row.  Clicking one dims its icon;
 -- the state is kept per file name in cfg.toggle (nil = lit).
@@ -2483,14 +2482,12 @@ local function draw_map(view_w, view_h)
         -- marker whose label does not match, which is icon_dim's doing; nothing
         -- is hidden, so the map keeps its shape while a search narrows it.
         local search_x = UI_MARGIN + time_w + TOGGLE_GAP;
+        local search_h = imgui.GetFrameHeight() * SEARCH_H_MULT;
         imgui.PushStyleVar(ImGuiStyleVar_FramePadding,
-                           { 6, (row_h - imgui.GetFontSize()) / 2 });
-        imgui.PushStyleColor(ImGuiCol_FrameBg, COL_SEARCH_BG);
-        imgui.PushStyleColor(ImGuiCol_FrameBgHovered, COL_SEARCH_BG);
-        imgui.PushStyleColor(ImGuiCol_FrameBgActive, COL_SEARCH_BG);
-        imgui.PushStyleColor(ImGuiCol_Text, COL_SEARCH_TEXT);
-        imgui.PushStyleColor(ImGuiCol_TextDisabled, COL_SEARCH_HINT);
-        imgui.SetCursorPos({ search_x, UI_MARGIN });
+                           { 6, math.max(0, (search_h - imgui.GetFontSize()) / 2) });
+        -- Nudged down by half of what it gives up, so a shorter box still sits
+        -- on the middle of the row rather than riding its top edge.
+        imgui.SetCursorPos({ search_x, UI_MARGIN + (row_h - search_h) / 2 });
         -- Everything on this row is placed by absolute cursor position and none
         -- of it wraps, so a full-width box would push the toggles and the warp
         -- icons off the edge of a small viewport.  A share of the width instead,
@@ -2505,7 +2502,6 @@ local function draw_map(view_w, view_h)
             imgui.SetKeyboardFocusHere();
         end
         imgui.InputTextWithHint('##ubermap_search', 'Search', ui.search, FIELD_MAX);
-        imgui.PopStyleColor(5);
         imgui.PopStyleVar();
         -- Only while the mouse is working the field, the way the editor's rows
         -- below feed it: IsItemActive stays true for the whole time the caret
