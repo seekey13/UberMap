@@ -266,6 +266,26 @@ local COL_MSS_OFF = 0x40FFFFFF;  -- half that again, i.e. dimmed off
 local FAV_ICON     = 'heart.png';
 local FAV_EMPTY    = 'Right-click a warp to add it here';
 
+-- The favorites widget: the same saved list, drawn as a small window of its own
+-- and driven from the gamepad.  It comes up only where it can be used -- stood
+-- at a Home Point, Survival Guide or Unity Concord -- because it swallows the
+-- buttons it reads, and the D-pad belongs to the game's own menus everywhere
+-- else.  Off by default for the same reason: taking buttons off the client is
+-- the surprising thing to do, so it has to be asked for.
+local FW = {
+    -- XInput button indexes, as Ashita's xinput_button event delivers them.
+    up    = 0,
+    down  = 1,
+    a     = 12,
+    b     = 13,
+    -- COL_POPUP_TEXT / _OFF / _LOCK again as floats: a draw list takes a
+    -- packed u32, an ImGui style colour takes an ImVec4, and the widget is
+    -- built out of ImGui widgets rather than drawn by hand.
+    live  = { 1.00, 1.00, 1.00, 1.000 },
+    off   = { 1.00, 1.00, 1.00, 0.376 },
+    lock  = { 1.00, 0.25, 0.25, 0.627 },
+};
+
 -- The map data lives in lib/points.lua under the addon: the overview groups, in
 -- draw order so later groups land on top of earlier ones where they overlap,
 -- and the zone points placed with /um edit.  Editing writes the file back out.
@@ -291,6 +311,7 @@ local default_settings = T{
     mss    = false,  -- send through Multisend
     toggle = T{ },   -- toggle file name -> true when dimmed off
     favs   = T{ },   -- saved warp rows, in the order they are listed in
+    widget = false,  -- the gamepad favorites widget is on
 };
 -- Loaded from a copy of the defaults, because the library hands its own default
 -- table back for a key the file has no entry for: without the copy the first
@@ -351,6 +372,13 @@ local ui = T{
     warp        = nil,       -- zone point whose warp popup is open
     warp_hot    = false,     -- cursor was inside that popup last frame
     favs_open   = false,     -- favorites panel is up
+    -- The gamepad widget.  fw_on is what the xinput handler reads to decide
+    -- whether a button is its to take, and is written by the draw each frame,
+    -- so the buttons are taken exactly while the list they drive is on screen.
+    fw_on       = false,
+    fw_shown    = false,     -- it was up last frame, i.e. this is not its first
+    fw_sel      = 1,         -- the row the D-pad has landed on, 1-based
+    fw_hide     = false,     -- B put it away until the player walks off the NPC
     -- The favorite being dragged, as { i, live, moved } of the row that was
     -- pressed: i follows the cursor as the list reorders under it, live is
     -- whether it can travel, and moved tells a reorder from a plain click.
@@ -1311,6 +1339,122 @@ local function show()
 end
 
 --[[
+* Whether a favorite can travel right now, and the colour that says so.  The
+* same two tests the popup and the panel use: a row travels only from the kind
+* of NPC it was saved off, and only to somewhere the player has registered.
+--]]
+local function fw_state(f)
+    local live  = f.type == ui.near_kind;
+    local known = warp_known(f.key, f);
+    return live and known,
+           (not known) and FW.lock or live and FW.live or FW.off;
+end
+
+--[[
+* Send the selected favorite, if it is one that can travel.  A row that cannot
+* takes no press, the same way a red row in the panel takes no click: the /uw
+* would be turned down at the NPC, and a row that looks live but does nothing
+* reads as a broken list.
+--]]
+local function fw_confirm()
+    local f = cfg.favs[ui.fw_sel];
+    if (f == nil or not fw_state(f)) then
+        return;
+    end
+    local cmd = warp_cmd(f.key, f);
+    if (cmd ~= nil) then
+        send_cmd(cmd);
+    end
+end
+
+--[[
+* The gamepad favorites widget.  It rides with the map: up while the map is up
+* and a warp NPC is in reach, gone the moment either stops being true.
+*
+* That is also the only time the xinput handler takes a button -- one
+* condition, written here and read there, so the two cannot come apart and
+* leave the D-pad swallowed with nothing on screen to drive.
+--]]
+local function draw_fav_widget()
+    local n = #cfg.favs;
+    -- Up exactly while the map is: the same touch opens both, Escape and
+    -- walking off put both away, and a map opened by hand out in the field
+    -- brings it with them.  Still only where it can be used, since the buttons
+    -- it swallows are the game's everywhere else.
+    local on = cfg.widget and ui.is_open[1] and n > 0 and not ui.fw_hide
+               and ui.near_kind ~= nil and ui.near_kind ~= false;
+    if (not on) then
+        ui.fw_on, ui.fw_shown = false, false;
+        -- Walking off the NPC is what clears a dismissal: B puts the widget
+        -- away for this visit, not for good.
+        if (ui.near_kind == nil or ui.near_kind == false) then
+            ui.fw_hide = false;
+        end
+        return;
+    end
+    ui.fw_on  = true;
+    ui.fw_sel = mm.clamp(ui.fw_sel, 1, n);
+
+    if (not ui.fw_shown) then
+        ui.fw_shown = true;
+        ui.fw_sel   = 1;
+    end
+    -- Kept in front every frame rather than once on the way up: ImGui stacks
+    -- windows by focus, and the map underneath is 90% of the screen, so one
+    -- click on it would otherwise bury this.  The map takes its clicks by
+    -- hover rather than focus, so nothing down there minds.
+    imgui.SetNextWindowFocus();
+
+    local display = imgui.GetIO().DisplaySize;
+    imgui.SetNextWindowPos({ UI_MARGIN, display.y * 0.5 }, ImGuiCond_FirstUseEver);
+    imgui.SetNextWindowBgAlpha(0.88);
+    -- No title bar and no chrome, sized to whatever the list needs: the map
+    -- window's own look, so the two read as one addon.
+    local flags = bit.bor(ImGuiWindowFlags_NoTitleBar,
+                          ImGuiWindowFlags_AlwaysAutoResize,
+                          ImGuiWindowFlags_NoScrollbar,
+                          ImGuiWindowFlags_NoScrollWithMouse);
+    -- And moved the way the map is moved: ImGui drags a window by any empty
+    -- part of it, which here would be the gap beside a row, so the window
+    -- stays put unless shift is held.
+    if (not imgui.GetIO().KeyShift) then
+        flags = bit.bor(flags, ImGuiWindowFlags_NoMove);
+    end
+    -- 'true' rather than nil for the open flag: Ashita's binding reads a nil
+    -- there as the two-argument Begin and throws the flags away, which puts
+    -- back the title bar and the resize grip this is meant to be without.
+    if (imgui.Begin('UberMap Favorites##ubermap_fw', true, flags)) then
+        for i, f in ipairs(cfg.favs) do
+            local live, col = fw_state(f);
+            local art = WARP_ICON[f.type];
+            local tex, iw, ih;
+            if (art ~= nil) then tex, iw, ih = icon_texture(art); end
+            if (tex ~= nil) then
+                local sc = POPUP_ICON / ih;
+                -- The border colour is passed as well as the tint: every
+                -- tinted Image in the Ashita tree hands the binding both.
+                imgui.Image(tonumber(ffi.cast('uint32_t', tex)),
+                            { iw * sc, ih * sc }, { 0, 0 }, { 1, 1 },
+                            live and FW.live or FW.off, { 0, 0, 0, 0 });
+                imgui.SameLine();
+            end
+            local pos = fav_pos(f);
+            imgui.PushStyleColor(ImGuiCol_Text, col);
+            -- The index is in the label's id half so two favorites off the
+            -- same row of the same zone still get a widget each.
+            if (imgui.Selectable(('%s%s##ubermap_fw%d'):fmt(
+                    fav_text(f), (pos ~= nil) and ('  ' .. pos) or '', i),
+                    i == ui.fw_sel)) then
+                ui.fw_sel = i;
+                fw_confirm();
+            end
+            imgui.PopStyleColor();
+        end
+    end
+    imgui.End();
+end
+
+--[[
 * draw_map's panels live out here rather than inside it, and take the viewport
 * they draw into as arguments.  Not for tidiness: Lua caps a function at 60
 * upvalues, and one function holding every constant and helper the whole map
@@ -1971,7 +2115,14 @@ local function draw_map(view_w, view_h)
 end
 
 ashita.events.register('d3d_present', 'ubermap_present', function ()
-    pump_escape(os.clock());
+    local now = os.clock();
+    pump_escape(now);
+
+    -- Ahead of everything else, and unconditionally: the map has three ways
+    -- out below, and the widget has to be told about every one of them or it
+    -- would go on swallowing the D-pad with nothing left on screen to drive.
+    -- It reads ui.is_open itself and draws nothing while the map is shut.
+    draw_fav_widget();
 
     if (not ui.is_open[1]) then
         return;
@@ -2073,6 +2224,15 @@ ashita.events.register('command', 'ubermap_command', function (e)
 
     local sub = args[2] ~= nil and args[2]:lower() or nil;
 
+    if (sub == 'widget' or sub == 'favs') then
+        cfg.widget = not cfg.widget;
+        settings.save();
+        notify(('favorites widget: %s'):fmt(cfg.widget
+            and 'on, shows at a Home Point, Survival Guide or Unity Concord'
+            or 'off'));
+        return;
+    end
+
     if (sub == 'edit') then
         ui.edit = not ui.edit;
         if (ui.edit) then
@@ -2089,6 +2249,45 @@ ashita.events.register('command', 'ubermap_command', function (e)
         ui.is_open[1] = false;
     else
         show();
+    end
+end);
+
+--[[
+* event: xinput_button
+* desc : D-pad up and down walk the favorites widget, A sends the row it has
+*        landed on and B puts the widget away.  Only while the widget is on
+*        screen, which is only while a warp NPC is in reach; every other button,
+*        and every button at all outside that, is left to the client.
+--]]
+ashita.events.register('xinput_button', 'ubermap_xinput', function (e)
+    local n = #cfg.favs;
+    if (not ui.fw_on or n == 0) then
+        return;
+    end
+    if (e.button ~= FW.up and e.button ~= FW.down
+        and e.button ~= FW.a and e.button ~= FW.b) then
+        return;
+    end
+    -- Both edges: the client never saw the press, so it is not handed the
+    -- release either.
+    e.blocked = true;
+    if (e.state ~= 1) then
+        return;
+    end
+
+    if (e.button == FW.up) then
+        -- Wraps at both ends, the way the game's own menus do.  ponytail: one
+        -- step a press; a held-D-pad repeat if a list ever gets long enough to
+        -- want one.
+        ui.fw_sel = (ui.fw_sel - 2) % n + 1;
+    elseif (e.button == FW.down) then
+        ui.fw_sel = ui.fw_sel % n + 1;
+    elseif (e.button == FW.a) then
+        fw_confirm();
+    else
+        -- The way back to the NPC's own menu: with A swallowed there would
+        -- otherwise be no reaching it from a controller while stood here.
+        ui.fw_hide = true;
     end
 end);
 

@@ -10,6 +10,7 @@ Drop the `UberMap` folder into `Ashita/addons/`, then `/addon load ubermap`.
 | --- | --- |
 | `/ubermap`, `/um` | Toggle the map |
 | `/ubermap edit` | Toggle the point editor |
+| `/ubermap widget` | Toggle the gamepad favorites widget |
 
 ## The map
 
@@ -53,6 +54,20 @@ Left-click a zone point — for a panel of that zone's destinations. Clicking a 
 While **Multisend** is lit every command — warp rows, scroll and ring alike — goes out through [Multisend](https://github.com/ThornyFFXI/Multisend) and repeats on every logged-in character. Off and dimmed until clicked.
 
 **Favorites** are warp rows you saved, in your order. Right-click any row for *Add point to favorites list* — a row you cannot travel on right now works too, so a destination can be saved from anywhere. Each is named by its zone and row, e.g. `Windurst Woods - Home Point #2`. Clicking one warps exactly as its original row would, and it reads grey or red on the same two tests. `^` and `v` reorder; right-click offers *Remove point from favorites list*.
+
+## Gamepad favorites widget
+
+`/um widget` turns on a small window listing the same favorites, built for a controller. It rides with the map: up while the map is up and you are stood at a Home Point, Survival Guide or Unity Concord, gone the moment either stops being true. Never wider than that, because it swallows the buttons it reads and the D-pad belongs to the game's menus everywhere else.
+
+| Button | Effect |
+| --- | --- |
+| D-pad up / down | Move the selection, wrapping at both ends |
+| A | Warp to the selected row |
+| B | Put the widget away until you walk off the NPC |
+
+Rows read grey or red on the same two tests the panel uses, and A refuses a row that reads either way — a favorite travels only from the kind of NPC it was saved off, and only to a destination you have registered. Clicking a row with the mouse warps too. The window has no title bar and sizes itself to the list; like the map, hold shift to drag it somewhere else. Off by default, and saved per character with the rest of the settings.
+
+XInput only: an Xbox pad, or anything Windows presents as one. A DirectInput controller (DualShock, DualSense) still works by mouse.
 
 ## Filters set themselves
 
@@ -106,6 +121,7 @@ lua test/test_warps.lua     # every warp row builds a /uw the game takes
 lua test/test_toggles.lua   # the layer toggles against the real points
 lua test/test_ring.lua      # the Warp Ring icon's equip-then-use steps
 lua test/test_favs.lua      # favorites: add, remove, reorder and the /uw they send
+lua test/test_widget.lua    # the widget's D-pad wrap and its A-button gate
 lua test/test_unlocks.lua   # the unlock bit test, and every alias Uberwarp knows
 ```
 
