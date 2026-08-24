@@ -128,6 +128,21 @@ local ESCAPE_RETRY, ESCAPE_WAIT = 0.5, 2.0;
 -- and pets and trusts above them, so the walk stops before either.
 local NPC_FIRST, NPC_LAST = 0x000, 0x3FF;
 
+-- The EXP Guides hand an Instant Warp scroll to anyone who asks, so one is
+-- asked whenever the bag has no scroll and a slot to put one in.  Two entities
+-- carry the name - 'EXP Guide' and 'EXP Guide (S)' - so the pattern matches the
+-- start of both.  They are spawned rather than placed, which puts them in the
+-- dynamic block above the players instead of among the NPCs, so their scan runs
+-- the whole array out rather than stopping at NPC_LAST.
+local EXP_GUIDE_NAME = '^EXP Guide';
+local ENT_LAST       = 0x8FF;
+
+-- How long to wait for the scroll after asking before giving up, in seconds.  A
+-- give-up rather than a retry: the ask goes out once each time the conditions
+-- line up, so a guide that answers with nothing cannot strand the state and is
+-- not asked again for the same walk-up either.
+local GUIDE_WAIT = 5.0;
+
 local MAX_ZOOM  = 2.0;  -- two screen pixels per source map pixel
 local ZOOM_STEP = 1.15; -- per wheel notch
 
@@ -204,10 +219,11 @@ local WARP_ICON = T{ home = 'Crystal.png', guide = 'Guide.png', unity = 'Unity.p
 local WARP_ITEM_ICON = 'Warp.png';
 local WARP_ITEM_ID   = 4181;
 local WARP_ITEM_CMD  = '/item "Instant Warp" <me>';
--- Inventory container 0 - the bag, which is what /item reads from - and its
--- slot count.  Slot 0 is the gil slot rather than an item, so the walk starts
--- at 1.
-local BAG, BAG_SLOTS = 0, 80;
+-- Inventory container 0 - the bag, which is what /item reads from.  Its slot
+-- count is read off the container rather than fixed here, since a bag can be
+-- smaller than the eighty slots it tops out at.  Slot 0 is the gil slot rather
+-- than an item, so the walk starts at 1.
+local BAG = 0;
 
 -- The Warp Ring, drawn after the scroll.  Unlike the scroll it has to be worn
 -- before it can be used, so the icon walks the player through that: it looks
@@ -348,6 +364,21 @@ local ui = T{
     press       = nil,       -- marker the left button went down on
     near_kind   = false,     -- warp type last seen in reach; false until checked
     has_warp    = false,     -- an Instant Warp scroll was in the bag last poll
+    bag_full    = true,      -- and the bag had no free slot; true until read
+    bag_at      = 0,         -- os.clock() of that read
+    -- The EXP Guide errand: nil while nothing is in flight, 'wait' from the ask
+    -- until the scroll lands or GUIDE_WAIT runs out, 'exit' while Escape backs
+    -- out of the talk it landed in.  guide_at is when the current step started,
+    -- which is what both of those give-ups are measured from.
+    guide       = nil,
+    guide_at    = 0,
+    -- The guide the last poll found in reach, or nil for none - which is also
+    -- what it reads while the bag says there is nothing to fetch or nowhere to
+    -- put it, since the scan behind it does not run then.
+    guide_id    = nil,
+    guide_ix    = nil,
+    guide_asked = false,     -- this line-up has had its one ask
+    guide_esc   = 0,         -- Escapes pressed so far leaving the guide's talk
     masks       = nil,       -- teleport mask block off the last 0x63 type 6
     ring        = 'none',    -- Warp Ring step: none, equip or use, as of last poll
     ring_bag    = nil,       -- /equip container number the ring was found in
@@ -559,6 +590,55 @@ local function near_warp_type()
 end
 
 --[[
+* The server id and target index of the nearest EXP Guide within WARP_NPC_NEAR,
+* or nil when none is in reach.  Nearest for the same reason the warp NPCs are:
+* the two guides can both be inside the radius, and the one being stood at is
+* the one meant.
+*
+* Walks the whole array rather than stopping at NPC_LAST, since a guide is a
+* spawned entity and sits above the players.  ponytail: run only while the bag
+* is short a scroll and has room for one, which is what keeps a 2304 slot walk
+* off the frames of a session already carrying one.
+--]]
+local function near_exp_guide()
+    local ent = AshitaCore:GetMemoryManager():GetEntity();
+    if (ent == nil) then
+        return nil;
+    end
+    local id, index, near = nil, nil, WARP_NPC_NEAR * WARP_NPC_NEAR;
+    for i = NPC_FIRST, ENT_LAST do
+        -- Squared yalms against a squared radius, and the rendered bit, for the
+        -- same reasons near_warp_type reads them that way.
+        local d = ent:GetDistance(i);
+        if (d < near and bit.band(ent:GetRenderFlags0(i), 0x200) == 0x200
+            and (ent:GetName(i) or ''):match(EXP_GUIDE_NAME)) then
+            id, index, near = ent:GetServerId(i), i, d;
+        end
+    end
+    return id, index;
+end
+
+--[[
+* Ask an NPC for whatever it hands out, which is the packet the client sends
+* when its target is pressed: the entity's server id, its index, and a category
+* of zero for a plain talk.  Seven dwords, the rest of them zero - no menu
+* parameter and no position.
+--]]
+local function poke_npc(id, index)
+    local p = { 0x1A, 0x07, 0, 0 };
+    for i = 0, 3 do
+        p[#p + 1] = bit.band(bit.rshift(id, i * 8), 0xFF);
+    end
+    p[#p + 1] = bit.band(index, 0xFF);
+    p[#p + 1] = bit.band(bit.rshift(index, 8), 0xFF);
+    -- Category, parameter and the three position floats, all left at zero.
+    for _ = 1, 18 do
+        p[#p + 1] = 0;
+    end
+    AshitaCore:GetPacketManager():AddOutgoingPacket(0x01A, p);
+end
+
+--[[
 * Narrow the map to one kind of warp, or light every kind again when given nil.
 --]]
 local function filter_to(kind)
@@ -568,23 +648,36 @@ local function filter_to(kind)
 end
 
 --[[
-* True while an Instant Warp scroll sits in the bag.  Matched by item id rather
-* than by name: the resource name a server gives an item need not be the string
-* a name lookup wants.  pcall'd whole because the inventory is not readable
-* while zoning.
+* Both answers the bag holds, in one walk of it: whether an Instant Warp scroll
+* is carried, and whether every slot is taken.  Walked together because they
+* read the same slots, and this runs whether the map is up or not.  The scroll
+* is matched by item id rather than by name: the resource name a server gives an
+* item need not be the string a name lookup wants.  The count comes from the
+* container rather than fixed, since a bag can be smaller than the eighty slots
+* it tops out at.
+*
+* pcall'd whole because the inventory is not readable while zoning, and a read
+* that failed is reported as carried and full - the one pair of answers that
+* asks a guide for nothing.
 --]]
-local function have_warp_item()
-    local ok, found = pcall(function()
+local function bag_state()
+    local ok, has, full = pcall(function()
         local inv = AshitaCore:GetMemoryManager():GetInventory();
-        for i = 1, BAG_SLOTS do
+        local carried, free = false, false;
+        for i = 1, inv:GetContainerCountMax(BAG) do
             local it = inv:GetContainerItem(BAG, i);
-            if (it ~= nil and it.Id == WARP_ITEM_ID and it.Count > 0) then
-                return true;
+            if (it == nil or it.Id == 0) then
+                free = true;
+            elseif (it.Id == WARP_ITEM_ID and it.Count > 0) then
+                carried = true;
             end
         end
-        return false;
+        return carried, not free;
     end);
-    return ok and found;
+    if (not ok) then
+        return true, true;
+    end
+    return has, full;
 end
 
 --[[
@@ -653,7 +746,6 @@ local function poll_near(now)
         return;
     end
     ui.near_at = now;
-    ui.has_warp = have_warp_item();
     ui.ring_bag = ring_bag();
     ui.ring     = ring_step(ui.ring_bag ~= nil, ring_worn(),
                             now - ui.ring_at < RING_EQUIP_WAIT);
@@ -790,6 +882,90 @@ local function pump_escape(now)
     if (now - ui.esc_at > ESCAPE_RETRY) then
         press_escape(now);
     end
+end
+
+--[[
+* Fetch an Instant Warp scroll from an EXP Guide, and leave again, without the
+* player stopping.  Walk up to a guide carrying no scroll and with a slot free
+* and one is asked for; the scroll arrives inside the guide's talk, so leaving
+* that talk is part of taking it, by the same Escape the map uses to back out of
+* a warp NPC's menu.
+*
+* Runs every frame whether the map is up or not: the errand has nothing to do
+* with the map being open, and the walk that starts it is one the player takes
+* on the way past.  The bag read behind it is what gates the entity scan, so a
+* character already carrying a scroll costs eighty slot reads twice a second and
+* nothing else.
+--]]
+local function pump_guide(now)
+    -- What the errand reads of the world, twice a second rather than per frame:
+    -- what the bag holds, and - only while the bag is short a scroll and has
+    -- room for one - whether a guide is in reach.  That gate is what keeps a
+    -- 2304 slot entity walk off the frames of a character already carrying one,
+    -- and it leaves guide_id nil for every reason not to ask rather than only
+    -- for the guide being out of reach.
+    if (now - ui.bag_at >= NEAR_POLL) then
+        ui.bag_at = now;
+        ui.has_warp, ui.bag_full = bag_state();
+        ui.guide_id, ui.guide_ix = nil, nil;
+        if (not (ui.has_warp or ui.bag_full)) then
+            ui.guide_id, ui.guide_ix = near_exp_guide();
+        end
+    end
+
+    -- The scroll landed, so back out of the talk it landed in.  The first press
+    -- is unconditional: the scroll arriving is itself the proof that the guide
+    -- put something up, and not every server marks that something as an event
+    -- the way a warp NPC's menu is marked - waiting on in_event to agree is how
+    -- this managed to end the errand having pressed nothing at all.
+    --
+    -- After that press in_event is worth reading, since it is what says the
+    -- talk actually closed.  Presses repeat while it has not, because a talk can
+    -- be more than one level deep, and ESCAPE_WAIT gives up so one that will not
+    -- close cannot hold the errand open.
+    if (ui.guide == 'exit') then
+        if ((ui.guide_esc > 0 and not in_event())
+            or now - ui.guide_at > ESCAPE_WAIT) then
+            ui.guide = nil;
+        elseif (ui.esc_frames == 0 and now - ui.esc_at > ESCAPE_RETRY) then
+            press_escape(now);
+            -- Counted here rather than read back off esc_frames, which the next
+            -- frame's pump_escape has already begun taking down.
+            ui.guide_esc = ui.guide_esc + 1;
+        end
+        return;
+    end
+
+    if (ui.guide == 'wait') then
+        if (ui.has_warp) then
+            ui.guide, ui.guide_at, ui.guide_esc = 'exit', now, 0;
+        elseif (now - ui.guide_at > GUIDE_WAIT) then
+            ui.guide = nil;
+        end
+        return;
+    end
+
+    -- No scroll, a slot free and a guide in reach is one line-up, and it gets
+    -- one ask.  Any of the three going false re-arms it, so spending a scroll
+    -- or walking off and back asks again, while standing at a guide that
+    -- answered with nothing does not.
+    if (ui.guide_id == nil) then
+        ui.guide_asked = false;
+        return;
+    end
+    if (ui.guide_asked) then
+        return;
+    end
+
+    -- Already talking to something, or a warp command is waiting on a menu to
+    -- close: an ask now would land in the middle of either.  Left un-asked
+    -- rather than skipped, so it goes out on a later frame instead.
+    if (ui.pending ~= nil or ui.esc_frames > 0 or in_event()) then
+        return;
+    end
+
+    poke_npc(ui.guide_id, ui.guide_ix);
+    ui.guide, ui.guide_at, ui.guide_asked = 'wait', now, true;
 end
 
 --[[
@@ -2220,6 +2396,7 @@ end
 ashita.events.register('d3d_present', 'ubermap_present', function ()
     local now = os.clock();
     pump_escape(now);
+    pump_guide(now);
 
     -- Ahead of everything else, and unconditionally: the widget is up on the
     -- NPC alone, so it has to be drawn on the frames the map returns out of

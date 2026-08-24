@@ -55,6 +55,14 @@ While **Multisend** is lit every command — warp rows, scroll and ring alike �
 
 **Favorites** are warp rows you saved, in your order. Right-click any row for *Add point to favorites list* — a row you cannot travel on right now works too, so a destination can be saved from anywhere. Each is named by its zone and row, e.g. `Windurst Woods - Home Point #2`. Clicking one warps exactly as its original row would, and it reads grey or red on the same two tests. Drag a row up or down to reorder the list; right-click offers *Remove point from favorites list*.
 
+## Scroll pickup
+
+Walk within 7 yalms of an **EXP Guide** or **EXP Guide (S)** carrying no Instant Warp scroll and with a free inventory slot, and one is asked for and taken without you stopping: the guide is poked with the same packet pressing its target sends, and the moment the scroll lands Escape backs out of the talk it arrived in.
+
+Nothing to configure. All three have to be true — no scroll (4181) in the bag, a slot free for one, a guide in reach — and they get **one** poke between them. Any of the three going false arms the next one, so spending a scroll or walking off and back asks again, while standing at a guide that answered with nothing does not: it is given up on after five seconds and then left alone. So the packet count is one per scroll you actually collect, on no timer of its own.
+
+Carrying a scroll or a full bag skips even the entity scan, so the cost on a character already holding one is a bag read twice a second and nothing else. Renamed on your server? `EXP_GUIDE_NAME` in `ubermap.lua` holds the pattern.
+
 ## Gamepad favorites widget
 
 `/um widget` turns on a small window listing the same favorites, built for a controller. It comes up on its own the moment you walk up to a Home Point, Survival Guide or Unity Concord — map open or not — and goes away the moment you walk off. Never wider than that, because it swallows the buttons it reads and the D-pad belongs to the game's menus everywhere else.
@@ -124,6 +132,7 @@ lua test/test_toggles.lua   # the layer toggles against the real points
 lua test/test_ring.lua      # the Warp Ring icon's equip-then-use steps
 lua test/test_favs.lua      # favorites: add, remove, reorder and the /uw they send
 lua test/test_widget.lua    # the widget's D-pad wrap and its A-button gate
+lua test/test_guide.lua     # the EXP Guide errand: when it asks, and when it stops
 lua test/test_unlocks.lua   # the unlock bit test, and every alias Uberwarp knows
 ```
 
