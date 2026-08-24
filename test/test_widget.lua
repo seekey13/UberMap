@@ -107,8 +107,27 @@ for i = 1, #favs do
     check(confirm() == nil, 'nothing should send away from a warp NPC');
 end
 
+-- Right-clicking a row takes it off the list, the same removal the map's menu
+-- makes.  The selection is clamped back onto the list on the next draw, so the
+-- row that shifted up into the gap is what the D-pad lands on -- and a list
+-- emptied this way takes the widget down rather than leaving a dead selection.
+local function clamp(v, lo, hi) return math.max(lo, math.min(hi, v)); end
+local function remove(i)
+    table.remove(favs, i);
+    sel = clamp(sel, 1, #favs);
+end
+
+near_kind, sel = 'home', #favs;
+remove(#favs);
+check(sel == #favs, 'removing the last row should land the selection on the new last');
+check(favs[sel] ~= nil, 'the selection should still name a row');
+remove(1);
+check(favs[sel] ~= nil, 'the selection should survive a removal above it');
+while (#favs > 0) do remove(1); end
+check(#favs == 0 and favs[sel] == nil, 'an emptied list should leave no row to send');
+
 if (fails == 0) then
-    print(('ok: %d rows, D-pad wrap and the A-button gate all hold'):format(#favs));
+    print(('ok: D-pad wrap, the A-button gate and right-click removal all hold'));
 else
     print(('%d check(s) failed'):format(fails));
     os.exit(1);

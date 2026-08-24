@@ -47,7 +47,7 @@ Left-click a zone point — for a panel of that zone's destinations. Clicking a 
 | **Warp** | After them | `/item "Instant Warp" <me>` and closes the map. Lit only while the scroll (4181) is carried |
 | **Warp Ring** | After that | Two steps, see below |
 | **Multisend** | Bottom right | Prefixes every command the map sends with `/mss ` |
-| **Heart** | Bottom left | Opens favorites |
+| **Heart** | Bottom left | Opens favorites. Hidden while the gamepad widget is on, since that lists the same rows |
 
 **Warp Ring** works in two steps, since a ring must be worn before use. It looks for item 28540 in your bag and the eight Mog Wardrobes the client will equip out of, re-read twice a second like the scroll. Carrying none: dimmed and dead. Carrying one unworn: dimmed, and clicking sends `/equip ring1 "Warp Ring" <container>`, keeps the map open and goes dead for nine seconds while the ring lands. Wearing one: lit, and clicking sends `/item "Warp Ring" <me>` and closes the map. Hovering says which step it is on.
 
@@ -57,13 +57,15 @@ While **Multisend** is lit every command — warp rows, scroll and ring alike �
 
 ## Gamepad favorites widget
 
-`/um widget` turns on a small window listing the same favorites, built for a controller. It rides with the map: up while the map is up and you are stood at a Home Point, Survival Guide or Unity Concord, gone the moment either stops being true. Never wider than that, because it swallows the buttons it reads and the D-pad belongs to the game's menus everywhere else.
+`/um widget` turns on a small window listing the same favorites, built for a controller. It comes up on its own the moment you walk up to a Home Point, Survival Guide or Unity Concord — map open or not — and goes away the moment you walk off. Never wider than that, because it swallows the buttons it reads and the D-pad belongs to the game's menus everywhere else.
 
 | Button | Effect |
 | --- | --- |
 | D-pad up / down | Move the selection, wrapping at both ends |
 | A | Warp to the selected row |
 | B | Put the widget away until you walk off the NPC |
+
+Right-click a row for *Remove point from favorites list*, the same item the map's own panel offers. Turning the widget on hides the heart and its panel: the list is on screen in one place, not two.
 
 Rows read grey or red on the same two tests the panel uses, and A refuses a row that reads either way — a favorite travels only from the kind of NPC it was saved off, and only to a destination you have registered. Clicking a row with the mouse warps too. The window has no title bar and sizes itself to the list; like the map, hold shift to drag it somewhere else. Off by default, and saved per character with the rest of the settings.
 
