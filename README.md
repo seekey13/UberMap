@@ -44,6 +44,7 @@ Left-click a zone point — for a panel of that zone's destinations. Clicking a 
 
 | Icon | Where | Does |
 | --- | --- | --- |
+| **Search** | After the past/present switch | Type to fade back every marker whose name does not match. A region stays lit while a zone under it matches, so the overview still points the way. Clear it to put the map back |
 | **Crystal**, **Guide**, **Unity** | Right of search | Dim one to drop that kind of row. A zone with nothing left opens no panel |
 | **Warp** | After them | `/item "Instant Warp" <me>` and closes the map. Lit only while the scroll (4181) is carried |
 | **Warp Ring** | After that | Two steps, see below |

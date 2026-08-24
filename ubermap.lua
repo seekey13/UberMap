@@ -197,9 +197,15 @@ local ZOOM_POINTS = 1.0;
 -- Toolbar and editor panel, pinned in from the viewport corner by UI_MARGIN
 -- screen pixels.
 local UI_MARGIN = 20;
-local FIELD_W   = 600;  -- editor text field width, screen pixels
-local FIELD_MAX = 256;  -- editor text field length, bytes
+local FIELD_W   = 600;  -- search and editor text field width, screen pixels
+local FIELD_MAX = 256;  -- search and editor text field length, bytes
 local EDIT_ROW  = 28;   -- editor panel row pitch, screen pixels
+
+-- The search box is the one light widget on the toolbar, so it carries its own
+-- colours rather than the dark frame ImGui's default style gives it.
+local COL_SEARCH_BG   = { 1.0, 1.0, 1.0, 1.0 };
+local COL_SEARCH_TEXT = { 0.0, 0.0, 0.0, 1.0 };
+local COL_SEARCH_HINT = { 0.45, 0.45, 0.45, 1.0 };
 
 -- Toolbar rows are drawn this many times the default frame height.  The height
 -- comes from frame padding rather than a font scale: ImGui has one baked font
@@ -379,6 +385,7 @@ local ui = T{
     zoom        = nil,  -- nil until the first frame gives us a viewport size
     pan_x       = 0,
     pan_y       = 0,
+    search      = { '', },   -- search box text, boxed the way ImGui wants it
     hot         = false,     -- cursor was over a widget, not the map
     dragging    = false,
     drag_x      = 0,
@@ -851,6 +858,39 @@ local function group_warps_lit(name)
 end
 
 --[[
+* True while a marker answers the search box: a plain case-insensitive
+* substring of the label.  An empty box matches everything, so the map is
+* untouched until something is typed.
+*
+* A group marker answers for the zones it stands for as well as for its own
+* name.  The overview is all that is drawn zoomed out, so a search for a zone
+* has to leave the region holding it lit or there would be nothing left to
+* click towards.
+*
+* ponytail: walks every icon per group marker, the same as group_warps_lit and
+* on the same thirty-odd markers an overview frame draws.  Index group ->
+* labels at load if the point list ever grows an order of magnitude.
+--]]
+local function search_hit(ic)
+    local q = ui.search[1]:lower();
+    if (q == '') then
+        return true;
+    end
+    if ((ic.label or ''):lower():find(q, 1, true) ~= nil) then
+        return true;
+    end
+    if (OVERVIEW[ic.group]) then
+        for _, p in ipairs(ICONS) do
+            if (p.group == ic.label and p.time == ui.time
+                and (p.label or ''):lower():find(q, 1, true) ~= nil) then
+                return true;
+            end
+        end
+    end
+    return false;
+end
+
+--[[
 * Everything outside the focused group fades back, and so does a zone the
 * toggles have left with no warp row: the marker stays on the map to say the
 * zone is there, dimmed to say it holds none of the kind being looked for.  An
@@ -860,6 +900,9 @@ end
 --]]
 local function icon_dim(ic)
     if (ui.focus ~= nil and ic.group ~= ui.focus) then
+        return true;
+    end
+    if (not search_hit(ic)) then
         return true;
     end
     if (not warps_filtered()) then
@@ -2266,8 +2309,26 @@ local function draw_map(view_w, view_h)
         if (time_hit) then
             ui.next_time = other;
         end
-        -- Toggle icons, sharing the switch's line.
-        local tx_at = UI_MARGIN + time_w + TOGGLE_GAP;
+        -- Search box, next on the toolbar row.  Typing in it fades back every
+        -- marker whose label does not match, which is icon_dim's doing; nothing
+        -- is hidden, so the map keeps its shape while a search narrows it.
+        local search_x = UI_MARGIN + time_w + TOGGLE_GAP;
+        imgui.PushStyleVar(ImGuiStyleVar_FramePadding,
+                           { 6, (row_h - imgui.GetFontSize()) / 2 });
+        imgui.PushStyleColor(ImGuiCol_FrameBg, COL_SEARCH_BG);
+        imgui.PushStyleColor(ImGuiCol_FrameBgHovered, COL_SEARCH_BG);
+        imgui.PushStyleColor(ImGuiCol_FrameBgActive, COL_SEARCH_BG);
+        imgui.PushStyleColor(ImGuiCol_Text, COL_SEARCH_TEXT);
+        imgui.PushStyleColor(ImGuiCol_TextDisabled, COL_SEARCH_HINT);
+        imgui.SetCursorPos({ search_x, UI_MARGIN });
+        imgui.SetNextItemWidth(FIELD_W);
+        imgui.InputTextWithHint('##ubermap_search', 'Search', ui.search, FIELD_MAX);
+        imgui.PopStyleColor(5);
+        imgui.PopStyleVar();
+        ui.hot = ui.hot or imgui.IsItemActive() or imgui.IsItemHovered();
+
+        -- Toggle icons, sharing the search box's line.
+        local tx_at = search_x + FIELD_W + TOGGLE_GAP;
         for _, file in ipairs(TOGGLES) do
             local hit, tw = icon_button('toggle_' .. file, file,
                                         tx_at, UI_MARGIN, row_h,
