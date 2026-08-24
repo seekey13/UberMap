@@ -1404,18 +1404,23 @@ end
 
 --[[
 * Draws the list fav_metrics measured at px, py and takes its presses: hover,
-* drag to reorder, click to travel.  sel is a row to keep lit whatever the
-* cursor is doing -- the widget's D-pad landing, nil for the panel -- and veto
-* is true while something lying over the list should eat its presses.  Hands
-* back the row the cursor is on, for whichever right-click menu the caller
-* hangs off it.
+* drag to reorder, click to travel.  Hands back the row the cursor is on, for
+* whichever right-click menu the caller hangs off it.  In opts:
+*
+*   sel  - a row to keep lit whatever the cursor is doing, i.e. the widget's
+*          D-pad landing.  The panel has no selection of its own.
+*   veto - something lying over the list is eating its presses.
+*   grab - false to draw the rows and take nothing, which is what hands a
+*          press to the window underneath instead.
 *
 * One drag at a time, in ui.fav_drag: only ever one of the two lists is on
 * screen, since turning the widget on takes the heart and its panel away.
 --]]
-local function draw_fav_list(px, py, m, mouse_x, mouse_y, sel, veto)
+local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
     local dl      = imgui.GetWindowDrawList();
     local n, w, h = m.n, m.w, m.h;
+    local sel     = opts.sel;
+    local veto    = opts.veto;
 
     dl:AddRectFilled({ px, py }, { px + w, py + h }, COL_POPUP_BG,
                      0, ImDrawCornerFlags_All);
@@ -1494,7 +1499,16 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, sel, veto)
     -- hover tested as a rect rather than off the item.  It is also the last
     -- item either caller leaves behind, which is what a context popup hangs
     -- off.
+    --
+    -- A caller that wants the press can ask for a Dummy instead: it holds the
+    -- same space open, so a window sized to its contents still comes out the
+    -- size of the list, but takes no id and so leaves the press to the window
+    -- it is drawn in.
     imgui.SetCursorScreenPos({ px, py });
+    if (opts.grab == false) then
+        imgui.Dummy({ w, h });
+        return nil;
+    end
     imgui.InvisibleButton('##ubermap_favs', { w, h });
     local fav_hot = mouse_x >= px and mouse_x <= px + w
                     and mouse_y >= py and mouse_y <= py + h;
@@ -1594,21 +1608,25 @@ local function draw_fav_widget()
 
     local display = imgui.GetIO().DisplaySize;
     imgui.SetNextWindowPos({ UI_MARGIN, display.y * 0.5 }, ImGuiCond_FirstUseEver);
-    imgui.SetNextWindowBgAlpha(0.88);
-    -- No title bar and no chrome, sized to whatever the list needs: the map
-    -- window's own look, so the two read as one addon.
+    -- No title bar, no ground and no border: the list draws its own panel,
+    -- background and outline, and a window drawing its own around that is the
+    -- second border and the margin of dead space outside it.  Sized to
+    -- whatever the list needs, which with no padding is the list exactly.
     local flags = bit.bor(ImGuiWindowFlags_NoTitleBar,
+                          ImGuiWindowFlags_NoBackground,
                           ImGuiWindowFlags_AlwaysAutoResize,
                           ImGuiWindowFlags_NoScrollbar,
                           ImGuiWindowFlags_NoScrollWithMouse);
-    -- And moved the way the map is moved: ImGui drags a window by any empty
-    -- part of it, which here would be the gap beside a row, so the window
-    -- stays put unless shift is held.  A drag on a row belongs to the list,
-    -- which reorders under it.
-    if (not imgui.GetIO().KeyShift) then
+    -- And moved the way the map is moved: a drag on a row belongs to the list
+    -- and reorders it, so the window stays put unless shift is held.  With no
+    -- padding there is no empty part of it left to drag by either, so shift
+    -- also hands the list's own space back to the window below.
+    local shift = imgui.GetIO().KeyShift;
+    if (not shift) then
         flags = bit.bor(flags, ImGuiWindowFlags_NoMove);
     end
     local ctx_open = false;
+    imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, { 0, 0 });
     -- 'true' rather than nil for the open flag: Ashita's binding reads a nil
     -- there as the two-argument Begin and throws the flags away, which puts
     -- back the title bar and the resize grip this is meant to be without.
@@ -1620,7 +1638,7 @@ local function draw_fav_widget()
         local mouse_x, mouse_y = imgui.GetMousePos();
         local px, py = imgui.GetCursorScreenPos();
         local hot_i = draw_fav_list(px, py, m, mouse_x, mouse_y,
-                                    ui.fw_sel, false);
+                                    { sel = ui.fw_sel, grab = not shift });
         -- Mouse and D-pad share the one selection: a press of either button on
         -- a row moves it there, so A afterwards sends the row last touched
         -- rather than one the hand has left behind, and a row dragged up or
@@ -1636,7 +1654,7 @@ local function draw_fav_widget()
         -- up: that one is drawn into the map window, which this window stands
         -- in front of.  It hangs off the list's InvisibleButton, and acts on
         -- the row the right-click just moved the selection to.
-        if (imgui.BeginPopupContextItem('##ubermap_fw_ctx')) then
+        if (not shift and imgui.BeginPopupContextItem('##ubermap_fw_ctx')) then
             ctx_open = true;
             if (imgui.MenuItem('Remove point from favorites list')) then
                 local f = cfg.favs[ui.fw_sel];
@@ -1651,6 +1669,7 @@ local function draw_fav_widget()
         end
     end
     imgui.End();
+    imgui.PopStyleVar();
     ui.fw_ctx = ctx_open;
 end
 
@@ -1697,7 +1716,7 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
         -- put it in this corner.  Read a frame late, which is harmless since
         -- neither panel moves while it is open.
         local hot_i = draw_fav_list(px, py, m, mouse_x, mouse_y,
-                                    nil, ui.warp_hot);
+                                    { veto = ui.warp_hot });
 
         -- Right-click a listed favorite to take it back off the list, the
         -- same menu that put it on.
