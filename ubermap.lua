@@ -1547,8 +1547,9 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, sel, veto)
 end
 
 --[[
-* The gamepad favorites widget.  It rides with the map: up while the map is up
-* and a warp NPC is in reach, gone the moment either stops being true.
+* The gamepad favorites widget.  It rides with the NPC, not the map: up the
+* moment a Home Point, Survival Guide or Unity Concord is in reach, gone the
+* moment it is not, whether or not the map is open.
 *
 * That is also the only time the xinput handler takes a button -- one
 * condition, written here and read there, so the two cannot come apart and
@@ -1556,11 +1557,11 @@ end
 --]]
 local function draw_fav_widget()
     local n = #cfg.favs;
-    -- Up exactly while the map is: the same touch opens both, Escape and
-    -- walking off put both away, and a map opened by hand out in the field
-    -- brings it with them.  Still only where it can be used, since the buttons
-    -- it swallows are the game's everywhere else.
-    local on = cfg.widget and ui.is_open[1] and n > 0 and not ui.fw_hide
+    -- Only where it can be used -- stood at a warp NPC -- since the buttons it
+    -- swallows are the game's everywhere else.  The map has nothing to do with
+    -- it: walking up to a crystal is what puts it on screen, and the present
+    -- handler polls the world on the frames the map is shut for exactly that.
+    local on = cfg.widget and n > 0 and not ui.fw_hide
                and ui.near_kind ~= nil and ui.near_kind ~= false;
     if (not on) then
         ui.fw_on, ui.fw_shown = false, false;
@@ -1622,9 +1623,12 @@ local function draw_fav_widget()
                                     ui.fw_sel, false);
         -- Mouse and D-pad share the one selection: a press of either button on
         -- a row moves it there, so A afterwards sends the row last touched
-        -- rather than one the hand has left behind.
-        if (hot_i ~= nil
-            and (imgui.IsMouseClicked(0) or imgui.IsMouseClicked(1))) then
+        -- rather than one the hand has left behind, and a row dragged up or
+        -- down the list carries the selection along with it.
+        if (ui.fav_drag ~= nil) then
+            ui.fw_sel = ui.fav_drag.i;
+        elseif (hot_i ~= nil
+                and (imgui.IsMouseClicked(0) or imgui.IsMouseClicked(1))) then
             ui.fw_sel = hot_i;
         end
         -- Right-click a row for the same one-item menu the map's panel offers.

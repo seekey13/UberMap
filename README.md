@@ -53,7 +53,7 @@ Left-click a zone point — for a panel of that zone's destinations. Clicking a 
 
 While **Multisend** is lit every command — warp rows, scroll and ring alike — goes out through [Multisend](https://github.com/ThornyFFXI/Multisend) and repeats on every logged-in character. Off and dimmed until clicked.
 
-**Favorites** are warp rows you saved, in your order. Right-click any row for *Add point to favorites list* — a row you cannot travel on right now works too, so a destination can be saved from anywhere. Each is named by its zone and row, e.g. `Windurst Woods - Home Point #2`. Clicking one warps exactly as its original row would, and it reads grey or red on the same two tests. `^` and `v` reorder; right-click offers *Remove point from favorites list*.
+**Favorites** are warp rows you saved, in your order. Right-click any row for *Add point to favorites list* — a row you cannot travel on right now works too, so a destination can be saved from anywhere. Each is named by its zone and row, e.g. `Windurst Woods - Home Point #2`. Clicking one warps exactly as its original row would, and it reads grey or red on the same two tests. Drag a row up or down to reorder the list; right-click offers *Remove point from favorites list*.
 
 ## Gamepad favorites widget
 
@@ -65,9 +65,9 @@ While **Multisend** is lit every command — warp rows, scroll and ring alike �
 | A | Warp to the selected row |
 | B | Put the widget away until you walk off the NPC |
 
-Right-click a row for *Remove point from favorites list*, the same item the map's own panel offers. Turning the widget on hides the heart and its panel: the list is on screen in one place, not two.
+The widget and the map's panel are one list drawn twice, so the mouse works the same in either: click a row to warp, drag it up or down to reorder, right-click for *Remove point from favorites list*. Turning the widget on hides the heart and its panel, so the list is on screen in one place, not two.
 
-Rows read grey or red on the same two tests the panel uses, and A refuses a row that reads either way — a favorite travels only from the kind of NPC it was saved off, and only to a destination you have registered. Clicking a row with the mouse warps too. The window has no title bar and sizes itself to the list; like the map, hold shift to drag it somewhere else. Off by default, and saved per character with the rest of the settings.
+Rows read grey or red on the same two tests the panel uses, and A refuses a row that reads either way — a favorite travels only from the kind of NPC it was saved off, and only to a destination you have registered. The window has no title bar and sizes itself to the list; like the map, hold shift to drag it somewhere else. Off by default, and saved per character with the rest of the settings.
 
 XInput only: an Xbox pad, or anything Windows presents as one. A DirectInput controller (DualShock, DualSense) still works by mouse.
 
