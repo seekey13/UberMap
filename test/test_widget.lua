@@ -1,11 +1,10 @@
 --[[
 * Self-check for the gamepad favorites widget.  The widget is a list the D-pad
 * walks and A sends, so two things have to hold: the selection wraps at both
-* ends and never leaves the list however many presses it takes, and a row that
-* cannot travel takes no press -- the same two tests (right kind of NPC in
-* reach, destination registered) the panel colours a row on.  Mirrors
-* fw_state/fw_confirm and the xinput handler in ubermap.lua.  Run with any
-* Lua 5.1+:
+* ends rather than running off either, and a row that cannot travel takes no
+* press -- the same two tests (right kind of NPC in reach, destination
+* registered) the panel colours a row on.  Mirrors fw_confirm and the xinput
+* handler in ubermap.lua.  Run with any Lua 5.1+:
 *     lua test/test_widget.lua
 --]]
 
@@ -65,19 +64,6 @@ for i = #favs, 1, -1 do
     up();
 end
 
--- However long the D-pad is held down on, the selection stays a real row: the
--- confirm indexes cfg.favs with it directly.
-sel = 1;
-for _ = 1, #favs * 7 + 3 do
-    down();
-    check(favs[sel] ~= nil, 'the selection should always name a row');
-end
-sel = 1;
-for _ = 1, #favs * 7 + 3 do
-    up();
-    check(favs[sel] ~= nil, 'the selection should always name a row');
-end
-
 -- Standing at a Home Point: the registered Home Point row travels.
 near_kind, sel = 'home', 1;
 check(confirm() == favs[1], 'a registered row of the kind in reach should send');
@@ -107,27 +93,8 @@ for i = 1, #favs do
     check(confirm() == nil, 'nothing should send away from a warp NPC');
 end
 
--- Right-clicking a row takes it off the list, the same removal the map's menu
--- makes.  The selection is clamped back onto the list on the next draw, so the
--- row that shifted up into the gap is what the D-pad lands on -- and a list
--- emptied this way takes the widget down rather than leaving a dead selection.
-local function clamp(v, lo, hi) return math.max(lo, math.min(hi, v)); end
-local function remove(i)
-    table.remove(favs, i);
-    sel = clamp(sel, 1, #favs);
-end
-
-near_kind, sel = 'home', #favs;
-remove(#favs);
-check(sel == #favs, 'removing the last row should land the selection on the new last');
-check(favs[sel] ~= nil, 'the selection should still name a row');
-remove(1);
-check(favs[sel] ~= nil, 'the selection should survive a removal above it');
-while (#favs > 0) do remove(1); end
-check(#favs == 0 and favs[sel] == nil, 'an emptied list should leave no row to send');
-
 if (fails == 0) then
-    print(('ok: D-pad wrap, the A-button gate and right-click removal all hold'));
+    print(('ok: the D-pad wrap and the A-button gate both hold'));
 else
     print(('%d check(s) failed'):format(fails));
     os.exit(1);

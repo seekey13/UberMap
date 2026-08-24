@@ -11,6 +11,7 @@ Drop the `UberMap` folder into `Ashita/addons/`, then `/addon load ubermap`.
 | `/ubermap`, `/um` | Toggle the map |
 | `/ubermap edit` | Toggle the point editor |
 | `/ubermap widget` | Toggle the gamepad favorites widget |
+| `/ubermap guide` | Toggle the EXP Guide scroll pickup (on by default) |
 
 ## The map
 
@@ -59,11 +60,13 @@ While **Multisend** is lit every command — warp rows, scroll and ring alike �
 
 Walk within 7 yalms of an **EXP Guide** or **EXP Guide (S)** carrying no Instant Warp scroll and with a free inventory slot, and one is asked for and taken without you stopping: the guide is poked with the same packet pressing its target sends, and Escape backs out of the talk the scroll arrives in.
 
-The guide answers about two seconds after the poke, and puts its talk on screen about half a second after the scroll reaches your bag — so the exit waits for that talk rather than pressing the moment the bag changes, which would send the key into the gap ahead of it and leave the window sitting open. It presses again every half second until the talk is gone, and gives up after three. A guide whose talk never registers as an event at all still gets one press on the way past.
+The guide answers about two seconds after the poke, and puts its talk on screen about half a second after the scroll reaches your bag — so the exit waits for that talk rather than pressing the moment the bag changes, which would send the key into the gap ahead of it and leave the window sitting open. It presses again every half second until the talk is gone, and gives up after three. A guide whose talk never registers as an event at all still gets one press on the way past. If a guide puts a menu up instead of handing the scroll over, the same Escape backs out of that rather than leaving you standing in it.
 
-Nothing to configure. All three have to be true — no scroll (4181) in the bag, a slot free for one, a guide in reach — and they get **one** poke between them. Any of the three going false arms the next one, so spending a scroll or walking off and back asks again, while standing at a guide that answered with nothing does not: it is given up on after five seconds and then left alone. So the packet count is one per scroll you actually collect, on no timer of its own.
+`/um guide` turns the pickup off, and it is on by default. All three have to be true — no scroll (4181) in the bag, a slot free for one, a guide in reach — and they get **one** poke between them. Any of the three going false arms the next one, so spending a scroll or walking off and back asks again, while standing at a guide that answered with nothing does not: it is given up on after five seconds and then left alone. So the packet count is one per scroll you actually collect, on no timer of its own.
 
-Carrying a scroll or a full bag skips even the entity scan, so the cost on a character already holding one is a bag read twice a second and nothing else. Renamed on your server? `EXP_GUIDE_NAME` in `ubermap.lua` holds the pattern.
+The guides stand in **Ru'Lude Gardens** and **Lower Jeuno**, and the zone is checked before anything else, so everywhere else in the world the pickup costs one integer compare twice a second. Inside those two, carrying a scroll or a full bag skips the entity scan as well, leaving a bag read. Escape is only sent while FFXI is the focused window, so a pickup that finishes while you are alt-tabbed leaves the talk for you rather than firing the key into whatever you switched to.
+
+Renamed or relocated on your server? `EXP_GUIDE_NAME` and `EXP_GUIDE_ZONES` in `ubermap.lua` hold the pattern and the zone ids.
 
 ## Gamepad favorites widget
 
@@ -134,7 +137,7 @@ lua test/test_toggles.lua   # the layer toggles against the real points
 lua test/test_ring.lua      # the Warp Ring icon's equip-then-use steps
 lua test/test_favs.lua      # favorites: add, remove, reorder and the /uw they send
 lua test/test_widget.lua    # the widget's D-pad wrap and its A-button gate
-lua test/test_guide.lua     # the EXP Guide errand: when it asks, and when it stops
+lua test/test_guide.lua     # lib/guide.lua, the EXP Guide errand end to end
 lua test/test_unlocks.lua   # the unlock bit test, and every alias Uberwarp knows
 ```
 

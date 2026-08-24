@@ -26,6 +26,7 @@ local ffi   = require('ffi');
 local d3d   = require('d3d8');
 local mm    = require('lib.mapmath');
 local unlocks = require('lib.unlocks');
+local guide   = require('lib.guide');
 
 local C       = ffi.C;
 local d3d8dev = d3d.get_device();
@@ -90,7 +91,9 @@ local MASK_PACKET = 0x063;
 -- How close one of those has to be to count as being stood at, in yalms, and
 -- how often the map re-checks while it is open, in seconds.
 local WARP_NPC_NEAR = 7;
-local NEAR_POLL     = 0.5;
+-- Both pollers run on the errand's cadence: one source for the one fact, which
+-- is how often reading a thousand-odd entity slots is worth it.
+local NEAR_POLL     = guide.NEAR_POLL;
 
 -- How far the player has to travel from where the map went up before it closes
 -- itself again, in yalms.  Far enough that a nudge from a passing mob or the
@@ -122,7 +125,9 @@ local STATUS_EVENT = 4;
 -- because a menu can be more than one deep and each press backs out one level;
 -- the total is a give-up, so a menu that will not close cannot strand the
 -- command until the next one replaces it.
-local ESCAPE_RETRY, ESCAPE_WAIT = 0.5, 2.0;
+-- ESCAPE_RETRY comes from the errand for the same reason: one fact about how
+-- fast the client will take a second Escape, read by both menu exits.
+local ESCAPE_RETRY, ESCAPE_WAIT = guide.ESCAPE_RETRY, 2.0;
 
 -- NPCs and mobs occupy the bottom of the entity array; players start at 0x400
 -- and pets and trusts above them, so the walk stops before either.
@@ -135,19 +140,16 @@ local NPC_FIRST, NPC_LAST = 0x000, 0x3FF;
 -- dynamic block above the players instead of among the NPCs, so their scan runs
 -- the whole array out rather than stopping at NPC_LAST.
 local EXP_GUIDE_NAME = '^EXP Guide';
+
+-- And the zones they stand in: Ru'Lude Gardens holds the (S), Lower Jeuno the
+-- other.  Checked before the entity walk, which turns the errand's standing
+-- cost outside these two into one integer compare instead of a scan of the
+-- whole array -- and a character carrying a scroll is not the common case, so
+-- the bag gate alone was leaving that scan running most of the time.  A server
+-- that puts its guides elsewhere adds the zone here, the same way it fixes the
+-- name above.
+local EXP_GUIDE_ZONES = { [243] = true, [245] = true };
 local ENT_LAST       = 0x8FF;
-
--- How long to wait for the scroll after asking before giving up, in seconds.  A
--- give-up rather than a retry: the ask goes out once each time the conditions
--- line up, so a guide that answers with nothing cannot strand the state and is
--- not asked again for the same walk-up either.
-local GUIDE_WAIT = 5.0;
-
--- How long the exit has to see the guide's talk come up and go away again, in
--- seconds.  Longer than ESCAPE_WAIT, which measures a menu already on screen:
--- the scroll can land a moment before the talk it came in is up, so this covers
--- the wait for it as well as the backing out afterwards.
-local GUIDE_EXIT = 1.0;
 
 local MAX_ZOOM  = 2.0;  -- two screen pixels per source map pixel
 local ZOOM_STEP = 1.15; -- per wheel notch
@@ -294,12 +296,15 @@ local FAV_EMPTY    = 'Right-click a warp to add it here';
 -- buttons it reads, and the D-pad belongs to the game's own menus everywhere
 -- else.  Off by default for the same reason: taking buttons off the client is
 -- the surprising thing to do, so it has to be asked for.
+--
+-- Keyed by the XInput button index Ashita's xinput_button event delivers, so
+-- one lookup answers both questions the handler has: whether the button is the
+-- widget's, and which of the four it is.
 local FW = {
-    -- XInput button indexes, as Ashita's xinput_button event delivers them.
-    up    = 0,
-    down  = 1,
-    a     = 12,
-    b     = 13,
+    [0]  = 'up',
+    [1]  = 'down',
+    [12] = 'a',
+    [13] = 'b',
 };
 
 -- The map data lives in lib/points.lua under the addon: the overview groups, in
@@ -328,6 +333,11 @@ local default_settings = T{
     toggle = T{ },   -- toggle file name -> true when dimmed off
     favs   = T{ },   -- saved warp rows, in the order they are listed in
     widget = false,  -- the gamepad favorites widget is on
+    -- The EXP Guide errand.  On by default, unlike the widget: that one takes
+    -- buttons off the client everywhere it is up, while this one acts only on
+    -- the walk past a guide and can be watched happening.  A toggle all the
+    -- same, because it sends a packet and a keystroke with no click behind it.
+    guide  = true,
 };
 -- Loaded from a copy of the defaults, because the library hands its own default
 -- table back for a key the file has no entry for: without the copy the first
@@ -342,6 +352,12 @@ local cfg = settings.load(default_settings:copy(true));
 local function fill_defaults()
     cfg.toggle = cfg.toggle or T{};
     cfg.favs   = cfg.favs   or T{};
+    -- A settings file written before the errand existed has no entry for it,
+    -- and a nil there is not the same as off: the default is on.  Written back
+    -- as a real boolean so the next save records the answer either way.
+    if (cfg.guide == nil) then
+        cfg.guide = true;
+    end
     -- The map used to write the Campaign zones '(S)' and rewrite them to '[S]'
     -- on the way out; it names them '[S]' throughout now.  A favorite saved
     -- under the old name still travels, but nothing else about it looks up any
@@ -369,23 +385,10 @@ local ui = T{
     drag_y      = 0,
     press       = nil,       -- marker the left button went down on
     near_kind   = false,     -- warp type last seen in reach; false until checked
-    has_warp    = false,     -- an Instant Warp scroll was in the bag last poll
-    bag_full    = true,      -- and the bag had no free slot; true until read
-    bag_at      = 0,         -- os.clock() of that read
-    -- The EXP Guide errand: nil while nothing is in flight, 'wait' from the ask
-    -- until the scroll lands or GUIDE_WAIT runs out, 'exit' while Escape backs
-    -- out of the talk it landed in.  guide_at is when the current step started,
-    -- which is what both of those give-ups are measured from.
-    guide       = nil,
-    guide_at    = 0,
-    -- The guide the last poll found in reach, or nil for none - which is also
-    -- what it reads while the bag says there is nothing to fetch or nowhere to
-    -- put it, since the scan behind it does not run then.
-    guide_id    = nil,
-    guide_ix    = nil,
-    guide_asked = false,     -- this line-up has had its one ask
-    guide_esc   = 0,         -- Escapes pressed so far leaving the guide's talk
-    guide_seen  = false,     -- and whether that talk was ever seen on screen
+    -- The EXP Guide errand's whole state, shaped and stepped by lib/guide.lua.
+    -- Kept out here rather than inside that file so the map can read
+    -- errand.has_warp for the Instant Warp icon it draws.
+    errand      = guide.state(),
     masks       = nil,       -- teleport mask block off the last 0x63 type 6
     ring        = 'none',    -- Warp Ring step: none, equip or use, as of last poll
     ring_bag    = nil,       -- /equip container number the ring was found in
@@ -411,7 +414,7 @@ local ui = T{
     fw_shown    = false,     -- it was up last frame, i.e. this is not its first
     fw_sel      = 1,         -- the row the D-pad has landed on, 1-based
     fw_hide     = false,     -- B put it away until the player walks off the NPC
-    fw_ctx      = false,     -- a widget row's right-click menu was up last frame
+    fw_held     = {},        -- buttons whose press the widget took, by index
     -- The favorite being dragged, as { i, live, moved } of the row that was
     -- pressed: i follows the cursor as the list reorders under it, live is
     -- whether it can travel, and moved tells a reorder from a plain click.
@@ -466,13 +469,39 @@ local function in_event()
 end
 
 --[[
+* True while FFXI is the window the OS is sending keys to.
+*
+* keybd_event is process-global and window-agnostic: it goes wherever the focus
+* is, not to the game.  So an Escape sent while the player has alt-tabbed away
+* lands in their browser instead - closing a dialog, cancelling a form, leaving
+* a fullscreen video.  Every press the map itself sends follows a click on the
+* map and so cannot happen alt-tabbed, but the guide errand presses with no
+* click behind it at all, on a walk the player may well be watching from
+* another window.
+*
+* Fails open: a build where these two cannot be read behaves as it always did
+* rather than losing Escape entirely.
+--]]
+local function game_focused()
+    local ok, same = pcall(function ()
+        local fg   = ffi.cast('uintptr_t', AshitaCore:GetForegroundWindow());
+        local game = ffi.cast('uintptr_t',
+                              AshitaCore:GetProperties():GetFinalFantasyHwnd());
+        return tonumber(fg) == tonumber(game);
+    end);
+    return (not ok) or same;
+end
+
+--[[
 * Press Escape, to be released ESCAPE_HOLD frames later.  Refuses to start a
 * second press while one is still held: a repeat would keep resetting the frame
 * count, the release would never fire, and Escape would be left down for the
-* whole system.
+* whole system.  Refuses while the game is not the focused window for the same
+* reason it refuses a double press: the key would land somewhere it was never
+* meant for.
 --]]
 local function press_escape(now)
-    if (user32 == nil or ui.esc_frames > 0) then
+    if (user32 == nil or ui.esc_frames > 0 or not game_focused()) then
         return;
     end
     user32.keybd_event(VK_ESCAPE, ESCAPE_SCAN, 0, 0);
@@ -603,11 +632,17 @@ end
 * the one meant.
 *
 * Walks the whole array rather than stopping at NPC_LAST, since a guide is a
-* spawned entity and sits above the players.  ponytail: run only while the bag
-* is short a scroll and has room for one, which is what keeps a 2304 slot walk
-* off the frames of a session already carrying one.
+* spawned entity and sits above the players.  Two gates stand in front of that
+* walk: the zone, checked here, and the bag, checked by lib/guide.lua before it
+* calls at all.  The zone is the one that matters -- carrying a scroll is the
+* state most players are in least often, so the bag gate alone left the scan
+* running nearly everywhere.
 --]]
 local function near_exp_guide()
+    local party = AshitaCore:GetMemoryManager():GetParty();
+    if (party == nil or not EXP_GUIDE_ZONES[party:GetMemberZone(0)]) then
+        return nil;
+    end
     local ent = AshitaCore:GetMemoryManager():GetEntity();
     if (ent == nil) then
         return nil;
@@ -663,9 +698,12 @@ end
 * container rather than fixed, since a bag can be smaller than the eighty slots
 * it tops out at.
 *
-* pcall'd whole because the inventory is not readable while zoning, and a read
-* that failed is reported as carried and full - the one pair of answers that
-* asks a guide for nothing.
+* pcall'd whole because the inventory is not readable while zoning.  A read that
+* failed is reported as carried and full - the one pair of answers that asks a
+* guide for nothing - and the third return says which it was, because that same
+* pair read as an arrival would start the errand pressing Escape at a talk that
+* was never opened.  Zoning is when the read fails and when a stray press is
+* worst, so the two have to be told apart.
 --]]
 local function bag_state()
     local ok, has, full = pcall(function()
@@ -682,9 +720,9 @@ local function bag_state()
         return carried, not free;
     end);
     if (not ok) then
-        return true, true;
+        return true, true, false;
     end
-    return has, full;
+    return has, full, true;
 end
 
 --[[
@@ -892,116 +930,60 @@ local function pump_escape(now)
 end
 
 --[[
+* The world lib/guide.lua reads and acts on, wired to the game.  One table
+* built once: the errand runs every frame, and rebuilding six closures a frame
+* to hand it the same six calls is the sort of garbage a present handler should
+* not be making.
+--]]
+local guide_world = {
+    in_event   = in_event,
+    bag        = bag_state,
+    near_guide = near_exp_guide,
+    poke       = poke_npc,
+    -- Something else owns Escape: a warp command waiting on a menu to close, or
+    -- a press still held down from either exit.
+    blocked    = function ()
+        return ui.pending ~= nil or ui.esc_frames > 0;
+    end,
+    -- press_escape refuses while one is still held, so whether a press actually
+    -- went out is what it reports back -- the errand spaces its retries off the
+    -- presses that landed rather than the ones it asked for.
+    press      = function (now)
+        local before = ui.esc_frames;
+        press_escape(now);
+        return ui.esc_frames > before;
+    end,
+};
+
+--[[
 * Fetch an Instant Warp scroll from an EXP Guide, and leave again, without the
-* player stopping.  Walk up to a guide carrying no scroll and with a slot free
-* and one is asked for; the scroll arrives inside the guide's talk, so leaving
-* that talk is part of taking it, by the same Escape the map uses to back out of
-* a warp NPC's menu.
+* player stopping.  The errand itself is lib/guide.lua; this is the gate in
+* front of it.
 *
 * Runs every frame whether the map is up or not: the errand has nothing to do
 * with the map being open, and the walk that starts it is one the player takes
-* on the way past.  The bag read behind it is what gates the entity scan, so a
-* character already carrying a scroll costs eighty slot reads twice a second and
-* nothing else.
+* on the way past.
 --]]
 local function pump_guide(now)
-    -- What the errand reads of the world, twice a second rather than per frame:
-    -- what the bag holds, and - only while the bag is short a scroll and has
-    -- room for one - whether a guide is in reach.  That gate is what keeps a
-    -- 2304 slot entity walk off the frames of a character already carrying one,
-    -- and it leaves guide_id nil for every reason not to ask rather than only
-    -- for the guide being out of reach.
-    local poll = now - ui.bag_at >= NEAR_POLL;
-    -- While an ask is in flight the bag is read every frame instead of twice a
-    -- second.  The scroll landing is what starts the exit, so latency here is
-    -- the guide's talk left open, and eighty slot reads for the second or two
-    -- an errand lasts is cheaper than that.
-    if (poll or ui.guide == 'wait') then
-        ui.bag_at = now;
-        ui.has_warp, ui.bag_full = bag_state();
-    end
-    -- The entity scan stays on the slower cadence whatever the errand is doing:
-    -- walking up to a guide happens on a human timescale, and the walk is 2304
-    -- slots rather than eighty.
-    if (poll) then
-        ui.guide_id, ui.guide_ix = nil, nil;
-        if (not (ui.has_warp or ui.bag_full)) then
-            ui.guide_id, ui.guide_ix = near_exp_guide();
-        end
-    end
-
-    -- The scroll landed, so back out of the talk it came in.  Escape is only
-    -- pressed while the client says there is a talk to leave: the scroll can
-    -- land a moment before the talk is up, and a press into that gap is a press
-    -- the client never has anything to spend on - which is exactly how this
-    -- managed to fire once, land early and leave the talk sitting open.
-    --
-    -- So the exit watches instead: presses while in an event, and finishes once
-    -- one has been seen and is gone.  Presses repeat because a talk can be more
-    -- than one level deep.
-    if (ui.guide == 'exit') then
-        local talking = in_event();
-        ui.guide_seen = ui.guide_seen or talking;
-
-        if (ui.guide_seen and not talking) then
-            ui.guide = nil;                 -- the talk came up and closed
-            return;
-        end
-
-        if (now - ui.guide_at > GUIDE_EXIT) then
-            -- Out of time.  If no talk ever registered as an event, one press
-            -- still goes out on the way past: a server can put the scroll up in
-            -- something the client does not mark, and a press into nothing
-            -- costs nothing.
-            if (ui.guide_esc == 0) then
-                press_escape(now);
-            end
-            ui.guide = nil;
-            return;
-        end
-
-        if (talking and ui.esc_frames == 0 and now - ui.esc_at > ESCAPE_RETRY) then
-            press_escape(now);
-            -- Counted here rather than read back off esc_frames, which the next
-            -- frame's pump_escape has already begun taking down.
-            ui.guide_esc = ui.guide_esc + 1;
+    -- Off, or no way to leave the talk the scroll arrives in.  Escape is what
+    -- ends the errand, so without user32 all this could do is drop the player
+    -- into a guide's talk on every walk past with nothing able to close it.
+    -- send_cmd can fall back on the player closing a menu they asked for; this
+    -- one is not asked for, so it does not run at all.
+    if (not cfg.guide or user32 == nil) then
+        -- The map's Instant Warp icon reads has_warp to decide whether it is
+        -- live, so the bag poll outlives the errand it was written for: with
+        -- the errand off the icon still has to know whether a scroll is
+        -- carried.  Nothing else here runs, so this costs one bag walk twice a
+        -- second and no entity scan at all.
+        local st = ui.errand;
+        if (now - st.bag_at >= NEAR_POLL) then
+            st.bag_at, st.has_warp = now, bag_state();
         end
         return;
     end
-
-    if (ui.guide == 'wait') then
-        if (ui.has_warp) then
-            ui.guide, ui.guide_at = 'exit', now;
-            ui.guide_esc, ui.guide_seen = 0, false;
-        elseif (now - ui.guide_at > GUIDE_WAIT) then
-            ui.guide = nil;
-        end
-        return;
-    end
-
-    -- No scroll, a slot free and a guide in reach is one line-up, and it gets
-    -- one ask.  Any of the three going false re-arms it, so spending a scroll
-    -- or walking off and back asks again, while standing at a guide that
-    -- answered with nothing does not.
-    if (ui.guide_id == nil) then
-        ui.guide_asked = false;
-        return;
-    end
-    if (ui.guide_asked) then
-        return;
-    end
-
-    -- Already talking to something, or a warp command is waiting on a menu to
-    -- close: an ask now would land in the middle of either.  Left un-asked
-    -- rather than skipped, so it goes out on a later frame instead.
-    if (ui.pending ~= nil or ui.esc_frames > 0 or in_event()) then
-        return;
-    end
-
-    poke_npc(ui.guide_id, ui.guide_ix);
-    ui.guide, ui.guide_at, ui.guide_asked = 'wait', now, true;
+    guide.pump(ui.errand, guide_world, now);
 end
-
 --[[
 * Points placed in game go back to lib/points.lua, so the work survives a reload.
 * Group blocks are re-emitted as they were loaded: only the points list and the
@@ -1557,28 +1539,27 @@ local function show()
 end
 
 --[[
-* Whether a favorite can travel right now.  The same two tests the popup and
-* the list use: a row travels only from the kind of NPC it was saved off, and
-* only to somewhere the player has registered.
---]]
-local function fw_state(f)
-    return f.type == ui.near_kind and warp_known(f.key, f);
-end
-
---[[
 * Send the selected favorite, if it is one that can travel.  A row that cannot
 * takes no press, the same way a red row in the panel takes no click: the /uw
 * would be turned down at the NPC, and a row that looks live but does nothing
-* reads as a broken list.
+* reads as a broken list.  The two tests are the ones draw_fav_list colours a
+* row on: a row travels only from the kind of NPC it was saved off, and only to
+* somewhere the player has registered.
 --]]
 local function fw_confirm()
     local f = cfg.favs[ui.fw_sel];
-    if (f == nil or not fw_state(f)) then
+    if (f == nil or f.type ~= ui.near_kind or not warp_known(f.key, f)) then
         return;
     end
     local cmd = warp_cmd(f.key, f);
     if (cmd ~= nil) then
         send_cmd(cmd);
+        -- The widget has been told what it was up for, so it gets out of the
+        -- way: near_kind does not change until the zone does, so leaving it up
+        -- would swallow A and B for the seconds the warp takes to resolve --
+        -- exactly when the NPC's own menu might want them.  Walking off and
+        -- back arms it again, the same as a B press does.
+        ui.fw_hide = true;
     end
 end
 
@@ -1591,11 +1572,12 @@ end
 *
 * Measuring is a call of its own because both callers need the size before
 * they have anywhere to put it: the panel grows upwards out of the heart, and
-* the widget's window sizes itself to whatever it is handed.  empty is what a
-* list with nothing in it reads, or nil for one that draws no row at all --
-* the widget is only ever up with rows in it.
+* the widget's window sizes itself to whatever it is handed.  A list with
+* nothing in it measures the one row of FAV_EMPTY instructions the panel draws
+* in its place; the widget never sees that case, since an empty list takes it
+* off screen before it measures anything.
 --]]
-local function fav_metrics(empty)
+local function fav_metrics()
     local n     = #cfg.favs;
     local _, th = imgui.CalcTextSize('A');
     -- Columns: the warp type's icon, then the text.  An empty list is one row
@@ -1604,7 +1586,7 @@ local function fav_metrics(empty)
     -- The grid reference is a column of its own, the way the warp popup lays
     -- it out, so every row's '(F-11)' lines up whatever it is hung off.  A
     -- list where no row carries one has no column at all.
-    local textw = (n == 0 and empty ~= nil) and (imgui.CalcTextSize(empty)) or 0;
+    local textw = (n == 0) and (imgui.CalcTextSize(FAV_EMPTY)) or 0;
     local posw  = 0;
     for _, f in ipairs(cfg.favs) do
         -- Parenthesised: CalcTextSize hands back a width and a height, and
@@ -1620,9 +1602,8 @@ local function fav_metrics(empty)
              th    = th,
              lab_x = lab_x,
              pos_x = pos_x,
-             empty = empty,
              w     = ((posw > 0) and (pos_x + posw) or (lab_x + textw)) + POPUP_PAD,
-             h     = POPUP_ROW * math.max(n, (empty ~= nil) and 1 or 0) };
+             h     = POPUP_ROW * math.max(n, 1) };
 end
 
 --[[
@@ -1712,9 +1693,9 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
             dl:AddText({ px + m.pos_x, ty }, col, pos);
         end
     end
-    if (n == 0 and m.empty ~= nil) then
+    if (n == 0) then
         dl:AddText({ px + m.lab_x, py + (POPUP_ROW - m.th) / 2 },
-                   COL_POPUP_OFF, m.empty);
+                   COL_POPUP_OFF, FAV_EMPTY);
     end
 
     -- Same as the warp panel: one InvisibleButton over the whole thing so the
@@ -1798,13 +1779,14 @@ local function draw_fav_widget()
     -- swallows are the game's everywhere else.  The map has nothing to do with
     -- it: walking up to a crystal is what puts it on screen, and the present
     -- handler polls the world on the frames the map is shut for exactly that.
-    local on = cfg.widget and n > 0 and not ui.fw_hide
-               and ui.near_kind ~= nil and ui.near_kind ~= false;
+    -- near_kind is a warp type, nil for no NPC in reach, or false before the
+    -- first poll: both of the last two are falsy, so one test covers them.
+    local on = cfg.widget and n > 0 and not ui.fw_hide and ui.near_kind;
     if (not on) then
         ui.fw_on, ui.fw_shown = false, false;
         -- Walking off the NPC is what clears a dismissal: B puts the widget
         -- away for this visit, not for good.
-        if (ui.near_kind == nil or ui.near_kind == false) then
+        if (not ui.near_kind) then
             ui.fw_hide = false;
         end
         return;
@@ -1812,20 +1794,18 @@ local function draw_fav_widget()
     ui.fw_on  = true;
     ui.fw_sel = mm.clamp(ui.fw_sel, 1, n);
 
+    -- Asked for once, on the frame it comes up, and never again.  Ashita gives
+    -- every addon the one ImGui context, and focusing a window closes every
+    -- popup standing over it -- so a window that asks each frame spends the
+    -- whole visit shutting other addons' combos and menus the moment they open,
+    -- and its own along with them.
+    --
+    -- What used to make that per-frame ask look necessary was the map burying
+    -- this on a click; the map carries NoBringToFrontOnFocus now, so a click
+    -- down there leaves the stack alone and one ask on the way up holds.
     if (not ui.fw_shown) then
         ui.fw_shown = true;
         ui.fw_sel   = 1;
-    end
-    -- Kept in front every frame rather than once on the way up: ImGui stacks
-    -- windows by focus, and the map underneath is 90% of the screen, so one
-    -- click on it would otherwise bury this.  The map takes its clicks by
-    -- hover rather than focus, so nothing down there minds.
-    --
-    -- Except while a row's menu is open: focusing a window closes every popup
-    -- standing over it, so asking for focus again next frame would shut the
-    -- menu the frame after it opened.  Read off the last frame's draw, which
-    -- is why the flag rather than a test here.
-    if (not ui.fw_ctx) then
         imgui.SetNextWindowFocus();
     end
 
@@ -1848,7 +1828,6 @@ local function draw_fav_widget()
     if (not shift) then
         flags = bit.bor(flags, ImGuiWindowFlags_NoMove);
     end
-    local ctx_open = false;
     imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, { 0, 0 });
     -- 'true' rather than nil for the open flag: Ashita's binding reads a nil
     -- there as the two-argument Begin and throws the flags away, which puts
@@ -1857,7 +1836,7 @@ local function draw_fav_widget()
         -- The panel's own list, drawn into this window rather than over the
         -- map: same rows, same colours, same drag to reorder.  No empty text,
         -- since a list with nothing in it took the widget down above.
-        local m = fav_metrics(nil);
+        local m = fav_metrics();
         local mouse_x, mouse_y = imgui.GetMousePos();
         local px, py = imgui.GetCursorScreenPos();
         local hot_i = draw_fav_list(px, py, m, mouse_x, mouse_y,
@@ -1878,7 +1857,6 @@ local function draw_fav_widget()
         -- in front of.  It hangs off the list's InvisibleButton, and acts on
         -- the row the right-click just moved the selection to.
         if (not shift and imgui.BeginPopupContextItem('##ubermap_fw_ctx')) then
-            ctx_open = true;
             if (imgui.MenuItem('Remove point from favorites list')) then
                 local f = cfg.favs[ui.fw_sel];
                 if (f ~= nil) then
@@ -1893,7 +1871,6 @@ local function draw_fav_widget()
     end
     imgui.End();
     imgui.PopStyleVar();
-    ui.fw_ctx = ctx_open;
 end
 
 --[[
@@ -1928,7 +1905,7 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
         -- The list the widget also puts up, drawn over the map: the panel is
         -- the frame around it, and everything inside -- rows, hover, drag to
         -- reorder, click to travel -- is draw_fav_list's.
-        local m  = fav_metrics(FAV_EMPTY);
+        local m  = fav_metrics();
         local px = origin_x + UI_MARGIN;
         -- Clamped so a list longer than the viewport tucks against the top
         -- edge rather than running off it.
@@ -2311,10 +2288,10 @@ local function draw_map(view_w, view_h)
         -- is carried.
         local warp_hit, warp_w =
             icon_button('warpitem', WARP_ITEM_ICON, tx_at, UI_MARGIN, row_h,
-                        ui.has_warp and COL_ICON or COL_ICON_OFF,
-                        ui.has_warp and 'Use Instant Warp scroll'
-                                     or 'No Instant Warp scroll in inventory');
-        if (warp_hit and ui.has_warp) then
+                        ui.errand.has_warp and COL_ICON or COL_ICON_OFF,
+                        ui.errand.has_warp and 'Use Instant Warp scroll'
+                            or 'No Instant Warp scroll in inventory');
+        if (warp_hit and ui.errand.has_warp) then
             send_cmd(WARP_ITEM_CMD);
         end
         if (warp_w > 0) then
@@ -2457,7 +2434,7 @@ ashita.events.register('d3d_present', 'ubermap_present', function ()
         return;
     end
 
-    poll_near(os.clock());
+    poll_near(now);
 
     load_texture();
     if (ui.texture == nil) then
@@ -2472,8 +2449,14 @@ ashita.events.register('d3d_present', 'ubermap_present', function ()
     -- ImGui moves a window when you drag any empty part of it, child windows
     -- included, which fights the map's own panning.  Hold shift to move the
     -- window; otherwise it stays put and a drag pans the map instead.
+    --
+    -- And it never raises itself over anything, because it takes its clicks by
+    -- hover rather than focus and has no use for being in front: at 90% of the
+    -- screen it would otherwise bury the favorites widget, and every other
+    -- addon's window with it, on the first click anywhere in it.
     local flags = bit.bor(ImGuiWindowFlags_NoTitleBar, ImGuiWindowFlags_NoScrollbar,
-                          ImGuiWindowFlags_NoScrollWithMouse);
+                          ImGuiWindowFlags_NoScrollWithMouse,
+                          ImGuiWindowFlags_NoBringToFrontOnFocus);
     if (not imgui.GetIO().KeyShift) then
         flags = bit.bor(flags, ImGuiWindowFlags_NoMove);
     end
@@ -2546,11 +2529,24 @@ ashita.events.register('command', 'ubermap_command', function (e)
 
     local sub = args[2] ~= nil and args[2]:lower() or nil;
 
-    if (sub == 'widget' or sub == 'favs') then
+    if (sub == 'widget') then
         cfg.widget = not cfg.widget;
+        -- Asking for it back is asking to see it: a B press earlier in this
+        -- visit would otherwise leave it hidden with nothing on screen saying
+        -- why, since only walking off the NPC clears that.
+        ui.fw_hide = false;
         settings.save();
         notify(('favorites widget: %s'):fmt(cfg.widget
             and 'on, shows at a Home Point, Survival Guide or Unity Concord'
+            or 'off'));
+        return;
+    end
+
+    if (sub == 'guide') then
+        cfg.guide = not cfg.guide;
+        settings.save();
+        notify(('EXP Guide scroll pickup: %s'):fmt(cfg.guide
+            and 'on, fetches an Instant Warp scroll when you pass a guide'
             or 'off'));
         return;
     end
@@ -2582,29 +2578,40 @@ end);
 *        and every button at all outside that, is left to the client.
 --]]
 ashita.events.register('xinput_button', 'ubermap_xinput', function (e)
+    local act = FW[e.button];
+    if (act == nil) then
+        return;
+    end
+
+    -- Both edges: the client never saw the press, so it is not handed the
+    -- release either.  Which edge was taken is remembered rather than re-tested
+    -- against ui.fw_on, because the press is what takes the widget off screen
+    -- in two of the four cases -- B dismisses it and A warps out of range of
+    -- the NPC holding it up -- and a release matched against the state after
+    -- that would leak a button-up the client never got the button-down for.
+    if (e.state ~= 1) then
+        if (ui.fw_held[e.button]) then
+            ui.fw_held[e.button] = nil;
+            e.blocked = true;
+        end
+        return;
+    end
+
     local n = #cfg.favs;
     if (not ui.fw_on or n == 0) then
         return;
     end
-    if (e.button ~= FW.up and e.button ~= FW.down
-        and e.button ~= FW.a and e.button ~= FW.b) then
-        return;
-    end
-    -- Both edges: the client never saw the press, so it is not handed the
-    -- release either.
     e.blocked = true;
-    if (e.state ~= 1) then
-        return;
-    end
+    ui.fw_held[e.button] = true;
 
-    if (e.button == FW.up) then
+    if (act == 'up') then
         -- Wraps at both ends, the way the game's own menus do.  ponytail: one
         -- step a press; a held-D-pad repeat if a list ever gets long enough to
         -- want one.
         ui.fw_sel = (ui.fw_sel - 2) % n + 1;
-    elseif (e.button == FW.down) then
+    elseif (act == 'down') then
         ui.fw_sel = ui.fw_sel % n + 1;
-    elseif (e.button == FW.a) then
+    elseif (act == 'a') then
         fw_confirm();
     else
         -- The way back to the NPC's own menu: with A swallowed there would
