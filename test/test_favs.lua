@@ -165,8 +165,56 @@ for _, f in ipairs(favs) do
     end
 end
 
+-- The list as the panel and the widget draw it: narrowed to the type of warp
+-- NPC in reach, whole when there is none, since a Survival Guide cannot send a
+-- Home Point row and a row that cannot be pressed should not be listed.
+-- Mirrors fav_view in ubermap.lua.
+local function fav_view(near_kind)
+    if (not near_kind) then
+        return favs, nil;
+    end
+    local view, raw = {}, {};
+    for i, f in ipairs(favs) do
+        if (f.type == near_kind) then
+            view[#view + 1] = f;
+            raw[#raw + 1]   = i;
+        end
+    end
+    return view, raw;
+end
+
+-- A guide row between the two home rows, so the slots the narrowed list maps
+-- back to are not the slots it is drawn in.
+fav_reorder(fav_index(B_ZONE, B), 2);
+check(favs[2].type == 'guide', 'the guide row should be second for the checks below');
+
+local whole, whole_raw = fav_view(nil);
+check(whole == favs and whole_raw == nil,
+      'with no NPC in reach the whole list should be shown, unnarrowed');
+
+local home, home_raw = fav_view('home');
+check(#home == 2, 'a Home Point should list only the two home rows, got ' .. #home);
+check(home[1].type == 'home' and home[2].type == 'home',
+      'no row of another type should be listed');
+check(home_raw[1] == 1 and home_raw[2] == 3,
+      'a narrowed row should map back to its own slot in the saved list');
+check(#fav_view('guide') == 1, 'a Survival Guide should list only the guide row');
+check(#fav_view('unity') == 0,
+      'a warp with nothing saved for it should list nothing at all');
+
+-- Dragging inside the narrowed list reorders the saved list, and leaves the
+-- rows it does not show where they were.
+local h1, h2, guide = home[1].label, home[2].label, favs[2].label;
+fav_reorder(home_raw[1], home_raw[2]);
+local after = fav_view('home');
+check(after[1].label == h2 and after[2].label == h1,
+      'a drag down the narrowed list should swap the two rows it shows');
+check(fav_index(B_ZONE, B) ~= nil and favs[fav_index(B_ZONE, B)].label == guide,
+      'the row the narrowed list hides should still be listed');
+check(#favs == 3, 'narrowing should not add or drop anything, got ' .. #favs);
+
 if (fails == 0) then
-    print(('ok: %d favorites, add/remove, reorder and /uw all hold'):format(#favs));
+    print(('ok: %d favorites, add/remove, reorder, narrowing and /uw all hold'):format(#favs));
 else
     print(('%d check(s) failed'):format(fails));
     os.exit(1);

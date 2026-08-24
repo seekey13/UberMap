@@ -25,6 +25,7 @@ local imgui = require('imgui');
 local ffi   = require('ffi');
 local d3d   = require('d3d8');
 local mm    = require('lib.mapmath');
+local fz    = require('lib.fuzzy');
 local unlocks = require('lib.unlocks');
 local guide   = require('lib.guide');
 
@@ -197,14 +198,19 @@ local ZOOM_POINTS = 1.0;
 -- Toolbar and editor panel, pinned in from the viewport corner by UI_MARGIN
 -- screen pixels.
 local UI_MARGIN = 20;
-local FIELD_W   = 600;  -- editor text field width, screen pixels
-local FIELD_MAX = 256;  -- editor text field length, bytes
+local FIELD_W   = 600;  -- search and editor text field width, screen pixels
+local FIELD_MAX = 256;  -- search and editor text field length, bytes
 local EDIT_ROW  = 28;   -- editor panel row pitch, screen pixels
 
 -- Toolbar rows are drawn this many times the default frame height.  The height
 -- comes from frame padding rather than a font scale: ImGui has one baked font
 -- atlas, so scaling the font up magnifies its bitmap and goes blurry.
 local ROW_H_MULT = 2.0;
+
+-- The search box is shorter than the icons it shares the row with, and centred
+-- against them.  Its own multiplier rather than ROW_H_MULT: the icons want the
+-- height, a one-line text field does not.
+local SEARCH_H_MULT = 1.5;
 
 -- Layer toggles, drawn on the toolbar row.  Clicking one dims its icon;
 -- the state is kept per file name in cfg.toggle (nil = lit).
@@ -289,6 +295,10 @@ local COL_MSS_OFF = 0x40FFFFFF;  -- half that again, i.e. dimmed off
 -- the popup row it came from does.
 local FAV_ICON     = 'heart.png';
 local FAV_EMPTY    = 'Right-click a warp to add it here';
+-- What stands in its place while the list is narrowed to the NPC in reach and
+-- nothing saved can be sent from it: the list is not empty, this warp's share
+-- of it is, and the instructions would read as though nothing were saved.
+local FAV_NONE     = 'No favorites for this warp';
 
 -- The favorites widget: the same saved list, drawn as a small window of its own
 -- and driven from the gamepad.  It comes up only where it can be used -- stood
@@ -338,6 +348,16 @@ local default_settings = T{
     -- the walk past a guide and can be watched happening.  A toggle all the
     -- same, because it sends a packet and a keystroke with no click behind it.
     guide  = true,
+    -- The search box takes the keyboard the moment the map opens.  Off by
+    -- default: the box swallows every key while it holds focus, movement
+    -- included, so it is only worth opening the map into if you came to look
+    -- something up.
+    focus  = false,
+    -- Uberwarp narrates every step of a warp it runs into the log, errors
+    -- included.  The map is what asked for the warp, so the running commentary
+    -- is noise by the time it arrives; /um quiet turns it back on when a warp
+    -- is misbehaving and the reason matters.
+    quiet  = true,
 };
 -- Loaded from a copy of the defaults, because the library hands its own default
 -- table back for a key the file has no entry for: without the copy the first
@@ -357,6 +377,9 @@ local function fill_defaults()
     -- as a real boolean so the next save records the answer either way.
     if (cfg.guide == nil) then
         cfg.guide = true;
+    end
+    if (cfg.quiet == nil) then
+        cfg.quiet = false;
     end
     -- The map used to write the Campaign zones '(S)' and rewrite them to '[S]'
     -- on the way out; it names them '[S]' throughout now.  A favorite saved
@@ -379,6 +402,9 @@ local ui = T{
     zoom        = nil,  -- nil until the first frame gives us a viewport size
     pan_x       = 0,
     pan_y       = 0,
+    search      = { '', },   -- search box text, boxed the way ImGui wants it
+    search_at   = '',        -- search text the view was last framed for
+    focus_next  = false,     -- hand the search box the keyboard on the next frame
     hot         = false,     -- cursor was over a widget, not the map
     dragging    = false,
     drag_x      = 0,
@@ -798,6 +824,10 @@ local function poll_near(now)
     if (kind ~= ui.near_kind) then
         ui.near_kind = kind;
         filter_to(kind);
+        -- The list a drag was picked up out of is not the list it would be
+        -- dropped into, so the row is let go where it lies rather than landing
+        -- somewhere the hand never carried it.
+        ui.fav_drag = nil;
     end
 end
 
@@ -851,6 +881,91 @@ local function group_warps_lit(name)
 end
 
 --[[
+* True while a label answers the search box, exactly or near enough: see
+* lib/fuzzy.lua for how far out a query of a given length is allowed to be, so
+* a misspelling still lands on what was meant.
+*
+* Spelling is only forgiven once nothing on the map answers the query as typed,
+* so a query that names something real is taken at its word rather than
+* dragging in everything an edit away from it.
+*
+* Both answers are remembered until the text in the box changes, since the
+* distance is a table walk rather than a find, and the group pass below asks
+* about the same labels over and over, every frame.
+--]]
+local search_cache = { q = nil, fuzzy = false, hits = { } };
+
+-- The box's text folded to lower case, held for as long as the text is
+-- unchanged.  search_hit runs for every marker of every frame, and folding it
+-- there allocated a string per marker per frame for an answer that only ever
+-- changes on a keystroke.
+local search_raw, search_low = nil, '';
+local function search_query()
+    if (search_raw ~= ui.search[1]) then
+        search_raw = ui.search[1];
+        search_low = search_raw:lower();
+    end
+    return search_low;
+end
+
+-- Points the cache at q and answers whether spelling is being forgiven for it.
+local function search_prep(q)
+    if (search_cache.q ~= q) then
+        local fuzzy = true;
+        for _, ic in ipairs(ICONS) do
+            if ((ic.label or ''):lower():find(q, 1, true) ~= nil) then
+                fuzzy = false;
+                break;
+            end
+        end
+        search_cache = { q = q, fuzzy = fuzzy, hits = { } };
+    end
+    return search_cache.fuzzy;
+end
+
+local function label_hit(label, q)
+    local fuzzy = search_prep(q);
+    local hit = search_cache.hits[label];
+    if (hit == nil) then
+        hit = fz.match(q, label:lower(), fuzzy);
+        search_cache.hits[label] = hit;
+    end
+    return hit;
+end
+
+--[[
+* True while a marker answers the search box.  An empty box matches everything,
+* so the map is untouched until something is typed.
+*
+* A group marker answers for the zones it stands for as well as for its own
+* name.  The overview is all that is drawn zoomed out, so a search for a zone
+* has to leave the region holding it lit or there would be nothing left to
+* click towards.
+*
+* ponytail: walks every icon per group marker, the same as group_warps_lit and
+* on the same thirty-odd markers an overview frame draws.  Index group ->
+* labels at load if the point list ever grows an order of magnitude.
+--]]
+local function search_hit(ic)
+    local q = search_query();
+    if (q == '') then
+        return true;
+    end
+    if (label_hit(ic.label or '', q)) then
+        return true;
+    end
+    if (OVERVIEW[ic.group]) then
+        for _, p in ipairs(ICONS) do
+            if (p.group == ic.label and p.time == ui.time
+                and label_hit(p.label or '', q)) then
+                return true;
+            end
+        end
+    end
+    return false;
+end
+
+--[[
 * Everything outside the focused group fades back, and so does a zone the
 * toggles have left with no warp row: the marker stays on the map to say the
 * zone is there, dimmed to say it holds none of the kind being looked for.  An
@@ -860,6 +975,9 @@ end
 --]]
 local function icon_dim(ic)
     if (ui.focus ~= nil and ic.group ~= ui.focus) then
+        return true;
+    end
+    if (not search_hit(ic)) then
         return true;
     end
     if (not warps_filtered()) then
@@ -1191,6 +1309,33 @@ local function fav_reorder(i, j)
     table.insert(cfg.favs, j, table.remove(cfg.favs, i));
 end
 
+--[[
+* The favorites as the lists show them.  Stood at a warp NPC, only the rows
+* that NPC can actually send: a Survival Guide cannot take a Home Point row,
+* so listing one there is a row that looks like a choice and is not.  With no
+* NPC in reach -- near_kind nil, or false before the first poll -- there is
+* nothing to narrow against, so the whole list is shown.
+*
+* Hands back the rows and, when narrowed, the slot each one sits in in
+* cfg.favs, so a drag inside the narrowed list reorders the saved list: the
+* row is pulled out of its own slot and put back in the one the row it was
+* dragged onto holds, which lands it on that side of it in both lists.
+--]]
+local function fav_view()
+    local kind = ui.near_kind;
+    if (not kind) then
+        return cfg.favs, nil;
+    end
+    local view, raw = T{ }, T{ };
+    for i, f in ipairs(cfg.favs) do
+        if (f.type == kind) then
+            view[#view + 1] = f;
+            raw[#raw + 1]   = i;
+        end
+    end
+    return view, raw;
+end
+
 -- What a favorite reads as: the zone the row hung off, then the row itself,
 -- e.g. 'Windurst Woods - Home Point #2'.
 local function fav_text(f)
@@ -1333,6 +1478,11 @@ local function set_time(time)
         return;
     end
     ui.time  = time;
+    -- The query is kept, but the view it was framed for belongs to the map
+    -- being left.  Forgetting what it was framed for reframes it on the map
+    -- being arrived at, instead of landing at cover with the other map's
+    -- matches still dimming this one and nothing to pull the view back.
+    ui.search_at = nil;
     ui.zoom  = nil;
     ui.pan_x = 0;
     ui.pan_y = 0;
@@ -1469,18 +1619,44 @@ local function draw_icons(origin_x, origin_y, view_w, view_h, over_map)
     return hot_ic;
 end
 
---[[
-* Frames every point whose group matches 'name', so clicking an overview marker
-* opens the zone points it stands for.  The zoom floor is ZOOM_POINTS, below
-* which those points are not drawn at all.  Returns false when nothing carries
-* the group, which leaves the view alone.
---]]
-local ZOOM_PAD = 100;  -- map pixels of margin around the framed group
+local ZOOM_PAD = 100;  -- map pixels of margin around the framed points
 
-local function zoom_to_group(name, view_w, view_h)
+--[[
+* Pulls the view all the way back out to the whole map, centred.  Below
+* ZOOM_POINTS, so the overview markers are what is drawn: this is where the map
+* starts and where a search with nothing left to show goes.
+--]]
+local function zoom_to_map(view_w, view_h)
+    local map_w, map_h = map_size();
+    ui.zoom  = mm.cover_zoom(map_w, map_h, view_w, view_h);
+    ui.pan_x = (map_w * ui.zoom - view_w) / 2;
+    ui.pan_y = (map_h * ui.zoom - view_h) / 2;
+end
+
+--[[
+* Puts a map-pixel box in the middle of the viewport at the zoom that fits it,
+* ZOOM_PAD of margin included.  The floor is ZOOM_POINTS, below which the zone
+* points are not drawn at all, or the zoom that covers the viewport where that
+* is higher; the ceiling is MAX_ZOOM, so a box of one point does not run away.
+--]]
+local function zoom_to_box(x0, y0, x1, y1, view_w, view_h)
+    local map_w, map_h = map_size();
+    local floor_z = math.max(ZOOM_POINTS, mm.cover_zoom(map_w, map_h, view_w, view_h));
+    local fit = mm.fit_zoom(x1 - x0 + ZOOM_PAD * 2, y1 - y0 + ZOOM_PAD * 2,
+                            view_w, view_h);
+    ui.zoom  = mm.clamp(fit, floor_z, MAX_ZOOM);
+    ui.pan_x = (x0 + x1) / 2 * ui.zoom - view_w / 2;
+    ui.pan_y = (y0 + y1) / 2 * ui.zoom - view_h / 2;
+end
+
+--[[
+* Frames every point 'want' accepts, on the map being shown.  Returns false
+* when nothing is accepted, which leaves the view alone.
+--]]
+local function zoom_to_points(want, view_w, view_h)
     local x0, y0, x1, y1;
     for _, ic in ipairs(ICONS) do
-        if (ic.group == name and ic.time == ui.time) then
+        if (ic.time == ui.time and want(ic)) then
             x0 = math.min(x0 or ic.x, ic.x);
             y0 = math.min(y0 or ic.y, ic.y);
             x1 = math.max(x1 or ic.x, ic.x);
@@ -1490,16 +1666,92 @@ local function zoom_to_group(name, view_w, view_h)
     if (x0 == nil) then
         return false;
     end
+    zoom_to_box(x0, y0, x1, y1, view_w, view_h);
+    return true;
+end
 
-    local map_w, map_h = map_size();
-    local floor_z = math.max(ZOOM_POINTS, mm.cover_zoom(map_w, map_h, view_w, view_h));
-    local fit = mm.fit_zoom(x1 - x0 + ZOOM_PAD * 2, y1 - y0 + ZOOM_PAD * 2,
-                            view_w, view_h);
-    ui.zoom  = mm.clamp(fit, floor_z, MAX_ZOOM);
-    ui.pan_x = (x0 + x1) / 2 * ui.zoom - view_w / 2;
-    ui.pan_y = (y0 + y1) / 2 * ui.zoom - view_h / 2;
+--[[
+* Frames every point whose group matches 'name', so clicking an overview marker
+* opens the zone points it stands for.
+--]]
+local function zoom_to_group(name, view_w, view_h)
+    if (not zoom_to_points(function(ic) return ic.group == name; end,
+                           view_w, view_h)) then
+        return false;
+    end
     ui.focus = name;
     return true;
+end
+
+--[[
+* Frames every zone point the search box matches, so a search lands on what it
+* found instead of leaving it dimmed somewhere off screen.  Overview markers
+* are left out: they stop being drawn at ZOOM_POINTS, which framing a match
+* always passes, and a region marker sits nowhere near the zone it stands for.
+*
+* Any group focus is dropped on the way, since the search is the subject of the
+* view now and a stale focus would dim the very points just framed.
+*
+* A forgiven spelling picks up the odd unrelated zone -- "juno" is a letter off
+* "jung" as surely as it is off "jeuno" -- and one match on the far side of the
+* world would frame the whole map rather than what was meant.  So a forgiven
+* search frames the group holding the most of its matches, and only a forgiven
+* one: a query spelled the way the map spells it frames everything it names,
+* however far apart those are.  Every match stays lit either way.
+*
+* Nineteen of the region and nation names the overview carries -- Vollbow,
+* Derfland, Zulkheim and the rest -- name no zone at all, so a search for one
+* leaves no zone point to frame.  Those fall back to framing the zones the
+* matched marker stands for, since the marker itself stops being drawn the
+* moment framing passes ZOOM_POINTS: without it the view would sit wherever a
+* shorter prefix had left it with every marker on it faded back.
+--]]
+local function zoom_to_search(view_w, view_h)
+    -- Dropped up here rather than on the way out: a stale focus dims the very
+    -- points a search frames, and it has to go whether or not one is found.
+    ui.focus = nil;
+    local q = search_query();
+    local best;
+    if (search_prep(q)) then
+        local n = { };
+        for _, ic in ipairs(ICONS) do
+            if (ic.time == ui.time and not OVERVIEW[ic.group] and search_hit(ic)) then
+                local g = ic.group or '';
+                n[g] = (n[g] or 0) + 1;
+                if (best == nil or n[g] > n[best]) then
+                    best = g;
+                end
+            end
+        end
+    end
+    if (zoom_to_points(function(ic)
+            return not OVERVIEW[ic.group] and search_hit(ic)
+                   and (best == nil or ic.group == best);
+        end, view_w, view_h)) then
+        return true;
+    end
+
+    -- No zone answers, so try the regions: a marker matched by its own name
+    -- frames the zones underneath it.
+    local region, any = { }, false;
+    for _, ic in ipairs(ICONS) do
+        if (OVERVIEW[ic.group] and ic.time == ui.time
+            and label_hit(ic.label or '', q)) then
+            region[ic.label] = true;
+            any = true;
+        end
+    end
+    if (any and zoom_to_points(function(ic)
+            return not OVERVIEW[ic.group] and region[ic.group];
+        end, view_w, view_h)) then
+        return true;
+    end
+
+    -- Nothing on the map answers at all.  Back out to the whole of it, where
+    -- the overview is drawn, rather than stranding the view inside the last
+    -- match with everything on screen faded back.
+    zoom_to_map(view_w, view_h);
+    return false;
 end
 
 --[[
@@ -1524,6 +1776,9 @@ end
 --]]
 local function show()
     ui.is_open[1] = true;
+    -- Asked for here rather than in the draw, so the box is handed the
+    -- keyboard once on the way in instead of stealing it back every frame.
+    ui.focus_next = cfg.focus;
     -- Opening reads the world afresh on the next frame, whatever the toggles
     -- were left at when it was last up.
     ui.near_kind = false;
@@ -1547,7 +1802,7 @@ end
 * somewhere the player has registered.
 --]]
 local function fw_confirm()
-    local f = cfg.favs[ui.fw_sel];
+    local f = fav_view()[ui.fw_sel];
     if (f == nil or f.type ~= ui.near_kind or not warp_known(f.key, f)) then
         return;
     end
@@ -1578,7 +1833,8 @@ end
 * off screen before it measures anything.
 --]]
 local function fav_metrics()
-    local n     = #cfg.favs;
+    local favs  = fav_view();
+    local n     = #favs;
     local _, th = imgui.CalcTextSize('A');
     -- Columns: the warp type's icon, then the text.  An empty list is one row
     -- of instructions with neither, since there is nothing to travel on yet.
@@ -1586,9 +1842,11 @@ local function fav_metrics()
     -- The grid reference is a column of its own, the way the warp popup lays
     -- it out, so every row's '(F-11)' lines up whatever it is hung off.  A
     -- list where no row carries one has no column at all.
-    local textw = (n == 0) and (imgui.CalcTextSize(FAV_EMPTY)) or 0;
+    local textw = (n == 0)
+                  and (imgui.CalcTextSize(ui.near_kind and FAV_NONE or FAV_EMPTY))
+                  or 0;
     local posw  = 0;
-    for _, f in ipairs(cfg.favs) do
+    for _, f in ipairs(favs) do
         -- Parenthesised: CalcTextSize hands back a width and a height, and
         -- both would otherwise go into math.max.
         textw = math.max(textw, (imgui.CalcTextSize(fav_text(f))));
@@ -1644,7 +1902,11 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
     -- drag reorders the list the loop is walking.
     local hot_i, hot_live, hot_lock = nil, false, nil;
     local drag = ui.fav_drag;
-    for i, f in ipairs(cfg.favs) do
+    -- Narrowed to the NPC in reach, so every row drawn here is one that can be
+    -- sent from where the player is stood; raw is nil when it is not narrowed,
+    -- and then a row's slot in the list is its slot in cfg.favs.
+    local favs, raw = fav_view();
+    for i, f in ipairs(favs) do
         local ry = py + POPUP_ROW * (i - 1);
         -- The same two tests the popup rows use: a favorite travels only from
         -- the kind of NPC it was saved off, and only to somewhere the player
@@ -1695,7 +1957,7 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
     end
     if (n == 0) then
         dl:AddText({ px + m.lab_x, py + (POPUP_ROW - m.th) / 2 },
-                   COL_POPUP_OFF, FAV_EMPTY);
+                   COL_POPUP_OFF, ui.near_kind and FAV_NONE or FAV_EMPTY);
     end
 
     -- Same as the warp panel: one InvisibleButton over the whole thing so the
@@ -1733,7 +1995,8 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
             local j = mm.clamp(
                 math.floor((mouse_y - py) / POPUP_ROW) + 1, 1, n);
             if (j ~= ui.fav_drag.i) then
-                fav_reorder(ui.fav_drag.i, j);
+                fav_reorder(raw and raw[ui.fav_drag.i] or ui.fav_drag.i,
+                            raw and raw[j] or j);
                 ui.fav_drag.i, ui.fav_drag.moved = j, true;
             end
         elseif (imgui.IsMouseReleased(0)) then
@@ -1744,7 +2007,7 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
             elseif (ui.fav_drag.live) then
                 -- The saved entry carries every field warp_cmd reads, so it
                 -- travels as the row it was taken from.
-                local f   = cfg.favs[ui.fav_drag.i];
+                local f   = favs[ui.fav_drag.i];
                 local cmd = warp_cmd(f.key, f);
                 if (cmd ~= nil) then
                     send_cmd(cmd);
@@ -1774,7 +2037,9 @@ end
 * leave the D-pad swallowed with nothing on screen to drive.
 --]]
 local function draw_fav_widget()
-    local n = #cfg.favs;
+    -- Narrowed to the NPC in reach, so a list with nothing this NPC can send
+    -- takes the widget off screen the same way an empty one does.
+    local n = #fav_view();
     -- Only where it can be used -- stood at a warp NPC -- since the buttons it
     -- swallows are the game's everywhere else.  The map has nothing to do with
     -- it: walking up to a crystal is what puts it on screen, and the present
@@ -1858,7 +2123,7 @@ local function draw_fav_widget()
         -- the row the right-click just moved the selection to.
         if (not shift and imgui.BeginPopupContextItem('##ubermap_fw_ctx')) then
             if (imgui.MenuItem('Remove point from favorites list')) then
-                local f = cfg.favs[ui.fw_sel];
+                local f = fav_view()[ui.fw_sel];
                 if (f ~= nil) then
                     -- One shorter from here: the selection is clamped back
                     -- onto the list at the top of the next draw, and an
@@ -1921,7 +2186,7 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
         -- Right-click a listed favorite to take it back off the list, the
         -- same menu that put it on.
         if (imgui.IsMouseClicked(1) and hot_i ~= nil and not ui.warp_hot) then
-            local f = cfg.favs[hot_i];
+            local f = fav_view()[hot_i];
             ui.ctx = { x = mouse_x, y = mouse_y, fresh = true,
                        key = f.key, row = f };
         end
@@ -2266,8 +2531,58 @@ local function draw_map(view_w, view_h)
         if (time_hit) then
             ui.next_time = other;
         end
-        -- Toggle icons, sharing the switch's line.
-        local tx_at = UI_MARGIN + time_w + TOGGLE_GAP;
+        -- Search box, next on the toolbar row.  Typing in it fades back every
+        -- marker whose label does not match, which is icon_dim's doing; nothing
+        -- is hidden, so the map keeps its shape while a search narrows it.
+        local search_x = UI_MARGIN + time_w + TOGGLE_GAP;
+        local search_h = imgui.GetFrameHeight() * SEARCH_H_MULT;
+        imgui.PushStyleVar(ImGuiStyleVar_FramePadding,
+                           { 6, math.max(0, (search_h - imgui.GetFontSize()) / 2) });
+        -- Nudged down by half of what it gives up, so a shorter box still sits
+        -- on the middle of the row rather than riding its top edge.
+        imgui.SetCursorPos({ search_x, UI_MARGIN + (row_h - search_h) / 2 });
+        -- Everything on this row is placed by absolute cursor position and none
+        -- of it wraps, so a full-width box would push the toggles and the warp
+        -- icons off the edge of a small viewport.  A share of the width instead,
+        -- which leaves FIELD_W alone at 1080p and above.
+        local search_w = math.min(FIELD_W, view_w * 0.35);
+        imgui.SetNextItemWidth(search_w);
+        -- Handed the keyboard on the frame after an open, when the setting asks
+        -- for it.  ImGui takes the focus request for the next item drawn, so
+        -- this sits right on top of the box.
+        if (ui.focus_next) then
+            ui.focus_next = false;
+            imgui.SetKeyboardFocusHere();
+        end
+        imgui.InputTextWithHint('##ubermap_search', 'Search', ui.search, FIELD_MAX);
+        imgui.PopStyleVar();
+        -- Only while the mouse is working the field, the way the editor's rows
+        -- below feed it: IsItemActive stays true for the whole time the caret
+        -- sits in the box, and on its own it would leave the map unable to
+        -- zoom, pan or be clicked for as long as a search was being typed --
+        -- including, with /um focus on, the frame the map opens in.  Held mouse
+        -- included, so dragging a selection across the text does not pan.
+        ui.hot = ui.hot or imgui.IsItemHovered()
+                 or (imgui.IsItemActive() and imgui.IsMouseDown(0));
+
+        -- Reframed on every change to the text, so narrowing a search closes in
+        -- on what is left.  Only on a change: refitting every frame would fight
+        -- the wheel and the drag for the rest of the search.  Emptying the box
+        -- goes the other way and pulls all the way back out to the whole map:
+        -- clearing a search is how the next one starts, so the view starts over
+        -- with it rather than being left inside the last match.
+        if (ui.search[1] ~= ui.search_at) then
+            ui.search_at = ui.search[1];
+            if (ui.search_at ~= '') then
+                zoom_to_search(view_w, view_h);
+            else
+                zoom_to_map(view_w, view_h);
+                ui.focus = nil;
+            end
+        end
+
+        -- Toggle icons, sharing the search box's line.
+        local tx_at = search_x + search_w + TOGGLE_GAP;
         for _, file in ipairs(TOGGLES) do
             local hit, tw = icon_button('toggle_' .. file, file,
                                         tx_at, UI_MARGIN, row_h,
@@ -2551,6 +2866,24 @@ ashita.events.register('command', 'ubermap_command', function (e)
         return;
     end
 
+    if (sub == 'focus') then
+        cfg.focus = not cfg.focus;
+        settings.save();
+        notify(('search box focus on open: %s'):fmt(cfg.focus
+            and 'on, the map opens ready to type in'
+            or 'off'));
+        return;
+    end
+
+    if (sub == 'quiet') then
+        cfg.quiet = not cfg.quiet;
+        settings.save();
+        notify(('Uberwarp chat lines: %s'):fmt(cfg.quiet
+            and 'hidden, including its errors'
+            or 'shown'));
+        return;
+    end
+
     if (sub == 'edit') then
         ui.edit = not ui.edit;
         if (ui.edit) then
@@ -2597,7 +2930,7 @@ ashita.events.register('xinput_button', 'ubermap_xinput', function (e)
         return;
     end
 
-    local n = #cfg.favs;
+    local n = #fav_view();
     if (not ui.fw_on or n == 0) then
         return;
     end
@@ -2647,4 +2980,40 @@ ashita.events.register('key', 'ubermap_key', function (e)
     -- went away.
     ui.is_open[1] = false;
     e.blocked = true;
+end);
+
+--[[
+* event: text_in
+* desc : Drops Uberwarp's own chat lines while /um quiet is on.  Every line it
+*        writes is stamped '[Uberwarp:<module>]', so a line is its own only when
+*        both names are on it: matching the plugin name alone would swallow
+*        anything else that so much as says the word, this addon included.  The
+*        two are looked for apart rather than as one string because the plugin
+*        writes a colour byte between them.  Blocked rather than emptied, which
+*        keeps the line out of the log file as well.
+--]]
+-- The task modules Uberwarp names itself after, straight out of the plugin.
+local UW_MODULE = T{
+    'TaskHelper', 'HomePoint', 'SurvivalGuide', 'UnityWarp', 'CrystalWarp',
+    'AbysseaConflux', 'AbysseaWarp', 'CastoffPoint', 'CavernousMaw', 'Elvorseal',
+    'EschaEnter', 'EschanPortal', 'ProtoWaypoint', 'RunicPortal', 'ScalableArea',
+    'Waypoint', 'WaitForZone', 'Wait',
+};
+
+ashita.events.register('text_in', 'ubermap_text_in', function (e)
+    if (not cfg.quiet) then
+        return;
+    end
+
+    local msg = e.message_modified;
+    if (not msg:contains('Uberwarp')) then
+        return;
+    end
+
+    for _, m in ipairs(UW_MODULE) do
+        if (msg:contains(m)) then
+            e.blocked = true;
+            return;
+        end
+    end
 end);

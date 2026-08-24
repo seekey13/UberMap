@@ -12,6 +12,7 @@ Drop the `UberMap` folder into `Ashita/addons/`, then `/addon load ubermap`.
 | `/ubermap edit` | Toggle the point editor |
 | `/ubermap widget` | Toggle the gamepad favorites widget |
 | `/ubermap guide` | Toggle the EXP Guide scroll pickup (on by default) |
+| `/ubermap focus` | Toggle the search box taking the keyboard when the map opens (off by default) |
 
 ## The map
 
@@ -44,17 +45,22 @@ Left-click a zone point — for a panel of that zone's destinations. Clicking a 
 
 | Icon | Where | Does |
 | --- | --- | --- |
+| **Search** | After the past/present switch | Type to fade back every marker whose name does not match, and frame what is left: the view zooms to fit the matching zones on every keystroke. A region stays lit while a zone under it matches, so the overview still points the way. Spelling is forgiven once nothing on the map is spelled the way you typed it, so `juno` and `windhurst` still land where they were meant to -- but `norg` finds Norg rather than every Nor- zone near it. A forgiven search frames the region holding the most of its matches, so one zone it only brushed past cannot pull the view out to the whole world. Naming a region rather than a zone -- `Vollbow`, `Derfland` -- frames the zones under it, since no zone carries the region's name. A search nothing answers goes back to the whole map rather than sitting where the last one left it. Clearing it lights the map again and pulls the view back out to the whole map, ready for the next search |
 | **Crystal**, **Guide**, **Unity** | Right of search | Dim one to drop that kind of row. A zone with nothing left opens no panel |
 | **Warp** | After them | `/item "Instant Warp" <me>` and closes the map. Lit only while the scroll (4181) is carried |
 | **Warp Ring** | After that | Two steps, see below |
 | **Multisend** | Bottom right | Prefixes every command the map sends with `/mss ` |
 | **Heart** | Bottom left | Opens favorites. Hidden while the gamepad widget is on, since that lists the same rows |
 
+`/um quiet` toggles Uberwarp's chat lines. On by default: the plugin narrates every step of a warp the map asked for, and the commentary is noise once the warp is yours. Only its own stamped lines go — `[Uberwarp:<module>]`, matched on the plugin name plus one of its task modules — so anything that merely says the word, this addon included, still prints. Turning it off shows them again, errors included, which is what you want when a warp is failing and the reason matters.
+
+`/um focus` makes the map open with the cursor already in the search box, so it can be typed into without clicking first. Off by default: while the box holds the keyboard it swallows every key, movement included, and Escape or a click on the map hands them back.
+
 **Warp Ring** works in two steps, since a ring must be worn before use. It looks for item 28540 in your bag and the eight Mog Wardrobes the client will equip out of, re-read twice a second like the scroll. Carrying none: dimmed and dead. Carrying one unworn: dimmed, and clicking sends `/equip ring1 "Warp Ring" <container>`, keeps the map open and goes dead for nine seconds while the ring lands. Wearing one: lit, and clicking sends `/item "Warp Ring" <me>` and closes the map. Hovering says which step it is on.
 
 While **Multisend** is lit every command — warp rows, scroll and ring alike — goes out through [Multisend](https://github.com/ThornyFFXI/Multisend) and repeats on every logged-in character. Off and dimmed until clicked.
 
-**Favorites** are warp rows you saved, in your order. Right-click any row for *Add point to favorites list* — a row you cannot travel on right now works too, so a destination can be saved from anywhere. Each is named by its zone and row, e.g. `Windurst Woods - Home Point #2`. Clicking one warps exactly as its original row would, and it reads grey or red on the same two tests. Drag a row up or down to reorder the list; right-click offers *Remove point from favorites list*.
+**Favorites** are warp rows you saved, in your order. Right-click any row for *Add point to favorites list* — a row you cannot travel on right now works too, so a destination can be saved from anywhere. Each is named by its zone and row, e.g. `Windurst Woods - Home Point #2`. Clicking one warps exactly as its original row would. Stood at a Home Point, Survival Guide or Unity Concord the list narrows to the rows that NPC can send — the rest cannot be taken from there, so they are not listed — and stepping away brings the whole list back. A destination you have not registered still reads red. Drag a row up or down to reorder the list, including inside a narrowed one; right-click offers *Remove point from favorites list*.
 
 ## Scroll pickup
 
@@ -80,7 +86,7 @@ Renamed or relocated on your server? `EXP_GUIDE_NAME` and `EXP_GUIDE_ZONES` in `
 
 The widget and the map's panel are one list drawn twice, so the mouse works the same in either: click a row to warp, drag it up or down to reorder, right-click for *Remove point from favorites list*. Turning the widget on hides the heart and its panel, so the list is on screen in one place, not two.
 
-Rows read grey or red on the same two tests the panel uses, and A refuses a row that reads either way — a favorite travels only from the kind of NPC it was saved off, and only to a destination you have registered. The window has no title bar and sizes itself to the list; like the map, hold shift to drag it somewhere else. Off by default, and saved per character with the rest of the settings.
+The list is narrowed the same way the panel's is, so every row on it is one the NPC holding it up can send; a destination you have not registered still reads red, and A refuses it. With nothing saved for that kind of NPC the widget stays down. The window has no title bar and sizes itself to the list; like the map, hold shift to drag it somewhere else. Off by default, and saved per character with the rest of the settings.
 
 XInput only: an Xbox pad, or anything Windows presents as one. A DirectInput controller (DualShock, DualSense) still works by mouse.
 
@@ -135,10 +141,11 @@ lua test/test_points.lua    # every marker sits on a map that exists
 lua test/test_warps.lua     # every warp row builds a /uw the game takes
 lua test/test_toggles.lua   # the layer toggles against the real points
 lua test/test_ring.lua      # the Warp Ring icon's equip-then-use steps
-lua test/test_favs.lua      # favorites: add, remove, reorder and the /uw they send
+lua test/test_favs.lua      # favorites: add, remove, reorder, narrowing and the /uw they send
 lua test/test_widget.lua    # the widget's D-pad wrap and its A-button gate
 lua test/test_guide.lua     # lib/guide.lua, the EXP Guide errand end to end
 lua test/test_unlocks.lua   # the unlock bit test, and every alias Uberwarp knows
+lua test/test_search.lua    # the search box, its fuzzy matching and its framing
 ```
 
 ## Credits
