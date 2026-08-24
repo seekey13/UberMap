@@ -44,7 +44,7 @@ Left-click a zone point — for a panel of that zone's destinations. Clicking a 
 
 | Icon | Where | Does |
 | --- | --- | --- |
-| **Search** | After the past/present switch | Type to fade back every marker whose name does not match, and frame what is left: the view zooms to fit the matching zones on every keystroke. A region stays lit while a zone under it matches, so the overview still points the way. Clearing it lights the map again and leaves the view where it is |
+| **Search** | After the past/present switch | Type to fade back every marker whose name does not match, and frame what is left: the view zooms to fit the matching zones on every keystroke. A region stays lit while a zone under it matches, so the overview still points the way. Spelling is forgiven from five letters up, so `jueno` and `windhurst` land where they were meant to. Clearing it lights the map again and leaves the view where it is |
 | **Crystal**, **Guide**, **Unity** | Right of search | Dim one to drop that kind of row. A zone with nothing left opens no panel |
 | **Warp** | After them | `/item "Instant Warp" <me>` and closes the map. Lit only while the scroll (4181) is carried |
 | **Warp Ring** | After that | Two steps, see below |
@@ -140,6 +140,7 @@ lua test/test_favs.lua      # favorites: add, remove, reorder and the /uw they s
 lua test/test_widget.lua    # the widget's D-pad wrap and its A-button gate
 lua test/test_guide.lua     # lib/guide.lua, the EXP Guide errand end to end
 lua test/test_unlocks.lua   # the unlock bit test, and every alias Uberwarp knows
+lua test/test_search.lua    # the search box, its fuzzy matching and its framing
 ```
 
 ## Credits

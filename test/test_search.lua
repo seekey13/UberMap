@@ -7,6 +7,7 @@
 --]]
 
 local POINTS = assert(loadfile('lib/points.lua'))();
+local fz     = assert(loadfile('lib/fuzzy.lua'))();
 
 local ICONS, OVERVIEW = {}, {};
 for _, g in ipairs(POINTS.groups) do
@@ -29,13 +30,13 @@ local function search_hit(ic)
     if (q == '') then
         return true;
     end
-    if ((ic.label or ''):lower():find(q, 1, true) ~= nil) then
+    if (fz.match(q, (ic.label or ''):lower())) then
         return true;
     end
     if (OVERVIEW[ic.group]) then
         for _, p in ipairs(ICONS) do
             if (p.group == ic.label and p.time == time
-                and (p.label or ''):lower():find(q, 1, true) ~= nil) then
+                and fz.match(q, (p.label or ''):lower())) then
                 return true;
             end
         end
@@ -117,6 +118,50 @@ if (campaign > 0) then
     assert(hits == campaign,
            ('[S]: %d zone points lit for %d spelled that way'):format(hits, campaign));
     print(('literal search: [S] lit %d zone points'):format(campaign));
+end
+
+--[[
+* Fuzzy matching, against lib/fuzzy.lua on its own first.  The distance is to
+* the closest run of the label rather than to the whole of it, so a query is
+* free to name the middle of a long label.
+--]]
+assert(fz.distance('ronfar', 'east ronfaure') == 1,
+       'a query is measured against the closest run of the label');
+assert(fz.distance('', 'east ronfaure') == 0, 'an empty query is no edits away');
+assert(fz.distance('east', 'east') == 0, 'an exact label is no edits away');
+
+-- Two letters the wrong way round are one edit, not two, or the commonest typo
+-- of all would need the whole of a short query's slack twice over.
+assert(fz.distance('jueno', 'port jeuno') == 1, 'a transposition is one edit');
+assert(fz.match('jueno', 'port jeuno'), 'a transposition must match');
+assert(fz.match('batsok', 'bastok mines'), 'a transposition must match');
+
+-- Short queries get no slack: at four letters one edit reaches most of the map
+-- -- one edit off "norg" is every Nor- zone there is -- and typing is meant to
+-- narrow it.
+assert(fz.tolerance('abcd') == 0, 'four letters must match exactly');
+assert(fz.tolerance('abcde') == 1, 'five letters get one edit');
+assert(fz.tolerance('abcdef') == 1, 'six letters get one edit');
+assert(fz.tolerance('abcdefg') == 2, 'seven letters get two edits');
+assert(fz.tolerance(('a'):rep(40)) == 2, 'two edits is the cap however long');
+
+assert(fz.match('win', 'windurst woods'), 'a short query still matches as a substring');
+assert(not fz.match('wndu', 'windurst woods'), 'a short query gets no slack');
+assert(fz.match('windhurst', 'windurst woods'), 'a letter too many must still match');
+assert(fz.match('windrst', 'windurst woods'), 'a letter missed out must still match');
+assert(fz.match('wnidurst', 'windurst woods'), 'two letters swapped must still match');
+assert(not fz.match('sandoria', 'windurst woods'), 'a different name must not match');
+
+-- And through the search box: a misspelling lands on the zone it meant, and on
+-- the region above it, exactly as the correct spelling does.
+local typo = zone.label:gsub('^(...)(.)', '%1x', 1);
+if (#zone.label >= 4 and typo ~= zone.label) then
+    search[1] = typo;
+    assert(search_hit(zone), ('%q: a misspelling must still light %s'):format(typo, zone.label));
+    assert(search_hit(marker),
+           ('%q: a misspelling must still light %s'):format(typo, marker.label));
+    assert(lit() < total, ('%q: a misspelling must still fade something back'):format(typo));
+    print(('fuzzy search: %q lit %s'):format(typo, zone.label));
 end
 
 -- A search nothing answers fades the whole map back rather than leaving it lit.

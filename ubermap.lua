@@ -25,6 +25,7 @@ local imgui = require('imgui');
 local ffi   = require('ffi');
 local d3d   = require('d3d8');
 local mm    = require('lib.mapmath');
+local fz    = require('lib.fuzzy');
 local unlocks = require('lib.unlocks');
 local guide   = require('lib.guide');
 
@@ -859,9 +860,30 @@ local function group_warps_lit(name)
 end
 
 --[[
-* True while a marker answers the search box: a plain case-insensitive
-* substring of the label.  An empty box matches everything, so the map is
-* untouched until something is typed.
+* True while a label answers the search box, exactly or near enough: see
+* lib/fuzzy.lua for how far out a query of a given length is allowed to be, so
+* a misspelling still lands on what was meant.
+*
+* The answer is remembered per label until the text in the box changes, since
+* the distance is a table walk rather than a find, and the group pass below
+* asks about the same labels over and over, every frame.
+--]]
+local search_cache = { q = nil, hits = { } };
+local function label_hit(label, q)
+    if (search_cache.q ~= q) then
+        search_cache = { q = q, hits = { } };
+    end
+    local hit = search_cache.hits[label];
+    if (hit == nil) then
+        hit = fz.match(q, label:lower());
+        search_cache.hits[label] = hit;
+    end
+    return hit;
+end
+
+--[[
+* True while a marker answers the search box.  An empty box matches everything,
+* so the map is untouched until something is typed.
 *
 * A group marker answers for the zones it stands for as well as for its own
 * name.  The overview is all that is drawn zoomed out, so a search for a zone
@@ -877,13 +899,13 @@ local function search_hit(ic)
     if (q == '') then
         return true;
     end
-    if ((ic.label or ''):lower():find(q, 1, true) ~= nil) then
+    if (label_hit(ic.label or '', q)) then
         return true;
     end
     if (OVERVIEW[ic.group]) then
         for _, p in ipairs(ICONS) do
             if (p.group == ic.label and p.time == ui.time
-                and (p.label or ''):lower():find(q, 1, true) ~= nil) then
+                and label_hit(p.label or '', q)) then
                 return true;
             end
         end
