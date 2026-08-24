@@ -864,18 +864,36 @@ end
 * lib/fuzzy.lua for how far out a query of a given length is allowed to be, so
 * a misspelling still lands on what was meant.
 *
-* The answer is remembered per label until the text in the box changes, since
-* the distance is a table walk rather than a find, and the group pass below
-* asks about the same labels over and over, every frame.
+* Spelling is only forgiven once nothing on the map answers the query as typed,
+* so a query that names something real is taken at its word rather than
+* dragging in everything an edit away from it.
+*
+* Both answers are remembered until the text in the box changes, since the
+* distance is a table walk rather than a find, and the group pass below asks
+* about the same labels over and over, every frame.
 --]]
-local search_cache = { q = nil, hits = { } };
-local function label_hit(label, q)
+local search_cache = { q = nil, fuzzy = false, hits = { } };
+
+-- Points the cache at q and answers whether spelling is being forgiven for it.
+local function search_prep(q)
     if (search_cache.q ~= q) then
-        search_cache = { q = q, hits = { } };
+        local fuzzy = true;
+        for _, ic in ipairs(ICONS) do
+            if ((ic.label or ''):lower():find(q, 1, true) ~= nil) then
+                fuzzy = false;
+                break;
+            end
+        end
+        search_cache = { q = q, fuzzy = fuzzy, hits = { } };
     end
+    return search_cache.fuzzy;
+end
+
+local function label_hit(label, q)
+    local fuzzy = search_prep(q);
     local hit = search_cache.hits[label];
     if (hit == nil) then
-        hit = fz.match(q, label:lower());
+        hit = fz.match(q, label:lower(), fuzzy);
         search_cache.hits[label] = hit;
     end
     return hit;
@@ -1601,10 +1619,30 @@ end
 *
 * Any group focus is dropped on the way, since the search is the subject of the
 * view now and a stale focus would dim the very points just framed.
+*
+* A forgiven spelling picks up the odd unrelated zone -- "juno" is a letter off
+* "jung" as surely as it is off "jeuno" -- and one match on the far side of the
+* world would frame the whole map rather than what was meant.  So a forgiven
+* search frames the group holding the most of its matches, and only a forgiven
+* one: a query spelled the way the map spells it frames everything it names,
+* however far apart those are.  Every match stays lit either way.
 --]]
 local function zoom_to_search(view_w, view_h)
+    local best;
+    if (search_prep(ui.search[1]:lower())) then
+        local n = { };
+        for _, ic in ipairs(ICONS) do
+            if (ic.time == ui.time and not OVERVIEW[ic.group] and search_hit(ic)) then
+                n[ic.group] = (n[ic.group] or 0) + 1;
+                if (best == nil or n[ic.group] > n[best]) then
+                    best = ic.group;
+                end
+            end
+        end
+    end
     if (not zoom_to_points(function(ic)
-            return not OVERVIEW[ic.group] and search_hit(ic);
+            return not OVERVIEW[ic.group] and search_hit(ic)
+                   and (best == nil or ic.group == best);
         end, view_w, view_h)) then
         return false;
     end

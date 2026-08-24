@@ -24,19 +24,30 @@ end
 local time   = 'present';
 local search = { '' };
 
--- Mirrors search_hit in ubermap.lua.
+-- Mirrors search_hit in ubermap.lua: spelling is forgiven only once nothing on
+-- the map answers the query as typed.
+local function fuzzy_on(q)
+    for _, ic in ipairs(ICONS) do
+        if ((ic.label or ''):lower():find(q, 1, true) ~= nil) then
+            return false;
+        end
+    end
+    return true;
+end
+
 local function search_hit(ic)
     local q = search[1]:lower();
     if (q == '') then
         return true;
     end
-    if (fz.match(q, (ic.label or ''):lower())) then
+    local fuzzy = fuzzy_on(q);
+    if (fz.match(q, (ic.label or ''):lower(), fuzzy)) then
         return true;
     end
     if (OVERVIEW[ic.group]) then
         for _, p in ipairs(ICONS) do
             if (p.group == ic.label and p.time == time
-                and fz.match(q, (p.label or ''):lower())) then
+                and fz.match(q, (p.label or ''):lower(), fuzzy)) then
                 return true;
             end
         end
@@ -133,24 +144,63 @@ assert(fz.distance('east', 'east') == 0, 'an exact label is no edits away');
 -- Two letters the wrong way round are one edit, not two, or the commonest typo
 -- of all would need the whole of a short query's slack twice over.
 assert(fz.distance('jueno', 'port jeuno') == 1, 'a transposition is one edit');
-assert(fz.match('jueno', 'port jeuno'), 'a transposition must match');
-assert(fz.match('batsok', 'bastok mines'), 'a transposition must match');
+assert(fz.match('jueno', 'port jeuno', true), 'a transposition must match');
+assert(fz.match('batsok', 'bastok mines', true), 'a transposition must match');
 
--- Short queries get no slack: at four letters one edit reaches most of the map
--- -- one edit off "norg" is every Nor- zone there is -- and typing is meant to
--- narrow it.
-assert(fz.tolerance('abcd') == 0, 'four letters must match exactly');
-assert(fz.tolerance('abcde') == 1, 'five letters get one edit');
+-- A four-letter query is forgiven too, since nothing on the map is spelled
+-- that way: "juno" is one edit from Jeuno and has to reach it.
+assert(fz.match('juno', 'port jeuno', true), 'a four-letter query must be forgiven');
+search[1] = 'juno';
+local juno = 0;
+for _, ic in ipairs(ICONS) do
+    if ((ic.label or ''):find('Jeuno', 1, true) ~= nil) then
+        assert(search_hit(ic), ('juno: must light %s'):format(ic.label));
+        juno = juno + 1;
+    end
+end
+assert(juno > 0, 'the present map must carry a Jeuno marker');
+assert(lit() < total, 'juno: a misspelling must still fade something back');
+print(('fuzzy search: %q lit %d Jeuno markers'):format('juno', juno));
+
+-- But a query that names something real is taken at its word, or "norg" would
+-- drag in every Nor- zone one edit away from Norg.
+local norg;
+for _, ic in ipairs(ICONS) do
+    if (ic.label == 'Norg') then
+        norg = ic;
+        break;
+    end
+end
+if (norg ~= nil) then
+    search[1] = 'Norg';
+    assert(search_hit(norg), 'norg: must light Norg');
+    for _, ic in ipairs(ICONS) do
+        if (ic.label ~= nil and ic.label ~= 'Norg' and not OVERVIEW[ic.group]) then
+            assert(not search_hit(ic),
+                   ('norg: an exact name must not drag in %s'):format(ic.label));
+        end
+    end
+    print('exact search: "Norg" lit Norg alone');
+end
+
+-- Three letters and under get no slack: at that length one edit reaches most
+-- of the map, and typing is meant to narrow it.
+assert(fz.tolerance('abc') == 0, 'three letters must match exactly');
+assert(fz.tolerance('abcd') == 1, 'four letters get one edit');
 assert(fz.tolerance('abcdef') == 1, 'six letters get one edit');
 assert(fz.tolerance('abcdefg') == 2, 'seven letters get two edits');
 assert(fz.tolerance(('a'):rep(40)) == 2, 'two edits is the cap however long');
 
-assert(fz.match('win', 'windurst woods'), 'a short query still matches as a substring');
-assert(not fz.match('wndu', 'windurst woods'), 'a short query gets no slack');
-assert(fz.match('windhurst', 'windurst woods'), 'a letter too many must still match');
-assert(fz.match('windrst', 'windurst woods'), 'a letter missed out must still match');
-assert(fz.match('wnidurst', 'windurst woods'), 'two letters swapped must still match');
-assert(not fz.match('sandoria', 'windurst woods'), 'a different name must not match');
+assert(fz.match('win', 'windurst woods', true), 'a short query still matches as a substring');
+assert(not fz.match('wnd', 'windurst woods', true), 'a short query gets no slack');
+assert(fz.match('windhurst', 'windurst woods', true), 'a letter too many must still match');
+assert(fz.match('windrst', 'windurst woods', true), 'a letter missed out must still match');
+assert(fz.match('wnidurst', 'windurst woods', true), 'two letters swapped must still match');
+assert(not fz.match('sandoria', 'windurst woods', true), 'a different name must not match');
+
+-- With fuzzy off nothing is forgiven, however long the query.
+assert(fz.match('windurst', 'windurst woods', false), 'an exact run matches with fuzzy off');
+assert(not fz.match('windhurst', 'windurst woods', false), 'fuzzy off forgives nothing');
 
 -- And through the search box: a misspelling lands on the zone it meant, and on
 -- the region above it, exactly as the correct spelling does.
@@ -185,10 +235,31 @@ local MAX_ZOOM       = 2.0;
 local ZOOM_PAD       = 100;
 local VIEW_W, VIEW_H = 1920, 1080;
 
-local function search_box()
-    local x0, y0, x1, y1;
+-- Mirrors zoom_to_search: a forgiven spelling frames only the group holding
+-- the most of its matches, so one unrelated zone across the world cannot pull
+-- the box out to cover everything.  An exact query frames all of its matches.
+local function best_group()
+    if (not fuzzy_on(search[1]:lower())) then
+        return nil;
+    end
+    local n, best = { }, nil;
     for _, ic in ipairs(ICONS) do
         if (ic.time == time and not OVERVIEW[ic.group] and search_hit(ic)) then
+            n[ic.group] = (n[ic.group] or 0) + 1;
+            if (best == nil or n[ic.group] > n[best]) then
+                best = ic.group;
+            end
+        end
+    end
+    return best;
+end
+
+local function search_box()
+    local x0, y0, x1, y1;
+    local best = best_group();
+    for _, ic in ipairs(ICONS) do
+        if (ic.time == time and not OVERVIEW[ic.group] and search_hit(ic)
+            and (best == nil or ic.group == best)) then
             x0 = math.min(x0 or ic.x, ic.x);
             y0 = math.min(y0 or ic.y, ic.y);
             x1 = math.max(x1 or ic.x, ic.x);
@@ -268,6 +339,51 @@ do
     assert(pad_x >= ZOOM_PAD * z - 1e-6,
            ('the framed box must keep its margin, got %g'):format(pad_x));
     print(('framed a 1400x700 span at zoom %.3f, %.0fpx of margin'):format(z, pad_x));
+end
+
+--[[
+* A forgiven spelling frames what it meant, not what it happened to brush past.
+* "juno" is a letter off "jung" as well as off "jeuno", so it lights two
+* Elshimo jungles along with the three Jeuno zones -- and framing all five
+* would span the world and zoom out rather than in.
+--]]
+do
+    search[1] = 'juno';
+    local groups, lit_zones = { }, 0;
+    for _, ic in ipairs(ICONS) do
+        if (ic.time == time and not OVERVIEW[ic.group] and search_hit(ic)) then
+            groups[ic.group] = (groups[ic.group] or 0) + 1;
+            lit_zones = lit_zones + 1;
+        end
+    end
+    if (groups['Jeuno'] ~= nil) then
+        assert(lit_zones > groups['Jeuno'],
+               'juno: this check wants the stray jungle matches to be there');
+        assert(best_group() == 'Jeuno',
+               ('juno: framed %s rather than Jeuno'):format(tostring(best_group())));
+
+        -- Every match stays lit; only the framing narrows.
+        for _, ic in ipairs(ICONS) do
+            if ((ic.label or ''):find('Jeuno', 1, true) ~= nil) then
+                assert(search_hit(ic), ('juno: must light %s'):format(ic.label));
+            end
+        end
+
+        -- And the box really is Jeuno's, so the view closes in instead of out.
+        local x0, y0, x1, y1 = search_box();
+        assert(x0 ~= nil, 'juno: must frame something');
+        for _, ic in ipairs(ICONS) do
+            if (ic.time == time and ic.group == 'Jeuno' and search_hit(ic)) then
+                assert(ic.x >= x0 and ic.x <= x1 and ic.y >= y0 and ic.y <= y1,
+                       ('juno: %s fell outside the framed box'):format(ic.label));
+            end
+        end
+        local z = frame_search();
+        assert(z > ZOOM_POINTS,
+               ('juno: framed at %g, which is zoomed out rather than in'):format(z));
+        print(('fuzzy framing: %q lit %d zones, framed Jeuno at zoom %.3f'):format(
+            'juno', lit_zones, z));
+    end
 end
 
 -- Nothing a real search frames is allowed outside the zoom range, however far

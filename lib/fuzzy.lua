@@ -60,15 +60,14 @@ function M.distance(q, s)
 end
 
 --[[
-* How many edits a query of this length is allowed to be out by.  Short queries
-* get none: at four letters a single edit already reaches half the map -- one
-* edit off "norg" is every Nor- zone there is -- and the whole point of typing
-* is to narrow it.  Two is the cap however long the query runs, for the same
-* reason.
+* How many edits a query of this length is allowed to be out by.  Three letters
+* and under get none: at that length a single edit reaches most of the map, and
+* the whole point of typing is to narrow it.  Two is the cap however long the
+* query runs, for the same reason.
 --]]
 function M.tolerance(q)
     local n = #q;
-    if (n < 5) then
+    if (n < 4) then
         return 0;
     end
     if (n < 7) then
@@ -77,9 +76,14 @@ function M.tolerance(q)
     return 2;
 end
 
--- True while s answers q, exactly or within the tolerance for its length.
-function M.match(q, s)
-    local tol = M.tolerance(q);
+--[[
+* True while s answers q.  Spelling is only forgiven when fuzzy is set, which
+* the caller decides once for the whole map: a query that already names
+* something as typed is taken at its word, so "norg" finds Norg rather than
+* every Nor- zone one edit away from it.
+--]]
+function M.match(q, s, fuzzy)
+    local tol = fuzzy and M.tolerance(q) or 0;
     if (tol == 0) then
         return s:find(q, 1, true) ~= nil;
     end
