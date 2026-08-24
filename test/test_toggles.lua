@@ -139,9 +139,16 @@ for _, ic in ipairs(ICONS) do
 end
 assert(#overview > 0, 'the present map must carry overview markers');
 
--- Nothing dimmed: every group marker is lit, childless ones included.
+-- The half of icon_dim the toggles decide, for a group marker: an unfiltered
+-- map never dims, whatever the zones below hold.
+local function group_lit(name)
+    return not (warps_filtered() and not group_warps_lit(name));
+end
+
+-- Nothing dimmed: every group marker is lit, childless ones and ones whose
+-- zones carry no warp at all included.
 for _, ic in ipairs(overview) do
-    assert(group_warps_lit(ic.label),
+    assert(group_lit(ic.label),
            ('%s: an unfiltered map must leave every group marker lit'):format(ic.label));
 end
 
