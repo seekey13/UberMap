@@ -91,56 +91,6 @@ A dimmed filter reaches the map itself: a zone marker with no row left fades bac
 
 The Multisend gate, your favorites and the three toggles are saved per character in `config/addons/UberMap/<name>_<server id>/settings.lua` the moment you change one.
 
-## Data
-
-`lib/warps.lua` is keyed by zone name — the point's `label` in `lib/points.lua`:
-
-```lua
-["Aht Urhgan Whitegate"] = {
-    { type = 'home',  label = 'Home Point #1',  pos = '(H-9)' },
-    { type = 'guide', label = 'Survival Guide', pos = '(L-8)' },
-},
-```
-
-`type` is `home`, `guide` or `unity`, picking `assets/Crystal.png`, `Guide.png` or `Unity.png`. `pos` is the grid reference, held apart from the label so the panel draws it in a column of its own; a row without one leaves it out. Rows draw in file order. A key that is not the game's own name for the zone — `Delkfutt Tower`, the two halves of Windurst Waters — carries a `zone` field with the name `/uw` wants; Campaign zones are written `[S]` the way Uberwarp spells them, so they need no override. Unlike `lib/points.lua` this file is an overlay: missing or broken, the addon says so once and runs on without panels.
-
-## Coordinates
-
-Hovering shows the **source-image pixel** under the cursor, bottom left: `0..5504` across by `0..3072` down on `Present_Map.jpg`, `0..4096` both ways on `Past_Map.jpg`. Zoom and pan change where a coordinate is drawn, never what it is — but the same numbers mean different places on the two maps.
-
-Icons are listed in `ICONS` in `ubermap.lua`, a file in `assets/` plus the coordinate its centre sits on, drawn rounded with a black border:
-
-```lua
-{ file = 'Bastok.jpg', x = 1340, y = 1886 },
-```
-
-## Placing points in game
-
-`/ubermap edit` turns on the editor. **Ctrl+click** the map to drop a point or grab one, hold to drag; plain drag still pans. The panel under the search box renames, regroups and deletes.
-
-Changes are written to `lib/points.lua`, which is loaded back at startup, so reloading loses nothing. That file holds `groups` for the overview tiers drawn zoomed out and `points` for the zone markers drawn zoomed in. Every marker carries a `time` tag — `'present'` or `'past'` — and is drawn only on that map; points dropped with the editor take the map on screen, and a row with no tag is drawn on neither.
-
-Only `points` rows are editable. `groups` icons are drawn but cannot be selected, moved or deleted — edit those by hand.
-
-If Home Points do not trigger the map on your server they are named differently there: `WARP_NPC` in `ubermap.lua` holds the name patterns for all three kinds.
-
-## Development
-
-The checks run outside the game on any Lua 5.1+, against the real data files:
-
-```
-lua test/test_zoom.lua      # lib/mapmath.lua, the view math
-lua test/test_points.lua    # every marker sits on a map that exists
-lua test/test_warps.lua     # every warp row builds a /uw the game takes
-lua test/test_toggles.lua   # the layer toggles against the real points
-lua test/test_ring.lua      # the Warp Ring icon's equip-then-use steps
-lua test/test_favs.lua      # favorites: add, remove, reorder, narrowing and the /uw they send
-lua test/test_widget.lua    # the widget's D-pad wrap and its A-button gate
-lua test/test_guide.lua     # lib/guide.lua, the EXP Guide errand end to end
-lua test/test_unlocks.lua   # the unlock bit test, and every alias Uberwarp knows
-lua test/test_search.lua    # the search box, its fuzzy matching and its framing
-```
-
 ## Credits
 
 - Thorny — [Uberwarp](https://github.com/ThornyFFXI/Uberwarp) and
