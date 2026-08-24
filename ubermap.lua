@@ -345,6 +345,11 @@ local default_settings = T{
     -- the walk past a guide and can be watched happening.  A toggle all the
     -- same, because it sends a packet and a keystroke with no click behind it.
     guide  = true,
+    -- The search box takes the keyboard the moment the map opens.  Off by
+    -- default: the box swallows every key while it holds focus, movement
+    -- included, so it is only worth opening the map into if you came to look
+    -- something up.
+    focus  = false,
 };
 -- Loaded from a copy of the defaults, because the library hands its own default
 -- table back for a key the file has no entry for: without the copy the first
@@ -388,6 +393,7 @@ local ui = T{
     pan_y       = 0,
     search      = { '', },   -- search box text, boxed the way ImGui wants it
     search_at   = '',        -- search text the view was last framed for
+    focus_next  = false,     -- hand the search box the keyboard on the next frame
     hot         = false,     -- cursor was over a widget, not the map
     dragging    = false,
     drag_x      = 0,
@@ -1672,6 +1678,9 @@ end
 --]]
 local function show()
     ui.is_open[1] = true;
+    -- Asked for here rather than in the draw, so the box is handed the
+    -- keyboard once on the way in instead of stealing it back every frame.
+    ui.focus_next = cfg.focus;
     -- Opening reads the world afresh on the next frame, whatever the toggles
     -- were left at when it was last up.
     ui.near_kind = false;
@@ -2427,6 +2436,13 @@ local function draw_map(view_w, view_h)
         imgui.PushStyleColor(ImGuiCol_TextDisabled, COL_SEARCH_HINT);
         imgui.SetCursorPos({ search_x, UI_MARGIN });
         imgui.SetNextItemWidth(FIELD_W);
+        -- Handed the keyboard on the frame after an open, when the setting asks
+        -- for it.  ImGui takes the focus request for the next item drawn, so
+        -- this sits right on top of the box.
+        if (ui.focus_next) then
+            ui.focus_next = false;
+            imgui.SetKeyboardFocusHere();
+        end
         imgui.InputTextWithHint('##ubermap_search', 'Search', ui.search, FIELD_MAX);
         imgui.PopStyleColor(5);
         imgui.PopStyleVar();
@@ -2725,6 +2741,15 @@ ashita.events.register('command', 'ubermap_command', function (e)
         settings.save();
         notify(('EXP Guide scroll pickup: %s'):fmt(cfg.guide
             and 'on, fetches an Instant Warp scroll when you pass a guide'
+            or 'off'));
+        return;
+    end
+
+    if (sub == 'focus') then
+        cfg.focus = not cfg.focus;
+        settings.save();
+        notify(('search box focus on open: %s'):fmt(cfg.focus
+            and 'on, the map opens ready to type in'
             or 'off'));
         return;
     end

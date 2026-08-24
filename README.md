@@ -12,6 +12,7 @@ Drop the `UberMap` folder into `Ashita/addons/`, then `/addon load ubermap`.
 | `/ubermap edit` | Toggle the point editor |
 | `/ubermap widget` | Toggle the gamepad favorites widget |
 | `/ubermap guide` | Toggle the EXP Guide scroll pickup (on by default) |
+| `/ubermap focus` | Toggle the search box taking the keyboard when the map opens (off by default) |
 
 ## The map
 
@@ -50,6 +51,8 @@ Left-click a zone point — for a panel of that zone's destinations. Clicking a 
 | **Warp Ring** | After that | Two steps, see below |
 | **Multisend** | Bottom right | Prefixes every command the map sends with `/mss ` |
 | **Heart** | Bottom left | Opens favorites. Hidden while the gamepad widget is on, since that lists the same rows |
+
+`/um focus` makes the map open with the cursor already in the search box, so it can be typed into without clicking first. Off by default: while the box holds the keyboard it swallows every key, movement included, and Escape or a click on the map hands them back.
 
 **Warp Ring** works in two steps, since a ring must be worn before use. It looks for item 28540 in your bag and the eight Mog Wardrobes the client will equip out of, re-read twice a second like the scroll. Carrying none: dimmed and dead. Carrying one unworn: dimmed, and clicking sends `/equip ring1 "Warp Ring" <container>`, keeps the map open and goes dead for nine seconds while the ring lands. Wearing one: lit, and clicking sends `/item "Warp Ring" <me>` and closes the map. Hovering says which step it is on.
 
