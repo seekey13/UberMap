@@ -58,7 +58,7 @@ Left-click a zone point — for a panel of that zone's destinations. Clicking a 
 
 While **Multisend** is lit every command — warp rows, scroll and ring alike — goes out through [Multisend](https://github.com/ThornyFFXI/Multisend) and repeats on every logged-in character. Off and dimmed until clicked.
 
-**Favorites** are warp rows you saved, in your order. Right-click any row for *Add point to favorites list* — a row you cannot travel on right now works too, so a destination can be saved from anywhere. Each is named by its zone and row, e.g. `Windurst Woods - Home Point #2`. Clicking one warps exactly as its original row would, and it reads grey or red on the same two tests. Drag a row up or down to reorder the list; right-click offers *Remove point from favorites list*.
+**Favorites** are warp rows you saved, in your order. Right-click any row for *Add point to favorites list* — a row you cannot travel on right now works too, so a destination can be saved from anywhere. Each is named by its zone and row, e.g. `Windurst Woods - Home Point #2`. Clicking one warps exactly as its original row would. Stood at a Home Point, Survival Guide or Unity Concord the list narrows to the rows that NPC can send — the rest cannot be taken from there, so they are not listed — and stepping away brings the whole list back. A destination you have not registered still reads red. Drag a row up or down to reorder the list, including inside a narrowed one; right-click offers *Remove point from favorites list*.
 
 ## Scroll pickup
 
@@ -84,7 +84,7 @@ Renamed or relocated on your server? `EXP_GUIDE_NAME` and `EXP_GUIDE_ZONES` in `
 
 The widget and the map's panel are one list drawn twice, so the mouse works the same in either: click a row to warp, drag it up or down to reorder, right-click for *Remove point from favorites list*. Turning the widget on hides the heart and its panel, so the list is on screen in one place, not two.
 
-Rows read grey or red on the same two tests the panel uses, and A refuses a row that reads either way — a favorite travels only from the kind of NPC it was saved off, and only to a destination you have registered. The window has no title bar and sizes itself to the list; like the map, hold shift to drag it somewhere else. Off by default, and saved per character with the rest of the settings.
+The list is narrowed the same way the panel's is, so every row on it is one the NPC holding it up can send; a destination you have not registered still reads red, and A refuses it. With nothing saved for that kind of NPC the widget stays down. The window has no title bar and sizes itself to the list; like the map, hold shift to drag it somewhere else. Off by default, and saved per character with the rest of the settings.
 
 XInput only: an Xbox pad, or anything Windows presents as one. A DirectInput controller (DualShock, DualSense) still works by mouse.
 
@@ -139,7 +139,7 @@ lua test/test_points.lua    # every marker sits on a map that exists
 lua test/test_warps.lua     # every warp row builds a /uw the game takes
 lua test/test_toggles.lua   # the layer toggles against the real points
 lua test/test_ring.lua      # the Warp Ring icon's equip-then-use steps
-lua test/test_favs.lua      # favorites: add, remove, reorder and the /uw they send
+lua test/test_favs.lua      # favorites: add, remove, reorder, narrowing and the /uw they send
 lua test/test_widget.lua    # the widget's D-pad wrap and its A-button gate
 lua test/test_guide.lua     # lib/guide.lua, the EXP Guide errand end to end
 lua test/test_unlocks.lua   # the unlock bit test, and every alias Uberwarp knows

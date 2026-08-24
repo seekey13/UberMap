@@ -295,6 +295,10 @@ local COL_MSS_OFF = 0x40FFFFFF;  -- half that again, i.e. dimmed off
 -- the popup row it came from does.
 local FAV_ICON     = 'heart.png';
 local FAV_EMPTY    = 'Right-click a warp to add it here';
+-- What stands in its place while the list is narrowed to the NPC in reach and
+-- nothing saved can be sent from it: the list is not empty, this warp's share
+-- of it is, and the instructions would read as though nothing were saved.
+local FAV_NONE     = 'No favorites for this warp';
 
 -- The favorites widget: the same saved list, drawn as a small window of its own
 -- and driven from the gamepad.  It comes up only where it can be used -- stood
@@ -812,6 +816,10 @@ local function poll_near(now)
     if (kind ~= ui.near_kind) then
         ui.near_kind = kind;
         filter_to(kind);
+        -- The list a drag was picked up out of is not the list it would be
+        -- dropped into, so the row is let go where it lies rather than landing
+        -- somewhere the hand never carried it.
+        ui.fav_drag = nil;
     end
 end
 
@@ -1293,6 +1301,33 @@ local function fav_reorder(i, j)
     table.insert(cfg.favs, j, table.remove(cfg.favs, i));
 end
 
+--[[
+* The favorites as the lists show them.  Stood at a warp NPC, only the rows
+* that NPC can actually send: a Survival Guide cannot take a Home Point row,
+* so listing one there is a row that looks like a choice and is not.  With no
+* NPC in reach -- near_kind nil, or false before the first poll -- there is
+* nothing to narrow against, so the whole list is shown.
+*
+* Hands back the rows and, when narrowed, the slot each one sits in in
+* cfg.favs, so a drag inside the narrowed list reorders the saved list: the
+* row is pulled out of its own slot and put back in the one the row it was
+* dragged onto holds, which lands it on that side of it in both lists.
+--]]
+local function fav_view()
+    local kind = ui.near_kind;
+    if (not kind) then
+        return cfg.favs, nil;
+    end
+    local view, raw = T{ }, T{ };
+    for i, f in ipairs(cfg.favs) do
+        if (f.type == kind) then
+            view[#view + 1] = f;
+            raw[#raw + 1]   = i;
+        end
+    end
+    return view, raw;
+end
+
 -- What a favorite reads as: the zone the row hung off, then the row itself,
 -- e.g. 'Windurst Woods - Home Point #2'.
 local function fav_text(f)
@@ -1759,7 +1794,7 @@ end
 * somewhere the player has registered.
 --]]
 local function fw_confirm()
-    local f = cfg.favs[ui.fw_sel];
+    local f = fav_view()[ui.fw_sel];
     if (f == nil or f.type ~= ui.near_kind or not warp_known(f.key, f)) then
         return;
     end
@@ -1790,7 +1825,8 @@ end
 * off screen before it measures anything.
 --]]
 local function fav_metrics()
-    local n     = #cfg.favs;
+    local favs  = fav_view();
+    local n     = #favs;
     local _, th = imgui.CalcTextSize('A');
     -- Columns: the warp type's icon, then the text.  An empty list is one row
     -- of instructions with neither, since there is nothing to travel on yet.
@@ -1798,9 +1834,11 @@ local function fav_metrics()
     -- The grid reference is a column of its own, the way the warp popup lays
     -- it out, so every row's '(F-11)' lines up whatever it is hung off.  A
     -- list where no row carries one has no column at all.
-    local textw = (n == 0) and (imgui.CalcTextSize(FAV_EMPTY)) or 0;
+    local textw = (n == 0)
+                  and (imgui.CalcTextSize(ui.near_kind and FAV_NONE or FAV_EMPTY))
+                  or 0;
     local posw  = 0;
-    for _, f in ipairs(cfg.favs) do
+    for _, f in ipairs(favs) do
         -- Parenthesised: CalcTextSize hands back a width and a height, and
         -- both would otherwise go into math.max.
         textw = math.max(textw, (imgui.CalcTextSize(fav_text(f))));
@@ -1856,7 +1894,11 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
     -- drag reorders the list the loop is walking.
     local hot_i, hot_live, hot_lock = nil, false, nil;
     local drag = ui.fav_drag;
-    for i, f in ipairs(cfg.favs) do
+    -- Narrowed to the NPC in reach, so every row drawn here is one that can be
+    -- sent from where the player is stood; raw is nil when it is not narrowed,
+    -- and then a row's slot in the list is its slot in cfg.favs.
+    local favs, raw = fav_view();
+    for i, f in ipairs(favs) do
         local ry = py + POPUP_ROW * (i - 1);
         -- The same two tests the popup rows use: a favorite travels only from
         -- the kind of NPC it was saved off, and only to somewhere the player
@@ -1907,7 +1949,7 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
     end
     if (n == 0) then
         dl:AddText({ px + m.lab_x, py + (POPUP_ROW - m.th) / 2 },
-                   COL_POPUP_OFF, FAV_EMPTY);
+                   COL_POPUP_OFF, ui.near_kind and FAV_NONE or FAV_EMPTY);
     end
 
     -- Same as the warp panel: one InvisibleButton over the whole thing so the
@@ -1945,7 +1987,8 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
             local j = mm.clamp(
                 math.floor((mouse_y - py) / POPUP_ROW) + 1, 1, n);
             if (j ~= ui.fav_drag.i) then
-                fav_reorder(ui.fav_drag.i, j);
+                fav_reorder(raw and raw[ui.fav_drag.i] or ui.fav_drag.i,
+                            raw and raw[j] or j);
                 ui.fav_drag.i, ui.fav_drag.moved = j, true;
             end
         elseif (imgui.IsMouseReleased(0)) then
@@ -1956,7 +1999,7 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
             elseif (ui.fav_drag.live) then
                 -- The saved entry carries every field warp_cmd reads, so it
                 -- travels as the row it was taken from.
-                local f   = cfg.favs[ui.fav_drag.i];
+                local f   = favs[ui.fav_drag.i];
                 local cmd = warp_cmd(f.key, f);
                 if (cmd ~= nil) then
                     send_cmd(cmd);
@@ -1986,7 +2029,9 @@ end
 * leave the D-pad swallowed with nothing on screen to drive.
 --]]
 local function draw_fav_widget()
-    local n = #cfg.favs;
+    -- Narrowed to the NPC in reach, so a list with nothing this NPC can send
+    -- takes the widget off screen the same way an empty one does.
+    local n = #fav_view();
     -- Only where it can be used -- stood at a warp NPC -- since the buttons it
     -- swallows are the game's everywhere else.  The map has nothing to do with
     -- it: walking up to a crystal is what puts it on screen, and the present
@@ -2070,7 +2115,7 @@ local function draw_fav_widget()
         -- the row the right-click just moved the selection to.
         if (not shift and imgui.BeginPopupContextItem('##ubermap_fw_ctx')) then
             if (imgui.MenuItem('Remove point from favorites list')) then
-                local f = cfg.favs[ui.fw_sel];
+                local f = fav_view()[ui.fw_sel];
                 if (f ~= nil) then
                     -- One shorter from here: the selection is clamped back
                     -- onto the list at the top of the next draw, and an
@@ -2133,7 +2178,7 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
         -- Right-click a listed favorite to take it back off the list, the
         -- same menu that put it on.
         if (imgui.IsMouseClicked(1) and hot_i ~= nil and not ui.warp_hot) then
-            local f = cfg.favs[hot_i];
+            local f = fav_view()[hot_i];
             ui.ctx = { x = mouse_x, y = mouse_y, fresh = true,
                        key = f.key, row = f };
         end
@@ -2868,7 +2913,7 @@ ashita.events.register('xinput_button', 'ubermap_xinput', function (e)
         return;
     end
 
-    local n = #cfg.favs;
+    local n = #fav_view();
     if (not ui.fw_on or n == 0) then
         return;
     end
