@@ -254,12 +254,10 @@ local function best_group()
     return best;
 end
 
-local function search_box()
+local function box_of(want)
     local x0, y0, x1, y1;
-    local best = best_group();
     for _, ic in ipairs(ICONS) do
-        if (ic.time == time and not OVERVIEW[ic.group] and search_hit(ic)
-            and (best == nil or ic.group == best)) then
+        if (ic.time == time and want(ic)) then
             x0 = math.min(x0 or ic.x, ic.x);
             y0 = math.min(y0 or ic.y, ic.y);
             x1 = math.max(x1 or ic.x, ic.x);
@@ -267,6 +265,40 @@ local function search_box()
         end
     end
     return x0, y0, x1, y1;
+end
+
+--[[
+* Mirrors zoom_to_search's fallback: most of the region names the overview
+* carries -- Vollbow, Derfland, Zulkheim -- name no zone, so a search for one
+* leaves no zone point to frame.  The zones the matched marker stands for are
+* framed instead, since the marker itself is not drawn at the zoom framing
+* lands at.
+--]]
+local function region_box()
+    local q, region, any = search[1]:lower(), { }, false;
+    for _, ic in ipairs(ICONS) do
+        if (OVERVIEW[ic.group] and ic.time == time
+            and fz.match(q, (ic.label or ''):lower(), fuzzy_on(q))) then
+            region[ic.label] = true;
+            any = true;
+        end
+    end
+    if (not any) then
+        return nil;
+    end
+    return box_of(function(ic) return not OVERVIEW[ic.group] and region[ic.group]; end);
+end
+
+local function search_box()
+    local best = best_group();
+    local x0, y0, x1, y1 = box_of(function(ic)
+        return not OVERVIEW[ic.group] and search_hit(ic)
+               and (best == nil or ic.group == best);
+    end);
+    if (x0 ~= nil) then
+        return x0, y0, x1, y1;
+    end
+    return region_box();
 end
 
 -- Returns the zoom and pan the box would be framed at, or nil when the search
@@ -290,9 +322,53 @@ local function near(a, b)
     return math.abs(a - b) < 1e-6;
 end
 
--- A search nothing matches frames nothing, so the view is left where it was.
+-- A search nothing matches frames nothing, and the view goes back to the whole
+-- map rather than staying wherever a shorter prefix left it.
 search[1] = 'zzz no such place zzz';
-assert(frame_search() == nil, 'a search with no match must leave the view alone');
+assert(frame_search() == nil, 'a search with no match must frame nothing');
+
+--[[
+* Every region and nation name the overview carries has to frame something.
+* Most of them name no zone at all -- nothing is labelled "Vollbow" -- and the
+* marker that does carry the name stops being drawn at the zoom framing lands
+* at, so without the region fallback these searches would leave the view
+* stranded on the last prefix that did match with the whole map faded back.
+--]]
+local dead = { };
+for _, g in ipairs(POINTS.groups) do
+    for _, ic in ipairs(g.icons) do
+        if (ic.time == time and ic.label ~= nil) then
+            search[1] = ic.label;
+            if (frame_search() == nil) then
+                table.insert(dead, ic.label);
+            end
+        end
+    end
+end
+assert(#dead == 0,
+       ('overview names that frame nothing: %s'):format(table.concat(dead, ', ')));
+
+-- And one of them by name, so the fallback is pinned rather than merely
+-- happening to hold for the current point list.
+local vollbow = false;
+for _, g in ipairs(POINTS.groups) do
+    for _, ic in ipairs(g.icons) do
+        if (ic.time == time and ic.label == 'Vollbow') then vollbow = true; end
+    end
+end
+if (vollbow) then
+    search[1] = 'Vollbow';
+    -- No zone answers it, so the primary pass alone would frame nothing...
+    local best = best_group();
+    assert(box_of(function(ic)
+        return not OVERVIEW[ic.group] and search_hit(ic)
+               and (best == nil or ic.group == best);
+    end) == nil, 'no zone is labelled Vollbow');
+    -- ...and the fallback is what puts the region's zones on screen.
+    assert(region_box() ~= nil, 'Vollbow must frame the zones under its marker');
+    assert(frame_search() ~= nil, 'Vollbow must frame something');
+    print('region fallback: "Vollbow" framed the zones under its marker');
+end
 
 -- A group name matches every zone under it, so this frames more than one point.
 search[1] = zone.group;

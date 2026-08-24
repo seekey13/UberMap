@@ -880,6 +880,19 @@ end
 --]]
 local search_cache = { q = nil, fuzzy = false, hits = { } };
 
+-- The box's text folded to lower case, held for as long as the text is
+-- unchanged.  search_hit runs for every marker of every frame, and folding it
+-- there allocated a string per marker per frame for an answer that only ever
+-- changes on a keystroke.
+local search_raw, search_low = nil, '';
+local function search_query()
+    if (search_raw ~= ui.search[1]) then
+        search_raw = ui.search[1];
+        search_low = search_raw:lower();
+    end
+    return search_low;
+end
+
 -- Points the cache at q and answers whether spelling is being forgiven for it.
 local function search_prep(q)
     if (search_cache.q ~= q) then
@@ -919,7 +932,7 @@ end
 * labels at load if the point list ever grows an order of magnitude.
 --]]
 local function search_hit(ic)
-    local q = ui.search[1]:lower();
+    local q = search_query();
     if (q == '') then
         return true;
     end
@@ -1423,6 +1436,11 @@ local function set_time(time)
         return;
     end
     ui.time  = time;
+    -- The query is kept, but the view it was framed for belongs to the map
+    -- being left.  Forgetting what it was framed for reframes it on the map
+    -- being arrived at, instead of landing at cover with the other map's
+    -- matches still dimming this one and nothing to pull the view back.
+    ui.search_at = nil;
     ui.zoom  = nil;
     ui.pan_x = 0;
     ui.pan_y = 0;
@@ -1559,13 +1577,19 @@ local function draw_icons(origin_x, origin_y, view_w, view_h, over_map)
     return hot_ic;
 end
 
---[[
-* Frames every point whose group matches 'name', so clicking an overview marker
-* opens the zone points it stands for.  The zoom floor is ZOOM_POINTS, below
-* which those points are not drawn at all.  Returns false when nothing carries
-* the group, which leaves the view alone.
---]]
 local ZOOM_PAD = 100;  -- map pixels of margin around the framed points
+
+--[[
+* Pulls the view all the way back out to the whole map, centred.  Below
+* ZOOM_POINTS, so the overview markers are what is drawn: this is where the map
+* starts and where a search with nothing left to show goes.
+--]]
+local function zoom_to_map(view_w, view_h)
+    local map_w, map_h = map_size();
+    ui.zoom  = mm.cover_zoom(map_w, map_h, view_w, view_h);
+    ui.pan_x = (map_w * ui.zoom - view_w) / 2;
+    ui.pan_y = (map_h * ui.zoom - view_h) / 2;
+end
 
 --[[
 * Puts a map-pixel box in the middle of the viewport at the zoom that fits it,
@@ -1632,28 +1656,60 @@ end
 * search frames the group holding the most of its matches, and only a forgiven
 * one: a query spelled the way the map spells it frames everything it names,
 * however far apart those are.  Every match stays lit either way.
+*
+* Nineteen of the region and nation names the overview carries -- Vollbow,
+* Derfland, Zulkheim and the rest -- name no zone at all, so a search for one
+* leaves no zone point to frame.  Those fall back to framing the zones the
+* matched marker stands for, since the marker itself stops being drawn the
+* moment framing passes ZOOM_POINTS: without it the view would sit wherever a
+* shorter prefix had left it with every marker on it faded back.
 --]]
 local function zoom_to_search(view_w, view_h)
+    -- Dropped up here rather than on the way out: a stale focus dims the very
+    -- points a search frames, and it has to go whether or not one is found.
+    ui.focus = nil;
+    local q = search_query();
     local best;
-    if (search_prep(ui.search[1]:lower())) then
+    if (search_prep(q)) then
         local n = { };
         for _, ic in ipairs(ICONS) do
             if (ic.time == ui.time and not OVERVIEW[ic.group] and search_hit(ic)) then
-                n[ic.group] = (n[ic.group] or 0) + 1;
-                if (best == nil or n[ic.group] > n[best]) then
-                    best = ic.group;
+                local g = ic.group or '';
+                n[g] = (n[g] or 0) + 1;
+                if (best == nil or n[g] > n[best]) then
+                    best = g;
                 end
             end
         end
     end
-    if (not zoom_to_points(function(ic)
+    if (zoom_to_points(function(ic)
             return not OVERVIEW[ic.group] and search_hit(ic)
                    and (best == nil or ic.group == best);
         end, view_w, view_h)) then
-        return false;
+        return true;
     end
-    ui.focus = nil;
-    return true;
+
+    -- No zone answers, so try the regions: a marker matched by its own name
+    -- frames the zones underneath it.
+    local region, any = { }, false;
+    for _, ic in ipairs(ICONS) do
+        if (OVERVIEW[ic.group] and ic.time == ui.time
+            and label_hit(ic.label or '', q)) then
+            region[ic.label] = true;
+            any = true;
+        end
+    end
+    if (any and zoom_to_points(function(ic)
+            return not OVERVIEW[ic.group] and region[ic.group];
+        end, view_w, view_h)) then
+        return true;
+    end
+
+    -- Nothing on the map answers at all.  Back out to the whole of it, where
+    -- the overview is drawn, rather than stranding the view inside the last
+    -- match with everything on screen faded back.
+    zoom_to_map(view_w, view_h);
+    return false;
 end
 
 --[[
@@ -2435,7 +2491,12 @@ local function draw_map(view_w, view_h)
         imgui.PushStyleColor(ImGuiCol_Text, COL_SEARCH_TEXT);
         imgui.PushStyleColor(ImGuiCol_TextDisabled, COL_SEARCH_HINT);
         imgui.SetCursorPos({ search_x, UI_MARGIN });
-        imgui.SetNextItemWidth(FIELD_W);
+        -- Everything on this row is placed by absolute cursor position and none
+        -- of it wraps, so a full-width box would push the toggles and the warp
+        -- icons off the edge of a small viewport.  A share of the width instead,
+        -- which leaves FIELD_W alone at 1080p and above.
+        local search_w = math.min(FIELD_W, view_w * 0.35);
+        imgui.SetNextItemWidth(search_w);
         -- Handed the keyboard on the frame after an open, when the setting asks
         -- for it.  ImGui takes the focus request for the next item drawn, so
         -- this sits right on top of the box.
@@ -2446,7 +2507,14 @@ local function draw_map(view_w, view_h)
         imgui.InputTextWithHint('##ubermap_search', 'Search', ui.search, FIELD_MAX);
         imgui.PopStyleColor(5);
         imgui.PopStyleVar();
-        ui.hot = ui.hot or imgui.IsItemActive() or imgui.IsItemHovered();
+        -- Only while the mouse is working the field, the way the editor's rows
+        -- below feed it: IsItemActive stays true for the whole time the caret
+        -- sits in the box, and on its own it would leave the map unable to
+        -- zoom, pan or be clicked for as long as a search was being typed --
+        -- including, with /um focus on, the frame the map opens in.  Held mouse
+        -- included, so dragging a selection across the text does not pan.
+        ui.hot = ui.hot or imgui.IsItemHovered()
+                 or (imgui.IsItemActive() and imgui.IsMouseDown(0));
 
         -- Reframed on every change to the text, so narrowing a search closes in
         -- on what is left.  Only on a change: refitting every frame would fight
@@ -2459,15 +2527,13 @@ local function draw_map(view_w, view_h)
             if (ui.search_at ~= '') then
                 zoom_to_search(view_w, view_h);
             else
-                ui.zoom  = cover;
-                ui.pan_x = (map_w * cover - view_w) / 2;
-                ui.pan_y = (map_h * cover - view_h) / 2;
+                zoom_to_map(view_w, view_h);
                 ui.focus = nil;
             end
         end
 
         -- Toggle icons, sharing the search box's line.
-        local tx_at = search_x + FIELD_W + TOGGLE_GAP;
+        local tx_at = search_x + search_w + TOGGLE_GAP;
         for _, file in ipairs(TOGGLES) do
             local hit, tw = icon_button('toggle_' .. file, file,
                                         tx_at, UI_MARGIN, row_h,
