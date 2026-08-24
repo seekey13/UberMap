@@ -353,6 +353,11 @@ local default_settings = T{
     -- included, so it is only worth opening the map into if you came to look
     -- something up.
     focus  = false,
+    -- Uberwarp narrates every step of a warp it runs into the log, errors
+    -- included.  The map is what asked for the warp, so the running commentary
+    -- is noise by the time it arrives; /um quiet turns it back on when a warp
+    -- is misbehaving and the reason matters.
+    quiet  = true,
 };
 -- Loaded from a copy of the defaults, because the library hands its own default
 -- table back for a key the file has no entry for: without the copy the first
@@ -372,6 +377,9 @@ local function fill_defaults()
     -- as a real boolean so the next save records the answer either way.
     if (cfg.guide == nil) then
         cfg.guide = true;
+    end
+    if (cfg.quiet == nil) then
+        cfg.quiet = true;
     end
     -- The map used to write the Campaign zones '(S)' and rewrite them to '[S]'
     -- on the way out; it names them '[S]' throughout now.  A favorite saved
@@ -2867,6 +2875,15 @@ ashita.events.register('command', 'ubermap_command', function (e)
         return;
     end
 
+    if (sub == 'quiet') then
+        cfg.quiet = not cfg.quiet;
+        settings.save();
+        notify(('Uberwarp chat lines: %s'):fmt(cfg.quiet
+            and 'hidden, including its errors'
+            or 'shown'));
+        return;
+    end
+
     if (sub == 'edit') then
         ui.edit = not ui.edit;
         if (ui.edit) then
@@ -2963,4 +2980,40 @@ ashita.events.register('key', 'ubermap_key', function (e)
     -- went away.
     ui.is_open[1] = false;
     e.blocked = true;
+end);
+
+--[[
+* event: text_in
+* desc : Drops Uberwarp's own chat lines while /um quiet is on.  Every line it
+*        writes is stamped '[Uberwarp:<module>]', so a line is its own only when
+*        both names are on it: matching the plugin name alone would swallow
+*        anything else that so much as says the word, this addon included.  The
+*        two are looked for apart rather than as one string because the plugin
+*        writes a colour byte between them.  Blocked rather than emptied, which
+*        keeps the line out of the log file as well.
+--]]
+-- The task modules Uberwarp names itself after, straight out of the plugin.
+local UW_MODULE = T{
+    'TaskHelper', 'HomePoint', 'SurvivalGuide', 'UnityWarp', 'CrystalWarp',
+    'AbysseaConflux', 'AbysseaWarp', 'CastoffPoint', 'CavernousMaw', 'Elvorseal',
+    'EschaEnter', 'EschanPortal', 'ProtoWaypoint', 'RunicPortal', 'ScalableArea',
+    'Waypoint', 'WaitForZone', 'Wait',
+};
+
+ashita.events.register('text_in', 'ubermap_text_in', function (e)
+    if (not cfg.quiet) then
+        return;
+    end
+
+    local msg = e.message_modified;
+    if (not msg:contains('Uberwarp')) then
+        return;
+    end
+
+    for _, m in ipairs(UW_MODULE) do
+        if (msg:contains(m)) then
+            e.blocked = true;
+            return;
+        end
+    end
 end);
