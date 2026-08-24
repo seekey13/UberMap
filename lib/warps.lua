@@ -36,19 +36,14 @@ return {
         { type = 'home', label = 'Home Point #2', pos = '(E-6)' },
         { type = 'home', label = 'Home Point #3', pos = '(L-6)' },
     },
-    ["Alzadaal Undersea Ruins"] = {
-        { type = 'unity', label = 'Unity Concord', pos = '(G-9)' },
-    },
     ["Arrapago Reef"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(H-11)' },
     },
     ["Attohwa Chasm"] = {
-        { type = 'home',  label = 'Home Point #1', pos = '(G-6)' },
-        { type = 'unity', label = 'Unity Concord', pos = '(F-7)' },
+        { type = 'home', label = 'Home Point #1', pos = '(G-6)' },
     },
     ["Aydeewa Subterrane"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(H-10)' },
-        { type = 'unity', label = 'Unity Concord',  pos = '(H-10)' },
     },
     ["Bastok Markets"] = {
         { type = 'home', label = 'Home Point #1 (E)', pos = '(F-9)' },
@@ -92,11 +87,9 @@ return {
     },
     ["Bibiki Bay"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(H-7)' },
-        { type = 'unity', label = 'Unity Concord',  pos = '(I-6)' },
     },
     ["Bostaunieux Oubliette"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(I-6)' },
-        { type = 'unity', label = 'Unity Concord',  pos = '(D-9)' },
     },
     ["Buburimu Peninsula"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(E-7)' },
@@ -105,16 +98,13 @@ return {
     ["Caedarva Mire"] = {
         { type = 'home',  label = 'Home Point #1',  pos = '(E-9)' },
         { type = 'guide', label = 'Survival Guide', pos = '(G-6)' },
-        { type = 'unity', label = 'Unity Concord',  pos = '(H-9)' },
     },
     ["Cape Teriggan"] = {
         { type = 'home',  label = 'Home Point #1',  pos = '(F-5)' },
         { type = 'guide', label = 'Survival Guide', pos = '(G-8)' },
-        { type = 'unity', label = 'Unity Concord',  pos = '(H-7)' },
     },
     ["Carpenters' Landing"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(J-10)' },
-        { type = 'unity', label = 'Unity Concord',  pos = '(I-11)' },
     },
     ["Castle Oztroja"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(F-8)' },
@@ -147,9 +137,8 @@ return {
         { type = 'guide', label = 'Survival Guide', pos = '(J-7)' },
     },
     ["Den of Rancor"] = {
-        { type = 'home',  label = 'Home Point #1', pos = '(E-4)' },
-        { type = 'home',  label = 'Home Point #2', pos = '(I-8)' },
-        { type = 'unity', label = 'Unity Concord', pos = '(G-12)' },
+        { type = 'home', label = 'Home Point #1', pos = '(E-4)' },
+        { type = 'home', label = 'Home Point #2', pos = '(I-8)' },
     },
     ["Dragon's Aery"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(F-9)' },
@@ -170,7 +159,6 @@ return {
     },
     ["Eastern Altepa Desert"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(F-10)' },
-        { type = 'unity', label = 'Unity Concord',  pos = '(J-8)' },
     },
     ["Fei'Yin"] = {
         { type = 'home',  label = 'Home Point #1', pos = '(K-8)' },
@@ -207,7 +195,6 @@ return {
     },
     ["Gustav Tunnel"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(K-7)' },
-        { type = 'unity', label = 'Unity Concord',  pos = '(H-10)' },
     },
     ["Halvung"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(N-5)' },
@@ -215,7 +202,6 @@ return {
     ["Ifrit's Cauldron"] = {
         { type = 'home',  label = 'Home Point #1',  pos = '(G-6)' },
         { type = 'guide', label = 'Survival Guide', pos = '(K-9)' },
-        { type = 'unity', label = 'Unity Concord',  pos = '(K-7)' },
     },
     ["Inner Horutoto Ruins"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(I-7)' },
@@ -246,7 +232,6 @@ return {
     },
     ["Kuftal Tunnel"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(H-9)' },
-        { type = 'unity', label = 'Unity Concord',  pos = '(G-3)' },
     },
     ["La Theine Plateau"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(M-8)' },
@@ -254,7 +239,6 @@ return {
     },
     ["Labyrinth of Onzozo"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(G-11)' },
-        { type = 'unity', label = 'Unity Concord',  pos = '(G-6)' },
     },
     ["Leafallia"] = {
         { type = 'home', label = 'Home Point #1', pos = '(H-8)' },
@@ -268,7 +252,6 @@ return {
     },
     ["Lufaise Meadows"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(E-8)' },
-        { type = 'unity', label = 'Unity Concord',  pos = '(K-8)' },
     },
     ["Mamook"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(J-7)' },
@@ -296,14 +279,12 @@ return {
     ["Misareaux Coast"] = {
         { type = 'home',  label = 'Home Point #1',  pos = '(G-5)' },
         { type = 'guide', label = 'Survival Guide', pos = '(G-7)' },
-        { type = 'unity', label = 'Unity Concord',  pos = '(F-7)' },
     },
     ["Morimar Basalt Fields"] = {
         { type = 'home', label = 'Home Point #1', pos = '(E-5)' },
     },
     ["Mount Zhayolm"] = {
-        { type = 'home',  label = 'Home Point #1', pos = '(D-8)' },
-        { type = 'unity', label = 'Unity Concord', pos = '(C-7)' },
+        { type = 'home', label = 'Home Point #1', pos = '(D-8)' },
     },
     ["Nashmau"] = {
         { type = 'home',  label = 'Home Point #1',  pos = '(G-8)' },
@@ -378,9 +359,8 @@ return {
         { type = 'unity', label = 'Unity Concord',  pos = '(I-8)' },
     },
     ["Quicksand Caves"] = {
-        { type = 'home',  label = 'Home Point #1', pos = '(D-5)' },
-        { type = 'home',  label = 'Home Point #2', pos = '(C-8)' },
-        { type = 'unity', label = 'Unity Concord', pos = '(J-5)' },
+        { type = 'home', label = 'Home Point #1', pos = '(D-5)' },
+        { type = 'home', label = 'Home Point #2', pos = '(C-8)' },
     },
     ["Ra'Kaznar Inner Court"] = {
         { type = 'home', label = 'Home Point #1', pos = '(I-8)' },
@@ -401,7 +381,6 @@ return {
     },
     ["Ro'Maeve"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(H-6)' },
-        { type = 'unity', label = 'Unity Concord',  pos = '(H-11)' },
     },
     ["Rolanberry Fields"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(G-6)' },
@@ -436,7 +415,6 @@ return {
     },
     ["Sea Serpent Grotto"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(M-3)' },
-        { type = 'unity', label = 'Unity Concord',  pos = '(L-5)' },
     },
     ["Selbina"] = {
         { type = 'home', label = 'Home Point #1', pos = '(I-8)' },
@@ -466,11 +444,9 @@ return {
     },
     ["Temple of Uggalepih"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(F-6)' },
-        { type = 'unity', label = 'Unity Concord',  pos = '(I-5)' },
     },
     ["The Boyahda Tree"] = {
-        { type = 'home',  label = 'Home Point #1', pos = '(J-12)' },
-        { type = 'unity', label = 'Unity Concord', pos = '(F-6)' },
+        { type = 'home', label = 'Home Point #1', pos = '(J-12)' },
     },
     ["The Eldieme Necropolis"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(J-9)' },
@@ -483,7 +459,6 @@ return {
     },
     ["The Sanctuary of Zi'Tah"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(H-9)' },
-        { type = 'unity', label = 'Unity Concord',  pos = '(K-12)' },
     },
     ["The Shrine of Ru'Avitau"] = {
         { type = 'home', label = 'Home Point #1', pos = '(H-7)' },
@@ -493,12 +468,11 @@ return {
         { type = 'guide', label = 'Survival Guide', pos = '(F-5)' },
     },
     ["Uleguerand Range"] = {
-        { type = 'home',  label = 'Home Point #1', pos = '(H-7)' },
-        { type = 'home',  label = 'Home Point #2', pos = '(J-9)' },
-        { type = 'home',  label = 'Home Point #3', pos = '(K-7)' },
-        { type = 'home',  label = 'Home Point #4', pos = '(H-5)' },
-        { type = 'home',  label = 'Home Point #5', pos = '(G-9)' },
-        { type = 'unity', label = 'Unity Concord', pos = '(E-9)' },
+        { type = 'home', label = 'Home Point #1', pos = '(H-7)' },
+        { type = 'home', label = 'Home Point #2', pos = '(J-9)' },
+        { type = 'home', label = 'Home Point #3', pos = '(K-7)' },
+        { type = 'home', label = 'Home Point #4', pos = '(H-5)' },
+        { type = 'home', label = 'Home Point #5', pos = '(G-9)' },
     },
     ["Upper Delkfutt's Tower"] = {
         { type = 'home', label = 'Home Point #1', pos = '(F-9)' },
@@ -514,14 +488,12 @@ return {
     },
     ["Valley of Sorrows"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(F-8)' },
-        { type = 'unity', label = 'Unity Concord',  pos = '(F-8)' },
     },
     ["Vunkerl Inlet [S]"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(E-7)' },
     },
     ["Wajaom Woodlands"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(C-8)' },
-        { type = 'unity', label = 'Unity Concord',  pos = '(I-10)' },
     },
     ["West Ronfaure"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(G-9)' },
@@ -538,7 +510,6 @@ return {
     },
     ["Western Altepa Desert"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(K-7)' },
-        { type = 'unity', label = 'Unity Concord',  pos = '(I-7)' },
     },
     ["Windurst Walls"] = {
         { type = 'home', label = 'Home Point #1',     pos = '(F-7)' },
@@ -566,7 +537,6 @@ return {
     },
     ["Yhoator Jungle"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(I-8)' },
-        { type = 'unity', label = 'Unity Concord',  pos = '(J-7)' },
     },
     ["Yorcia Weald"] = {
         { type = 'home', label = 'Home Point #1', pos = '(E-9)' },
@@ -576,7 +546,6 @@ return {
     },
     ["Yuhtunga Jungle"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(G-11)' },
-        { type = 'unity', label = 'Unity Concord',  pos = '(F-11)' },
     },
     ["Zeruhn Mines"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(I-7)' },
