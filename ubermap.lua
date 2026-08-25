@@ -161,14 +161,20 @@ local COL_OUTLINE     = 0xFF000000;
 local COL_OUTLINE_DIM = 0x40000000;
 
 -- Map text, the stamp behind it, and the fill under a warp row the cursor is
--- on.  The _DIM pair is the same colours at a quarter alpha, which is what
--- everything outside the focused group draws at; the stamp fades with the glyph
--- or it outlives the text it was behind.
+-- on.  The _DIM pair is the same colours at DIM_ALPHA, which is what everything
+-- outside the focused group draws at; the stamp fades with the glyph or it
+-- outlives the text it was behind.
+--
+-- Packed here as the defaults the pickers start from, and repacked by
+-- repack_cols below whenever one of them is moved.  Not constants, for that
+-- reason, but everything downstream reads them as though they were: one pack
+-- per drag rather than one per string per frame.
 local COL_TEXT      = 0xFF000000;  -- black
 local COL_TEXT_DIM  = 0x40000000;
 local COL_STAMP     = 0x80FFFFFF;  -- white, half alpha
 local COL_STAMP_DIM = 0x20FFFFFF;
 local COL_HOVER     = 0x2EFFFFFF;  -- white, a fifth of an alpha
+local DIM_ALPHA     = 0.25;
 
 local READOUT_SCALE = 2.0;
 
@@ -221,6 +227,11 @@ local TOGGLE_NAME  = T{ ['Crystal.png'] = 'Home Points',
                         ['Guide.png']   = 'Survival Guides',
                         ['Unity.png']   = 'Unity Concords' };
 local TOGGLE_GAP   = 6;   -- screen pixels between toggles
+local PICK_LABEL_GAP = 2;  -- screen pixels between a picker's name and its swatch
+-- Screen pixels between one picker and the next.  Wider than TOGGLE_GAP: the
+-- toggles read as one strip of icons, while each picker carries a name of its
+-- own and needs the room to sit under it.
+local PICK_GAP       = 20;
 local COL_ICON_OFF = 0x40FFFFFF;  -- 25% opacity, i.e. 75% transparent
 
 -- Warp type -> the toggle that lists it, so dimming a toggle drops those rows
@@ -341,6 +352,12 @@ local OVERVIEW    = T{};
 local default_settings = T{
     mss    = false,  -- send through Multisend
     toggle = T{ },   -- toggle file name -> true when dimmed off
+    -- The three colour pickers, as the { r, g, b, a } floats ImGui edits in
+    -- place.  Their defaults are the packed constants above, unpacked: a file
+    -- that has never been near a picker draws exactly what it always did.
+    col_text  = T{ 0.0, 0.0, 0.0, 1.0 },   -- map text
+    col_stamp = T{ 1.0, 1.0, 1.0, 0.5 },   -- the stamp behind it
+    col_hover = T{ 1.0, 1.0, 1.0, 0.18 },  -- fill under the row the cursor is on
     favs   = T{ },   -- saved warp rows, in the order they are listed in
     widget = false,  -- the gamepad favorites widget is on
     -- The EXP Guide errand.  On by default, unlike the widget: that one takes
@@ -366,12 +383,44 @@ local default_settings = T{
 -- unload, so nothing is lost if the game goes down first.
 local cfg = settings.load(default_settings:copy(true));
 
+--[[
+* Packs a picker's { r, g, b, a } floats into the ABGR word the draw list takes,
+* fading the alpha by 'fade' when given.
+--]]
+local function pack_col(c, fade)
+    local function q(v)
+        return math.floor(math.min(math.max(v, 0), 1) * 255 + 0.5);
+    end
+    return q(c[4] * (fade or 1)) * 0x1000000
+         + q(c[3]) * 0x10000 + q(c[2]) * 0x100 + q(c[1]);
+end
+
+--[[
+* Re-packs the five words the map draws text and hovers with from the three
+* pickers.  Called once at load and once at the end of a picker drag, rather
+* than per string per frame: the colours only move when a picker does.
+--]]
+local function repack_cols()
+    COL_TEXT      = pack_col(cfg.col_text);
+    COL_TEXT_DIM  = pack_col(cfg.col_text, DIM_ALPHA);
+    COL_STAMP     = pack_col(cfg.col_stamp);
+    COL_STAMP_DIM = pack_col(cfg.col_stamp, DIM_ALPHA);
+    COL_HOVER     = pack_col(cfg.col_hover);
+end
+
 -- A settings file written before a key existed is handed back as it was saved,
 -- without the new default filled in, so a character who used the map before
 -- favorites would otherwise index a nil table.
 local function fill_defaults()
     cfg.toggle = cfg.toggle or T{};
     cfg.favs   = cfg.favs   or T{};
+    -- A settings file written before the pickers existed carries no colours,
+    -- and a picker handed a nil table would index it on the first frame.  Copied
+    -- rather than shared, so editing one does not write the defaults above.
+    cfg.col_text  = cfg.col_text  or default_settings.col_text:copy(true);
+    cfg.col_stamp = cfg.col_stamp or default_settings.col_stamp:copy(true);
+    cfg.col_hover = cfg.col_hover or default_settings.col_hover:copy(true);
+    repack_cols();
     -- A settings file written before the errand existed has no entry for it,
     -- and a nil there is not the same as off: the default is on.  Written back
     -- as a real boolean so the next save records the answer either way.
@@ -406,6 +455,8 @@ local ui = T{
     search_at   = '',        -- search text the view was last framed for
     focus_next  = false,     -- hand the search box the keyboard on the next frame
     hot         = false,     -- cursor was over a widget, not the map
+    config      = false,     -- the colour pickers are on screen
+    col_dirty   = false,     -- a colour picker has been moved this drag
     dragging    = false,
     drag_x      = 0,
     drag_y      = 0,
@@ -2633,6 +2684,60 @@ local function draw_map(view_w, view_h)
             end
         end
 
+        -- Colour pickers, pinned to the viewport's top-right corner and sharing
+        -- the toolbar row's height.  ImGui writes into the tables cfg keeps, and
+        -- repack_cols turns those back into the words the draw lists take, so
+        -- the map retints as a picker moves.  NoInputs leaves only the swatch,
+        -- which opens the picker on click; NoLabel forwards the name to that
+        -- popup; the name is stamped over the swatch by hand instead, outlined
+        -- because it sits on the map.  Behind '/um config' rather than the point
+        -- editor: recolouring the map is something a player does to their own
+        -- map, while the editor is for moving the markers everybody gets.
+        if (ui.config) then
+            local pick_flags = bit.bor(ImGuiColorEditFlags_NoInputs,
+                                       ImGuiColorEditFlags_NoLabel,
+                                       ImGuiColorEditFlags_AlphaBar,
+                                       ImGuiColorEditFlags_AlphaPreview);
+            imgui.PushStyleVar(ImGuiStyleVar_FramePadding,
+                               { 6, math.max(0, (row_h - imgui.GetFontSize()) / 2) });
+            local picks = { { 'Text',  cfg.col_text },
+                            { 'Outline', cfg.col_stamp },
+                            { 'Hover', cfg.col_hover } };
+            -- A label wider than its swatch widens that column rather than
+            -- running into its neighbour, so the strip stays right-anchored.
+            local total, lbl_h = 0, 0;
+            for _, pick in ipairs(picks) do
+                local lw, lh = imgui.CalcTextSize(pick[1]);
+                pick[3] = math.max(row_h, lw);
+                total   = total + pick[3];
+                lbl_h   = math.max(lbl_h, lh);
+            end
+            local ldl    = imgui.GetWindowDrawList();
+            local pick_x = view_w - UI_MARGIN - total - (#picks - 1) * PICK_GAP;
+            for _, pick in ipairs(picks) do
+                local lw = imgui.CalcTextSize(pick[1]);
+                outlined_text(ldl, origin_x + pick_x + (pick[3] - lw) / 2,
+                              origin_y + UI_MARGIN, pick[1]);
+                imgui.SetCursorPos({ pick_x + (pick[3] - row_h) / 2,
+                                     UI_MARGIN + lbl_h + PICK_LABEL_GAP });
+                if (imgui.ColorEdit4(pick[1], pick[2], pick_flags)) then
+                    -- Repacked on the frame it moved, so the map retints under
+                    -- the picker rather than at the end of the drag.
+                    repack_cols();
+                    ui.col_dirty = true;
+                end
+                ui.hot = ui.hot or imgui.IsItemActive() or imgui.IsItemHovered();
+                pick_x = pick_x + pick[3] + PICK_GAP;
+            end
+            -- One write per drag rather than one per frame of it: the picker
+            -- reports a change on every frame the mouse moves inside it.
+            if (ui.col_dirty and not imgui.IsMouseDown(0)) then
+                ui.col_dirty = false;
+                settings.save();
+            end
+            imgui.PopStyleVar();
+        end
+
         -- Everything below the toolbar row stacks from here.
         local edit_y = UI_MARGIN + row_h + TOGGLE_GAP;
 
@@ -2881,6 +2986,19 @@ ashita.events.register('command', 'ubermap_command', function (e)
         notify(('Uberwarp chat lines: %s'):fmt(cfg.quiet
             and 'hidden, including its errors'
             or 'shown'));
+        return;
+    end
+
+    if (sub == 'config') then
+        ui.config = not ui.config;
+        -- Opens the map with it: the pickers are drawn on the map, so turning
+        -- them on with the map shut would put them nowhere.
+        if (ui.config) then
+            ui.is_open[1] = true;
+        end
+        notify(('colour pickers: %s'):fmt(ui.config
+            and 'on, top-right of the map'
+            or 'off'));
         return;
     end
 
