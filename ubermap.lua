@@ -236,11 +236,6 @@ local TOGGLE_NAME  = T{ ['Crystal.png'] = 'Home Points',
                         ['Guide.png']   = 'Survival Guides',
                         ['Unity.png']   = 'Unity Concords' };
 local TOGGLE_GAP   = 6;   -- screen pixels between toggles
-local PICK_LABEL_GAP = 2;  -- screen pixels between a picker's name and its swatch
--- Screen pixels between one picker and the next.  Wider than TOGGLE_GAP: the
--- toggles read as one strip of icons, while each picker carries a name of its
--- own and needs the room to sit under it.
-local PICK_GAP       = 20;
 
 -- What the Size box will take, in screen pixels, and what it means by "leave it
 -- alone".  There is no face to go with it: choosing one means adding a TTF to
@@ -2753,49 +2748,68 @@ local function draw_map(view_w, view_h)
             end
         end
 
-        -- Colour pickers, pinned to the viewport's top-right corner and sharing
-        -- the toolbar row's height.  ImGui writes into the tables cfg keeps, and
-        -- repack_cols turns those back into the words the draw lists take, so
-        -- the map retints as a picker moves.  NoInputs leaves only the swatch,
-        -- which opens the picker on click; NoLabel forwards the name to that
-        -- popup; the name is stamped over the swatch by hand instead, outlined
-        -- because it sits on the map.  Behind '/um config' rather than the point
-        -- editor: recolouring the map is something a player does to their own
-        -- map, while the editor is for moving the markers everybody gets.
+        -- Config panel, pinned to the viewport's top-right corner: the Size box
+        -- and the four colour pickers, one to a row.  ImGui writes into the
+        -- tables cfg keeps, and repack_cols turns those back into the words the
+        -- draw lists take, so the map retints as a picker moves.  NoInputs
+        -- leaves only the swatch, which opens the picker on click; the name
+        -- ImGui draws beside it labels the row, so nothing has to be stamped by
+        -- hand the way it did over the map.  Widgets are left at ImGui's own
+        -- frame height rather than the toolbar's doubled one: a stacked panel
+        -- has the room, so nothing needs enlarging to stay hittable.  Behind
+        -- '/um config' rather than the point editor: recolouring the map is
+        -- something a player does to their own map, while the editor is for
+        -- moving the markers everybody gets.
         if (ui.config) then
             local pick_flags = bit.bor(ImGuiColorEditFlags_NoInputs,
-                                       ImGuiColorEditFlags_NoLabel,
                                        ImGuiColorEditFlags_AlphaBar,
                                        ImGuiColorEditFlags_AlphaPreview);
-            imgui.PushStyleVar(ImGuiStyleVar_FramePadding,
-                               { 6, math.max(0, (row_h - imgui.GetFontSize()) / 2) });
             local picks = { { 'Text',       cfg.col_text },
                             { 'Outline',    cfg.col_outline },
                             { 'Background', cfg.col_bg },
                             { 'Hover',      cfg.col_hover } };
-            -- A label wider than its swatch widens that column rather than
-            -- running into its neighbour, so the strip stays right-anchored.
-            local total, lbl_h = 0, 0;
+            -- The widest row decides the panel's width: the Size box wants two
+            -- digits and the pair of step buttons InputInt puts on the end of
+            -- it, a swatch is one frame square, and every row carries its name
+            -- to the right of that.
+            local fh      = imgui.GetFrameHeight();
+            local size_w  = fh * 2 + imgui.CalcTextSize('000');
+            local panel_w = size_w + POPUP_PAD + imgui.CalcTextSize('Size');
             for _, pick in ipairs(picks) do
-                local lw, lh = text_size(pick[1]);
-                pick[3] = math.max(row_h, lw);
-                total   = total + pick[3];
-                lbl_h   = math.max(lbl_h, lh);
+                panel_w = math.max(panel_w,
+                                   fh + POPUP_PAD + imgui.CalcTextSize(pick[1]));
             end
-            local ldl = imgui.GetWindowDrawList();
+            panel_w = panel_w + POPUP_PAD * 2;
+            local pitch   = fh + TOGGLE_GAP;
+            local panel_h = pitch * (#picks + 1) - TOGGLE_GAP + POPUP_PAD * 2;
+            local px      = view_w - UI_MARGIN - panel_w;
+            local py      = UI_MARGIN;
 
-            -- Size box, first on the strip and ahead of the colours.  Wide
-            -- enough for two digits and the pair of step buttons InputInt puts
-            -- on the end of it.
-            local size_w = row_h * 2 + imgui.CalcTextSize('000');
-            local size_x = view_w - UI_MARGIN - total - (#picks - 1) * PICK_GAP
-                           - size_w - PICK_GAP;
-            local slw    = text_size('Size');
-            outlined_text(ldl, origin_x + size_x + (size_w - slw) / 2,
-                          origin_y + UI_MARGIN, 'Size');
-            imgui.SetCursorPos({ size_x, UI_MARGIN + lbl_h + PICK_LABEL_GAP });
+            -- Drawn like the warp and favorites panels rather than as a window
+            -- of its own: this one lives inside the map child, and a plate under
+            -- it is what keeps ImGui's own label text off the map art.
+            local ldl = imgui.GetWindowDrawList();
+            ldl:AddRectFilled({ origin_x + px, origin_y + py },
+                              { origin_x + px + panel_w, origin_y + py + panel_h },
+                              COL_POPUP_BG, 0, ImDrawCornerFlags_All);
+            ldl:AddRect({ origin_x + px, origin_y + py },
+                        { origin_x + px + panel_w, origin_y + py + panel_h },
+                        COL_OUTLINE, 0, ImDrawCornerFlags_All, ICON_BORDER);
+            -- The panel is a solid block over the map, so the gaps between its
+            -- rows have to swallow a drag as much as the widgets do.  Tested as
+            -- a rect for that reason rather than off any one item.
+            ui.hot = ui.hot
+                     or (mouse_x >= origin_x + px
+                         and mouse_x <= origin_x + px + panel_w
+                         and mouse_y >= origin_y + py
+                         and mouse_y <= origin_y + py + panel_h);
+
+            local row_x, row_y = px + POPUP_PAD, py + POPUP_PAD;
+
+            -- Size box, first row of the panel.
+            imgui.SetCursorPos({ row_x, row_y });
             imgui.SetNextItemWidth(size_w);
-            if (imgui.InputInt('##ubermap_font_px', ui.font_px, 1, 4)) then
+            if (imgui.InputInt('Size##ubermap_font_px', ui.font_px, 1, 4)) then
                 -- Clamped rather than trusted: the box takes a typed number as
                 -- well as the step buttons, and a zero or a four-digit one would
                 -- be a map with no labels on it either way.  Written back so the
@@ -2805,23 +2819,19 @@ local function draw_map(view_w, view_h)
                 ui.font_px[1] = cfg.font_px;
                 ui.cfg_dirty  = true;
             end
-            ui.hot = ui.hot or imgui.IsItemActive() or imgui.IsItemHovered();
+            -- Held while a picker's popup is open, which is outside the panel's
+            -- own rect and so is not covered by the test above.
+            ui.hot = ui.hot or imgui.IsItemActive();
 
-            local pick_x = size_x + size_w + PICK_GAP;
-            for _, pick in ipairs(picks) do
-                local lw = text_size(pick[1]);
-                outlined_text(ldl, origin_x + pick_x + (pick[3] - lw) / 2,
-                              origin_y + UI_MARGIN, pick[1]);
-                imgui.SetCursorPos({ pick_x + (pick[3] - row_h) / 2,
-                                     UI_MARGIN + lbl_h + PICK_LABEL_GAP });
+            for i, pick in ipairs(picks) do
+                imgui.SetCursorPos({ row_x, row_y + pitch * i });
                 if (imgui.ColorEdit4(pick[1], pick[2], pick_flags)) then
                     -- Repacked on the frame it moved, so the map retints under
                     -- the picker rather than at the end of the drag.
                     repack_cols();
                     ui.cfg_dirty = true;
                 end
-                ui.hot = ui.hot or imgui.IsItemActive() or imgui.IsItemHovered();
-                pick_x = pick_x + pick[3] + PICK_GAP;
+                ui.hot = ui.hot or imgui.IsItemActive();
             end
             -- One write per drag rather than one per frame of it: a colour
             -- picker reports a change on every frame the mouse moves inside it,
@@ -2832,7 +2842,6 @@ local function draw_map(view_w, view_h)
                 ui.cfg_dirty = false;
                 settings.save();
             end
-            imgui.PopStyleVar();
         end
 
         -- Everything below the toolbar row stacks from here.
