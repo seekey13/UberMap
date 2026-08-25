@@ -440,9 +440,9 @@ local function pack_col(c, fade)
 end
 
 --[[
-* Re-packs the five words the map draws text and hovers with from the three
-* pickers.  Called once at load and once at the end of a picker drag, rather
-* than per string per frame: the colours only move when a picker does.
+* Re-packs the seven words the map draws text, plates and hovers with from the
+* four pickers.  Called once at load and once on the frame a picker moves,
+* rather than per string per frame: the colours only move when a picker does.
 --]]
 local function repack_cols()
     COL_TEXT      = pack_col(cfg.col_text);
@@ -493,12 +493,25 @@ local function fill_defaults()
     cfg.toggle = cfg.toggle or T{};
     cfg.favs   = cfg.favs   or T{};
     -- A settings file written before the pickers existed carries no colours,
-    -- and a picker handed a nil table would index it on the first frame.  Copied
-    -- rather than shared, so editing one does not write the defaults above.
-    cfg.col_text    = cfg.col_text    or default_settings.col_text:copy(true);
-    cfg.col_outline = cfg.col_outline or default_settings.col_outline:copy(true);
-    cfg.col_hover   = cfg.col_hover   or default_settings.col_hover:copy(true);
-    cfg.col_bg      = cfg.col_bg      or default_settings.col_bg:copy(true);
+    -- and a picker handed a nil table would index it on the first frame.  The
+    -- shape is checked rather than only the nil, for the same reason cfg.font is
+    -- checked against the list below: the file is hand-editable, and a row of
+    -- three floats would throw out of pack_col during login, from inside the
+    -- settings callback.  Copied rather than shared, so editing one does not
+    -- write the defaults above.
+    local function fill_col(name)
+        local c = cfg[name];
+        if (type(c) == 'table' and type(c[1]) == 'number'
+            and type(c[2]) == 'number' and type(c[3]) == 'number'
+            and type(c[4]) == 'number') then
+            return c;
+        end
+        return default_settings[name]:copy(true);
+    end
+    cfg.col_text    = fill_col('col_text');
+    cfg.col_outline = fill_col('col_outline');
+    cfg.col_hover   = fill_col('col_hover');
+    cfg.col_bg      = fill_col('col_bg');
     -- Zero passes through the clamp untouched: it is the stand-in for ImGui's
     -- own size, which is not known until there is a frame to ask.
     cfg.font_px = (cfg.font_px == nil or cfg.font_px == FONT_PX.own)
@@ -547,6 +560,7 @@ local ui = T{
     hot         = false,     -- cursor was over a widget, not the map
     config      = false,     -- the colour pickers are on screen
     cfg_dirty   = false,     -- a picker on the config strip has been moved
+    cfg_typing  = false,     -- the Size box held the keyboard on the last frame
     dragging    = false,
     drag_x      = 0,
     drag_y      = 0,
@@ -1563,10 +1577,10 @@ end
 * The scale is set around the measurement and put straight back: it is a window
 * property, so leaving it on would take every widget on the toolbar with it.
 --]]
-local function text_size(text, scale)
+local function text_size(text)
     local face = FONT_PX.face();
     if (face) then imgui.PushFont(face); end
-    imgui.SetWindowFontScale(scale or ui.font_scale);
+    imgui.SetWindowFontScale(ui.font_scale);
     local w, h = imgui.CalcTextSize(text);
     imgui.SetWindowFontScale(1.0);
     if (face) then imgui.PopFont(); end
@@ -2394,9 +2408,12 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
             -- label starts at one x and every '(F-11)' at another.
             local labw, posw = 0, 0;
             for _, r in ipairs(rows) do
-                labw = math.max(labw, imgui.CalcTextSize(r.label));
+                -- Parenthesised: CalcTextSize hands back a height as well, and
+                -- last in an argument list both of them would expand into the
+                -- max.
+                labw = math.max(labw, (imgui.CalcTextSize(r.label)));
                 if (r.pos ~= nil) then
-                    posw = math.max(posw, imgui.CalcTextSize(r.pos));
+                    posw = math.max(posw, (imgui.CalcTextSize(r.pos)));
                 end
             end
             local lab_x = POPUP_PAD * 2 + POPUP_ICON;
@@ -2843,9 +2860,10 @@ local function draw_map(view_w, view_h)
             -- InputInt spends the width it is given on the field and both step
             -- buttons, with ImGui's own spacing and frame padding coming out of
             -- the field's share, so the digits are asked for with room around
-            -- them rather than flush: two digits' worth of slack covers that
-            -- padding at every font size the atlas is built at.
-            local size_w  = fh * 2 + imgui.CalcTextSize('0000');
+            -- them rather than flush: three digits' worth of slack covers that
+            -- padding at every font size the atlas is built at, where two left
+            -- the second digit of a two-digit size clipped.
+            local size_w  = fh * 2 + imgui.CalcTextSize('00000');
             local panel_w = size_w + POPUP_PAD + imgui.CalcTextSize('Size');
             for _, pick in ipairs(picks) do
                 panel_w = math.max(panel_w,
@@ -2923,9 +2941,14 @@ local function draw_map(view_w, view_h)
                 ui.font_px[1] = cfg.font_px;
                 ui.cfg_dirty  = true;
             end
-            -- Held while a picker's popup is open, which is outside the panel's
-            -- own rect and so is not covered by the test above.
-            ui.hot = ui.hot or imgui.IsItemActive();
+            -- Held while the box has the keyboard, which is outside the panel's
+            -- own rect once a picker popup is up and so is not covered by the
+            -- test above.  Also what defers the write: InputInt reports a change
+            -- per keystroke, so a size typed a digit at a time would otherwise
+            -- be a save per digit -- and a '2' on the way to '24' clamps up to
+            -- the minimum and snaps the map to it mid-type.
+            ui.cfg_typing = imgui.IsItemActive();
+            ui.hot        = ui.hot or ui.cfg_typing;
 
             for i, pick in ipairs(picks) do
                 imgui.SetCursorPos({ row_x, row_y + pitch * (i + 1) });
@@ -2937,15 +2960,9 @@ local function draw_map(view_w, view_h)
                 end
                 ui.hot = ui.hot or imgui.IsItemActive();
             end
-            -- One write per drag rather than one per frame of it: a colour
-            -- picker reports a change on every frame the mouse moves inside it,
-            -- and the Size box does the same for as long as a step button is
-            -- held down.  A number typed into the box saves on the next frame,
-            -- since nothing is held for that.
-            if (ui.cfg_dirty and not imgui.IsMouseDown(0)) then
-                ui.cfg_dirty = false;
-                settings.save();
-            end
+            -- The write itself is flushed from d3d_present rather than here, so
+            -- a change still reaches the file on the frame the panel or the map
+            -- is closed out from under it.
         end
 
         -- Everything below the toolbar row stacks from here.
@@ -3045,16 +3062,33 @@ ashita.events.register('d3d_present', 'ubermap_present', function ()
     pump_escape(now);
     pump_guide(now);
 
+    -- One write per drag rather than one per frame of it: a colour picker
+    -- reports a change on every frame the mouse moves inside it, and the Size
+    -- box does the same for every keystroke typed into it and for as long as a
+    -- step button is held down.  Checked here rather than on the panel, and
+    -- against the frame before it, so a change still lands on the frame the
+    -- panel or the map is closed out from under it.
+    if (ui.cfg_dirty and not imgui.IsMouseDown(0) and not ui.cfg_typing) then
+        ui.cfg_dirty = false;
+        settings.save();
+    end
+    ui.cfg_typing = false;
+
     -- What the map's text is scaled by, resolved once here rather than per
-    -- label.  Ahead of the widget as well as the map, since both draw text.
+    -- label.  Ahead of the map, and of the readout and labels it draws through
+    -- outlined_text.
     --
     -- A settings file that has never been near the Size box carries zero, which
     -- stands for the size ImGui's own font already comes out at: there is no
     -- frame to ask that of until now, so it is answered here and written back
     -- the first time, and the box opens showing the number rather than a nought.
+    -- Clamped on the way in like every other write to it, or an Ashita
+    -- configured with a font outside the bounds would put a number in the box
+    -- that the next login silently shrinks.
     local base = imgui.GetFontSize();
     if (cfg.font_px == FONT_PX.own) then
-        cfg.font_px   = math.floor(base + 0.5);
+        cfg.font_px   = math.min(math.max(math.floor(base + 0.5), FONT_PX.min),
+                                 FONT_PX.max);
         ui.font_px[1] = cfg.font_px;
     end
     -- A picked face is baked at FONT_PX.bake rather than at whatever ImGui's own

@@ -40,6 +40,12 @@ assert(src:find('math.min(math.max(ui.font_px[1], FONT_PX.min)', 1, true),
 assert(src:find('if (cfg.font_px == FONT_PX.own) then', 1, true),
        'the "own size" stand-in is no longer resolved on the first frame');
 
+-- ImGui's own font size is as much an outside number as a typed one: an Ashita
+-- configured outside the bounds would otherwise put a size in the box that the
+-- next login silently shrinks, with no user action in between.
+assert(src:find('math.floor(base + 0.5), FONT_PX.min)', 1, true),
+       'the resolved "own size" no longer clamps to the bounds of the box');
+
 -- The atlas may only be written to from bake_all, and bake_all may only be
 -- called from the load event.  A second AddFontFromFileTTF anywhere else is the
 -- crash the first picker shipped with.

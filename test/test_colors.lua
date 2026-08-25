@@ -84,4 +84,11 @@ assert(pack_col(default('col_bg')) < 0x1000000, 'the plate default is not transp
 assert(src:find('if (bg >= 0x1000000) then', 1, true),
        'outlined_text no longer skips a fully transparent plate');
 
+-- The settings file is hand-editable, which is the one place a colour row of
+-- the wrong shape can come from.  pack_col would throw on a three-float row
+-- during login, from inside the settings callback, so fill_defaults checks the
+-- shape rather than only the nil.
+assert(src:find("type(c[4]) == 'number'", 1, true),
+       'fill_defaults no longer checks the shape of a saved colour row');
+
 print(('ok: %d picker defaults pack to the constants they replaced'):format(#pairs_));

@@ -12,7 +12,7 @@ Drop the `UberMap` folder into `Ashita/addons/`, then `/addon load ubermap`.
 | --- | --- |
 | `/ubermap`, `/um` | Toggle the map |
 | `/ubermap edit` | Toggle the point editor |
-| `/ubermap config` | Toggle the config panel: label size, font, text, outline, background and row hover |
+| `/ubermap config` | Toggle the config panel: map font and size, plus text, outline, background and row hover colours |
 | `/ubermap widget` | Toggle the gamepad friendly favorites widget (off by default) |
 | `/ubermap guide` | Toggle the EXP Guide scroll pickup (on by default) |
 | `/ubermap focus` | Toggle the search box taking the keyboard when the map opens (off by default) |
@@ -61,20 +61,22 @@ While **Multisend** is lit every command — warp rows, scroll and ring alike �
 
 ## Config panel
 
-`/um config` opens a small panel in the map's top-right corner: a font pulldown, a **Size** box and four colour pickers, one to a row. Everything on it retints the map as you drag, and writes to your settings the moment you let go of the mouse.
+`/um config` opens a small panel in the map's top-right corner: a font pulldown, a **Size** box and four colour pickers, one to a row. Everything on it changes the map as you drag, and writes to your settings once you let go of the mouse or leave the Size box — one write per edit rather than one per frame of it.
 
 | Row | Edits |
 | --- | --- |
-| Font | The face every label, warp row and tooltip on the map is drawn in. `ProggyClean` is ImGui's own built-in font and the default; the rest are read out of `C:\Windows\Fonts` -- Arial, Calibri, Consola, Georgia, Segoeui, Tahoma, Times, Verdana. A face that will not load falls back to ProggyClean |
-| Size | Text height in screen pixels, 8 to 48, typed or stepped (±1 by the arrows, ±4 by ctrl-click). Until it is touched it reads `0`, meaning whatever size ImGui is already drawing at; a typed number is clamped into range, so `0` cannot be picked back afterwards |
-| Text | Map text itself. Black by default |
-| Outline | The stamp behind the text that keeps it readable over the art. White, half alpha |
-| Background | A plate drawn under the text. Fully transparent by default, i.e. off -- raise its alpha for a solid label instead of an outlined one |
-| Hover | Fill under the warp row the cursor is on. White, near-transparent |
+| Font | The face the map's own text is drawn in: the zone marker labels, and the editor's hint and coordinate readout. `ProggyClean` is ImGui's own built-in font and the default; the rest are read out of `C:\Windows\Fonts` -- Arial, Calibri, Consola, Georgia, Segoeui, Tahoma, Times, Verdana. A face that will not load falls back to ProggyClean |
+| Size | Height of that same text in screen pixels, 8 to 48, typed or stepped (±1 by the arrows, ±4 by ctrl-click). It opens showing whatever size ImGui is already drawing at, so a map that has never been near the box looks exactly as it always did |
+| Text | The map's text itself. Black by default |
+| Outline | The stamp behind that text that keeps it readable over the art. White, half alpha |
+| Background | A plate drawn under it. Fully transparent by default, i.e. off -- raise its alpha for a solid label instead of an outlined one |
+| Hover | Fill under the row the cursor is on: warp rows, favorites and the right-click menu. White, near-transparent |
+
+The warp, favorites and right-click panels are ImGui widgets rather than map text, so they keep Ashita's own font and size; **Font** and **Size** move the text drawn onto the map itself.
 
 Each picker has an alpha bar, so a colour can be faded rather than only changed; click a swatch to open the picker, and drag inside it to watch the map change under it. Dragging anywhere on the panel does not pan the map underneath.
 
-Font and size are shared with the point editor and the panels; the four colours are yours alone and are saved with the rest of the per-character settings, so recolouring your map changes nothing anyone else sees.
+Everything on the panel is yours alone and is saved with the rest of the per-character settings, so recolouring or resizing your map changes nothing anyone else sees.
 
 ## Scroll pickup
 
