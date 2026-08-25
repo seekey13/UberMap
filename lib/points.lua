@@ -241,5 +241,6 @@ return {
         { file = "Point_0.png", x =  236, y = 1221, label = "Riverne - Site A01", border = false, size = POINT_SIZE, group = "Tavnazian Archipelago", time = "present" },
         { file = "Point_0.png", x =  236, y = 1134, label = "Riverne - Site B01", border = false, size = POINT_SIZE, group = "Tavnazian Archipelago", time = "present" },
         { file = "Point_0.png", x =  173, y = 1174, label = "Monarch Linn", border = false, size = POINT_SIZE, group = "Tavnazian Archipelago", time = "present" },
+        { file = "Point_0.png", x =  519, y = 1809, label = "Kuftal Tunnel", border = false, size = POINT_SIZE, group = "Vollbow", time = "present" },
     },
 };

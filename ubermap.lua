@@ -174,7 +174,17 @@ local COL_TEXT_DIM  = 0x40000000;
 local COL_STAMP     = 0x80FFFFFF;  -- white, half alpha
 local COL_STAMP_DIM = 0x20FFFFFF;
 local COL_HOVER     = 0x2EFFFFFF;  -- white, a fifth of an alpha
+-- The plate under a string, drawn behind the stamp.  Fully transparent by
+-- default, so nothing about the map changes until the picker is moved: the
+-- stamp is what makes the text readable, and a plate is the heavier answer for
+-- someone who wants one anyway.
+local COL_BG        = 0x00000000;  -- black, no alpha at all
+local COL_BG_DIM    = 0x00000000;
 local DIM_ALPHA     = 0.25;
+
+-- Screen pixels the plate is grown by on each side, so the glyphs are not flush
+-- against its edge.  The stamp reaches one pixel out, which the padding covers.
+local BG_PAD        = 2;
 
 local READOUT_SCALE = 2.0;
 
@@ -190,9 +200,8 @@ local HOT_GROUP    = 'Nations';  -- the only group that grows on hover
 local COL_ICON     = 0xFFFFFFFF;  -- white: tint that leaves the art untouched
 local COL_SELECT   = 0xFF00FFFF;  -- yellow: ring around the point being edited
 
--- Labels sit above the icon at a fixed screen size, so they stay readable at
--- every zoom instead of shrinking away with the art.
-local LABEL_SCALE = 1;
+-- Labels sit above the icon at the size the Size box names, so they stay
+-- readable at every zoom instead of shrinking away with the art.
 local LABEL_GAP   = 1;  -- screen pixels between the label and the icon
 
 -- Two detail tiers, swapping at ZOOM_POINTS: below it the world overview (the
@@ -232,6 +241,18 @@ local PICK_LABEL_GAP = 2;  -- screen pixels between a picker's name and its swat
 -- toggles read as one strip of icons, while each picker carries a name of its
 -- own and needs the room to sit under it.
 local PICK_GAP       = 20;
+
+-- What the Size box will take, in screen pixels, and what it means by "leave it
+-- alone".  There is no face to go with it: choosing one means adding a TTF to
+-- ImGui's font atlas, and that atlas is shared with every other addon and
+-- outlives '/addon reload', so an addon that rebuilds it takes the others down
+-- with it.  A size is a scale on the font ImGui already has, which touches
+-- nothing outside this window.
+--
+-- One table rather than three names: this file is close enough to Lua's
+-- 200-local ceiling for a chunk that loose constants cost more than the
+-- indirection does.
+local FONT_PX = { min = 8, max = 48, own = 0 };
 local COL_ICON_OFF = 0x40FFFFFF;  -- 25% opacity, i.e. 75% transparent
 
 -- Warp type -> the toggle that lists it, so dimming a toggle drops those rows
@@ -358,6 +379,7 @@ local default_settings = T{
     col_text    = T{ 0.0, 0.0, 0.0, 1.0 },   -- map text
     col_outline = T{ 1.0, 1.0, 1.0, 0.5 },   -- the outline behind it
     col_hover   = T{ 1.0, 1.0, 1.0, 0.18 },  -- fill under the row the cursor is on
+    col_bg      = T{ 0.0, 0.0, 0.0, 0.0 },   -- the plate behind the text, off
     favs   = T{ },   -- saved warp rows, in the order they are listed in
     widget = false,  -- the gamepad favorites widget is on
     -- The EXP Guide errand.  On by default, unlike the widget: that one takes
@@ -365,6 +387,11 @@ local default_settings = T{
     -- the walk past a guide and can be watched happening.  A toggle all the
     -- same, because it sends a packet and a keystroke with no click behind it.
     guide  = true,
+    -- What the map's text is drawn at, in screen pixels.  Zero means the size
+    -- ImGui's own font already comes out at, which is what the box shows until
+    -- it is touched: a settings file that has never been near it draws exactly
+    -- what the map always did, on whatever font Ashita is configured with.
+    font_px = FONT_PX.own,
     -- The search box takes the keyboard the moment the map opens.  Off by
     -- default: the box swallows every key while it holds focus, movement
     -- included, so it is only worth opening the map into if you came to look
@@ -406,6 +433,8 @@ local function repack_cols()
     COL_STAMP     = pack_col(cfg.col_outline);
     COL_STAMP_DIM = pack_col(cfg.col_outline, DIM_ALPHA);
     COL_HOVER     = pack_col(cfg.col_hover);
+    COL_BG        = pack_col(cfg.col_bg);
+    COL_BG_DIM    = pack_col(cfg.col_bg, DIM_ALPHA);
 end
 
 -- A settings file written before a key existed is handed back as it was saved,
@@ -420,6 +449,12 @@ local function fill_defaults()
     cfg.col_text    = cfg.col_text    or default_settings.col_text:copy(true);
     cfg.col_outline = cfg.col_outline or default_settings.col_outline:copy(true);
     cfg.col_hover   = cfg.col_hover   or default_settings.col_hover:copy(true);
+    cfg.col_bg      = cfg.col_bg      or default_settings.col_bg:copy(true);
+    -- Zero passes through the clamp untouched: it is the stand-in for ImGui's
+    -- own size, which is not known until there is a frame to ask.
+    cfg.font_px = (cfg.font_px == nil or cfg.font_px == FONT_PX.own)
+        and FONT_PX.own
+        or math.min(math.max(cfg.font_px, FONT_PX.min), FONT_PX.max);
     repack_cols();
     -- A settings file written before the errand existed has no entry for it,
     -- and a nil there is not the same as off: the default is on.  Written back
@@ -456,7 +491,7 @@ local ui = T{
     focus_next  = false,     -- hand the search box the keyboard on the next frame
     hot         = false,     -- cursor was over a widget, not the map
     config      = false,     -- the colour pickers are on screen
-    col_dirty   = false,     -- a colour picker has been moved this drag
+    cfg_dirty   = false,     -- a picker on the config strip has been moved
     dragging    = false,
     drag_x      = 0,
     drag_y      = 0,
@@ -507,12 +542,18 @@ local ui = T{
     dirty       = false,     -- an edit is waiting to be written to lib/points.lua
     edit_name   = { '', },
     edit_group  = { '', },
+    font_px     = { 0, },    -- the Size box, which edits cfg.font_px
+    -- What imgui.SetWindowFontScale is handed to draw the map's text at
+    -- cfg.font_px, resolved once at the top of a frame rather than per label.
+    font_scale  = 1.0,
 };
+ui.font_px[1] = cfg.font_px;
 
 -- Logging in, or switching characters, hands back that character's own file.
 settings.register('settings', 'settings_update', function (s)
     cfg = s;
     fill_defaults();
+    ui.font_px[1]  = cfg.font_px;
 end);
 
 local function map_size()
@@ -1461,15 +1502,45 @@ local function delete_point(ic)
 end
 
 --[[
+* What a string will measure once outlined_text has drawn it: the map's face at
+* the map's size, rather than at the size the window's own font comes out at.
+*
+* The scale is set around the measurement and put straight back: it is a window
+* property, so leaving it on would take every widget on the toolbar with it.
+--]]
+local function text_size(text, scale)
+    imgui.SetWindowFontScale(scale or ui.font_scale);
+    local w, h = imgui.CalcTextSize(text);
+    imgui.SetWindowFontScale(1.0);
+    return w, h;
+end
+
+--[[
 * ImGui has no outlined text, so stamp the string in the stamp colour around
 * itself before drawing it.  Keeps it readable over both land and ocean.
+*
+* A plate goes down first when the background picker has any alpha at all.
+* Skipped outright when it has none, which is the default: the size of it costs
+* a CalcTextSize, and every label on the map comes through here every frame.
 --]]
-local function outlined_text(dl, x, y, text, dim)
+local function outlined_text(dl, x, y, text, dim, scale)
+    -- The scale reaches the draw list as well as the widgets, so it wraps the
+    -- stamps and the plate as much as the text itself, and is put back before
+    -- anything else on the window is drawn.
+    imgui.SetWindowFontScale(scale or ui.font_scale);
+    local bg = dim and COL_BG_DIM or COL_BG;
+    if (bg >= 0x1000000) then
+        local tw, th = imgui.CalcTextSize(text);
+        dl:AddRectFilled({ x - BG_PAD, y - BG_PAD },
+                         { x + tw + BG_PAD, y + th + BG_PAD },
+                         bg, 0, ImDrawCornerFlags_All);
+    end
     local stamp = dim and COL_STAMP_DIM or COL_STAMP;
     for _, o in ipairs({ { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 } }) do
         dl:AddText({ x + o[1], y + o[2] }, stamp, text);
     end
     dl:AddText({ x, y }, dim and COL_TEXT_DIM or COL_TEXT, text);
+    imgui.SetWindowFontScale(1.0);
 end
 
 --[[
@@ -1657,11 +1728,9 @@ local function draw_icons(origin_x, origin_y, view_w, view_h, over_map)
                 end
 
                 if (ic.label ~= nil) then
-                    imgui.SetWindowFontScale(LABEL_SCALE);
-                    local tw, th = imgui.CalcTextSize(ic.label);
+                    local tw, th = text_size(ic.label);
                     outlined_text(dl, cx - tw / 2, cy - grow - th - LABEL_GAP,
                                   ic.label, dim);
-                    imgui.SetWindowFontScale(1.0);
                 end
             end
         end
@@ -2700,22 +2769,47 @@ local function draw_map(view_w, view_h)
                                        ImGuiColorEditFlags_AlphaPreview);
             imgui.PushStyleVar(ImGuiStyleVar_FramePadding,
                                { 6, math.max(0, (row_h - imgui.GetFontSize()) / 2) });
-            local picks = { { 'Text',    cfg.col_text },
-                            { 'Outline', cfg.col_outline },
-                            { 'Hover',   cfg.col_hover } };
+            local picks = { { 'Text',       cfg.col_text },
+                            { 'Outline',    cfg.col_outline },
+                            { 'Background', cfg.col_bg },
+                            { 'Hover',      cfg.col_hover } };
             -- A label wider than its swatch widens that column rather than
             -- running into its neighbour, so the strip stays right-anchored.
             local total, lbl_h = 0, 0;
             for _, pick in ipairs(picks) do
-                local lw, lh = imgui.CalcTextSize(pick[1]);
+                local lw, lh = text_size(pick[1]);
                 pick[3] = math.max(row_h, lw);
                 total   = total + pick[3];
                 lbl_h   = math.max(lbl_h, lh);
             end
-            local ldl    = imgui.GetWindowDrawList();
-            local pick_x = view_w - UI_MARGIN - total - (#picks - 1) * PICK_GAP;
+            local ldl = imgui.GetWindowDrawList();
+
+            -- Size box, first on the strip and ahead of the colours.  Wide
+            -- enough for two digits and the pair of step buttons InputInt puts
+            -- on the end of it.
+            local size_w = row_h * 2 + imgui.CalcTextSize('000');
+            local size_x = view_w - UI_MARGIN - total - (#picks - 1) * PICK_GAP
+                           - size_w - PICK_GAP;
+            local slw    = text_size('Size');
+            outlined_text(ldl, origin_x + size_x + (size_w - slw) / 2,
+                          origin_y + UI_MARGIN, 'Size');
+            imgui.SetCursorPos({ size_x, UI_MARGIN + lbl_h + PICK_LABEL_GAP });
+            imgui.SetNextItemWidth(size_w);
+            if (imgui.InputInt('##ubermap_font_px', ui.font_px, 1, 4)) then
+                -- Clamped rather than trusted: the box takes a typed number as
+                -- well as the step buttons, and a zero or a four-digit one would
+                -- be a map with no labels on it either way.  Written back so the
+                -- box shows what was actually taken.
+                cfg.font_px   = math.min(math.max(ui.font_px[1], FONT_PX.min),
+                                         FONT_PX.max);
+                ui.font_px[1] = cfg.font_px;
+                ui.cfg_dirty  = true;
+            end
+            ui.hot = ui.hot or imgui.IsItemActive() or imgui.IsItemHovered();
+
+            local pick_x = size_x + size_w + PICK_GAP;
             for _, pick in ipairs(picks) do
-                local lw = imgui.CalcTextSize(pick[1]);
+                local lw = text_size(pick[1]);
                 outlined_text(ldl, origin_x + pick_x + (pick[3] - lw) / 2,
                               origin_y + UI_MARGIN, pick[1]);
                 imgui.SetCursorPos({ pick_x + (pick[3] - row_h) / 2,
@@ -2724,15 +2818,18 @@ local function draw_map(view_w, view_h)
                     -- Repacked on the frame it moved, so the map retints under
                     -- the picker rather than at the end of the drag.
                     repack_cols();
-                    ui.col_dirty = true;
+                    ui.cfg_dirty = true;
                 end
                 ui.hot = ui.hot or imgui.IsItemActive() or imgui.IsItemHovered();
                 pick_x = pick_x + pick[3] + PICK_GAP;
             end
-            -- One write per drag rather than one per frame of it: the picker
-            -- reports a change on every frame the mouse moves inside it.
-            if (ui.col_dirty and not imgui.IsMouseDown(0)) then
-                ui.col_dirty = false;
+            -- One write per drag rather than one per frame of it: a colour
+            -- picker reports a change on every frame the mouse moves inside it,
+            -- and the Size box does the same for as long as a step button is
+            -- held down.  A number typed into the box saves on the next frame,
+            -- since nothing is held for that.
+            if (ui.cfg_dirty and not imgui.IsMouseDown(0)) then
+                ui.cfg_dirty = false;
                 settings.save();
             end
             imgui.PopStyleVar();
@@ -2783,12 +2880,12 @@ local function draw_map(view_w, view_h)
         if (ui.edit and over_map) then
             local mx = math.floor(mm.to_map(mouse_x, ui.pan_x, ui.zoom, origin_x));
             local my = math.floor(mm.to_map(mouse_y, ui.pan_y, ui.zoom, origin_y));
-            -- The font scale applies to the draw list too, so it has to wrap
-            -- the white stamps as well as the text itself.
-            imgui.SetWindowFontScale(READOUT_SCALE);
+            -- Twice the size the rest of the map's text is at, rather than twice
+            -- ImGui's own: the readout is a number being read off a map that has
+            -- already been sized, so it follows the Size box up and down.
             outlined_text(imgui.GetWindowDrawList(), origin_x + 6, origin_y + view_h - 30,
-                          ('%d, %d'):fmt(mx, my));
-            imgui.SetWindowFontScale(1.0);
+                          ('%d, %d'):fmt(mx, my), false,
+                          ui.font_scale * READOUT_SCALE);
         end
 
         -- Multisend, pinned to the viewport's bottom-right corner.  Art only:
@@ -2828,6 +2925,20 @@ ashita.events.register('d3d_present', 'ubermap_present', function ()
     local now = os.clock();
     pump_escape(now);
     pump_guide(now);
+
+    -- What the map's text is scaled by, resolved once here rather than per
+    -- label.  Ahead of the widget as well as the map, since both draw text.
+    --
+    -- A settings file that has never been near the Size box carries zero, which
+    -- stands for the size ImGui's own font already comes out at: there is no
+    -- frame to ask that of until now, so it is answered here and written back
+    -- the first time, and the box opens showing the number rather than a nought.
+    local base = imgui.GetFontSize();
+    if (cfg.font_px == FONT_PX.own) then
+        cfg.font_px   = math.floor(base + 0.5);
+        ui.font_px[1] = cfg.font_px;
+    end
+    ui.font_scale = (base > 0) and (cfg.font_px / base) or 1.0;
 
     -- Ahead of everything else, and unconditionally: the widget is up on the
     -- NPC alone, so it has to be drawn on the frames the map returns out of

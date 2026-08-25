@@ -57,6 +57,7 @@ assert(pack_col({ 2.0, -1.0, 0.0, 1.0 }) == 0xFF0000FF, 'channels clamp to 0..1'
 local pairs_ = {
     { 'col_text',    'COL_TEXT',  'COL_TEXT_DIM'  },
     { 'col_outline', 'COL_STAMP', 'COL_STAMP_DIM' },
+    { 'col_bg',      'COL_BG',    'COL_BG_DIM'    },
     { 'col_hover',   'COL_HOVER', nil             },
 };
 for _, p in ipairs(pairs_) do
@@ -73,5 +74,14 @@ end
 local stamp = default('col_outline');
 assert(pack_col(stamp, DIM) % 0x1000000 == pack_col(stamp) % 0x1000000,
        'dimming changed more than the alpha');
+
+-- The plate behind the text starts fully transparent, and outlined_text skips
+-- drawing it - and the CalcTextSize that sizes it - on exactly that: an alpha
+-- byte of zero, i.e. a packed word below 0x1000000.  Both halves are checked
+-- here, since a default that crept above zero would put a black box behind
+-- every label on the map and a per-label text measure into every frame.
+assert(pack_col(default('col_bg')) < 0x1000000, 'the plate default is not transparent');
+assert(src:find('if (bg >= 0x1000000) then', 1, true),
+       'outlined_text no longer skips a fully transparent plate');
 
 print(('ok: %d picker defaults pack to the constants they replaced'):format(#pairs_));
