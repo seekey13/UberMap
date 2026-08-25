@@ -12,7 +12,7 @@ Drop the `UberMap` folder into `Ashita/addons/`, then `/addon load ubermap`.
 | --- | --- |
 | `/ubermap`, `/um` | Toggle the map |
 | `/ubermap edit` | Toggle the point editor |
-| `/ubermap config` | Toggle the config panel: label size, text, outline, background and row hover |
+| `/ubermap config` | Toggle the config panel: label size, font, text, outline, background and row hover |
 | `/ubermap widget` | Toggle the gamepad friendly favorites widget (off by default) |
 | `/ubermap guide` | Toggle the EXP Guide scroll pickup (on by default) |
 | `/ubermap focus` | Toggle the search box taking the keyboard when the map opens (off by default) |

@@ -238,16 +238,35 @@ local TOGGLE_NAME  = T{ ['Crystal.png'] = 'Home Points',
 local TOGGLE_GAP   = 6;   -- screen pixels between toggles
 
 -- What the Size box will take, in screen pixels, and what it means by "leave it
--- alone".  There is no face to go with it: choosing one means adding a TTF to
--- ImGui's font atlas, and that atlas is shared with every other addon and
--- outlives '/addon reload', so an addon that rebuilds it takes the others down
--- with it.  A size is a scale on the font ImGui already has, which touches
--- nothing outside this window.
+-- alone", plus the faces the pulldown beside it lists.
 --
--- One table rather than three names: this file is close enough to Lua's
+-- A face costs more than a size does.  ImGui's font atlas is shared with every
+-- other addon and outlives '/addon reload', and rebuilding it while draw lists
+-- are still pending render is an access violation -- which is what the map's
+-- first font picker did, and why the one here bakes every face it will ever
+-- need on the load event and never touches the atlas again.  From then on
+-- picking a face is a lookup, and a size is still only a scale on it.
+--
+-- Faces are named by their file name in dir, which is what the pulldown shows;
+-- '' is ImGui's own font, left alone, and is what a map that has never been
+-- near the pulldown draws with.
+--
+-- One table rather than a name apiece: this file is close enough to Lua's
 -- 200-local ceiling for a chunk that loose constants cost more than the
 -- indirection does.
-local FONT_PX = { min = 8, max = 48, own = 0 };
+local FONT_PX = {
+    min = 8, max = 48, own = 0,
+    bake  = 20.0,                  -- pixel size every face is baked at
+    dir   = 'C:\\Windows\\Fonts\\',
+    list  = T{ '', 'Arial', 'Calibri', 'Consola', 'Georgia',
+               'Segoeui', 'Tahoma', 'Times', 'Verdana' },
+    -- ImGui's own font is compiled into it rather than loaded from a file, so
+    -- it has no file name to be listed under and is '' in the list.  This is
+    -- what the pulldown shows in its place, so the row reads as a font rather
+    -- than as a gap.
+    own_name = 'ProggyClean',
+    atlas = { },                   -- name -> baked font, or false if it failed
+};
 local COL_ICON_OFF = 0x40FFFFFF;  -- 25% opacity, i.e. 75% transparent
 
 -- Warp type -> the toggle that lists it, so dimming a toggle drops those rows
@@ -387,6 +406,9 @@ local default_settings = T{
     -- it is touched: a settings file that has never been near it draws exactly
     -- what the map always did, on whatever font Ashita is configured with.
     font_px = FONT_PX.own,
+    -- The face it is drawn in, named the way FONT_PX.list names them.  Empty is
+    -- ImGui's own font, which is what the map always drew with.
+    font    = '',
     -- The search box takes the keyboard the moment the map opens.  Off by
     -- default: the box swallows every key while it holds focus, movement
     -- included, so it is only worth opening the map into if you came to look
@@ -432,6 +454,38 @@ local function repack_cols()
     COL_BG_DIM    = pack_col(cfg.col_bg, DIM_ALPHA);
 end
 
+--[[
+* Bakes every face the pulldown lists into ImGui's font atlas.
+*
+* Called once, from the load event, and never again: the atlas is shared with
+* every other addon, and adding to it from d3d_present mutates it while draw
+* lists are pending render, which is an access violation rather than a slow
+* frame.  Baking the whole list up front is what lets the pulldown switch faces
+* mid-frame without ever touching the atlas again.
+*
+* A face that will not load -- a Windows without that file -- is remembered as
+* false and simply never applies, leaving the map on ImGui's own font.
+--]]
+function FONT_PX.bake_all()
+    for _, name in ipairs(FONT_PX.list) do
+        if (name ~= '') then
+            local ok, font = pcall(imgui.AddFontFromFileTTF,
+                                   FONT_PX.dir .. name:lower() .. '.ttf',
+                                   FONT_PX.bake);
+            FONT_PX.atlas[name] = (ok and font) or false;
+        end
+    end
+end
+
+--[[
+* The baked face the map draws with, or nil for ImGui's own -- which covers the
+* default, a name whose file would not load, and a frame before bake_all has
+* run.
+--]]
+function FONT_PX.face()
+    return FONT_PX.atlas[cfg.font] or nil;
+end
+
 -- A settings file written before a key existed is handed back as it was saved,
 -- without the new default filled in, so a character who used the map before
 -- favorites would otherwise index a nil table.
@@ -450,6 +504,12 @@ local function fill_defaults()
     cfg.font_px = (cfg.font_px == nil or cfg.font_px == FONT_PX.own)
         and FONT_PX.own
         or math.min(math.max(cfg.font_px, FONT_PX.min), FONT_PX.max);
+    -- Checked against the list rather than taken as written: the name goes on
+    -- the end of a Windows font path, and a hand-edited settings file is the
+    -- one place a name the pulldown could never produce can come from.
+    if (not FONT_PX.list:contains(cfg.font or '')) then
+        cfg.font = '';
+    end
     repack_cols();
     -- A settings file written before the errand existed has no entry for it,
     -- and a nil there is not the same as off: the default is on.  Written back
@@ -1504,9 +1564,12 @@ end
 * property, so leaving it on would take every widget on the toolbar with it.
 --]]
 local function text_size(text, scale)
+    local face = FONT_PX.face();
+    if (face) then imgui.PushFont(face); end
     imgui.SetWindowFontScale(scale or ui.font_scale);
     local w, h = imgui.CalcTextSize(text);
     imgui.SetWindowFontScale(1.0);
+    if (face) then imgui.PopFont(); end
     return w, h;
 end
 
@@ -1519,9 +1582,11 @@ end
 * a CalcTextSize, and every label on the map comes through here every frame.
 --]]
 local function outlined_text(dl, x, y, text, dim, scale)
-    -- The scale reaches the draw list as well as the widgets, so it wraps the
-    -- stamps and the plate as much as the text itself, and is put back before
-    -- anything else on the window is drawn.
+    -- The face and the scale both reach the draw list as well as the widgets,
+    -- so they wrap the stamps and the plate as much as the text itself, and are
+    -- put back before anything else on the window is drawn.
+    local face = FONT_PX.face();
+    if (face) then imgui.PushFont(face); end
     imgui.SetWindowFontScale(scale or ui.font_scale);
     local bg = dim and COL_BG_DIM or COL_BG;
     if (bg >= 0x1000000) then
@@ -1536,6 +1601,7 @@ local function outlined_text(dl, x, y, text, dim, scale)
     end
     dl:AddText({ x, y }, dim and COL_TEXT_DIM or COL_TEXT, text);
     imgui.SetWindowFontScale(1.0);
+    if (face) then imgui.PopFont(); end
 end
 
 --[[
@@ -2748,8 +2814,9 @@ local function draw_map(view_w, view_h)
             end
         end
 
-        -- Config panel, pinned to the viewport's top-right corner: the Size box
-        -- and the four colour pickers, one to a row.  ImGui writes into the
+        -- Config panel, pinned to the viewport's top-right corner: the face
+        -- pulldown, the Size box and the four colour pickers, one to a row.
+        -- ImGui writes into the
         -- tables cfg keeps, and repack_cols turns those back into the words the
         -- draw lists take, so the map retints as a picker moves.  NoInputs
         -- leaves only the swatch, which opens the picker on click; the name
@@ -2784,9 +2851,16 @@ local function draw_map(view_w, view_h)
                 panel_w = math.max(panel_w,
                                    fh + POPUP_PAD + imgui.CalcTextSize(pick[1]));
             end
+            -- The pulldown carries no name, so it spends the panel's whole width
+            -- on the face and the arrow ImGui puts on its end -- one frame's
+            -- worth, the same as a swatch.
+            for _, name in ipairs(FONT_PX.list) do
+                panel_w = math.max(panel_w, fh + POPUP_PAD + imgui.CalcTextSize(
+                    (name ~= '') and name or FONT_PX.own_name));
+            end
             panel_w = panel_w + POPUP_PAD * 2;
             local pitch   = fh + TOGGLE_GAP;
-            local panel_h = pitch * (#picks + 1) - TOGGLE_GAP + POPUP_PAD * 2;
+            local panel_h = pitch * (#picks + 2) - TOGGLE_GAP + POPUP_PAD * 2;
             local px      = view_w - UI_MARGIN - panel_w;
             local py      = UI_MARGIN;
 
@@ -2811,8 +2885,33 @@ local function draw_map(view_w, view_h)
 
             local row_x, row_y = px + POPUP_PAD, py + POPUP_PAD;
 
-            -- Size box, first row of the panel.
+            -- Face pulldown, first row of the panel.  No name beside it: the row
+            -- it sits on says what it is, and the panel is narrow enough that a
+            -- name would come out of the pulldown's own width.  Rows are drawn
+            -- in ImGui's own font rather than in the face they name -- previewing
+            -- one means pushing it per row, and the point of this panel is the
+            -- map.
             imgui.SetCursorPos({ row_x, row_y });
+            imgui.SetNextItemWidth(panel_w - POPUP_PAD * 2);
+            local shown = (cfg.font ~= '') and cfg.font or FONT_PX.own_name;
+            if (imgui.BeginCombo('##ubermap_font', shown, ImGuiComboFlags_None)) then
+                for _, name in ipairs(FONT_PX.list) do
+                    if (imgui.Selectable(((name ~= '') and name or FONT_PX.own_name)
+                                         .. '##ubermap_font_' .. name,
+                                         name == cfg.font)) then
+                        cfg.font = name;
+                        settings.save();
+                    end
+                end
+                imgui.EndCombo();
+                -- The list stands outside the panel's rect, so a drag over it
+                -- would pan the map underneath without this.
+                ui.hot = true;
+            end
+            ui.hot = ui.hot or imgui.IsItemActive();
+
+            -- Size box, second row.
+            imgui.SetCursorPos({ row_x, row_y + pitch });
             imgui.SetNextItemWidth(size_w);
             if (imgui.InputInt('Size##ubermap_font_px', ui.font_px, 1, 4)) then
                 -- Clamped rather than trusted: the box takes a typed number as
@@ -2829,7 +2928,7 @@ local function draw_map(view_w, view_h)
             ui.hot = ui.hot or imgui.IsItemActive();
 
             for i, pick in ipairs(picks) do
-                imgui.SetCursorPos({ row_x, row_y + pitch * i });
+                imgui.SetCursorPos({ row_x, row_y + pitch * (i + 1) });
                 if (imgui.ColorEdit4(pick[1], pick[2], pick_flags)) then
                     -- Repacked on the frame it moved, so the map retints under
                     -- the picker rather than at the end of the drag.
@@ -2935,6 +3034,12 @@ local function draw_map(view_w, view_h)
     end
 end
 
+-- The one place the font atlas may be written to: outside any frame, once per
+-- load.  Everything after this only ever pushes what was baked here.
+ashita.events.register('load', 'ubermap_load', function ()
+    FONT_PX.bake_all();
+end);
+
 ashita.events.register('d3d_present', 'ubermap_present', function ()
     local now = os.clock();
     pump_escape(now);
@@ -2952,6 +3057,11 @@ ashita.events.register('d3d_present', 'ubermap_present', function ()
         cfg.font_px   = math.floor(base + 0.5);
         ui.font_px[1] = cfg.font_px;
     end
+    -- A picked face is baked at FONT_PX.bake rather than at whatever ImGui's own
+    -- font measures, and pushing it is what the scale then multiplies, so the
+    -- divisor has to follow the face or the Size box would mean two different
+    -- things depending on which one is up.
+    if (FONT_PX.face()) then base = FONT_PX.bake; end
     ui.font_scale = (base > 0) and (cfg.font_px / base) or 1.0;
 
     -- Ahead of everything else, and unconditionally: the widget is up on the
