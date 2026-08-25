@@ -30,9 +30,12 @@ assert(MAX > MIN, 'the size bounds are the wrong way round');
 assert(OWN < MIN or OWN > MAX, 'the "own size" stand-in is inside the clamp');
 
 -- The box takes a typed number as well as its step buttons, so the write back
--- to cfg has to clamp rather than trust it.
-assert(src:find('math.min(math.max(ui.font_px[1], FONT_PX.min)', 1, true),
-       'the Size box no longer clamps what it is given');
+-- to cfg has to clamp rather than trust it.  Size shares the config panel's
+-- numeric row loop with the scale boxes, so the clamp is the loop's.
+assert(src:find('cfg[num[3]] = math.min(math.max(num[2][1], num[4]), num[5]);', 1, true),
+       'the config panel no longer clamps what its numeric boxes are given');
+assert(src:find("{ 'Size', ui.font_px, 'font_px',", 1, true),
+       'the Size box is no longer one of the config panel numeric rows');
 
 -- A settings file that has never been near the box carries OWN, which only a
 -- frame can resolve; the resolved number is written back so the box opens
