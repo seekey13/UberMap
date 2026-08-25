@@ -2773,7 +2773,12 @@ local function draw_map(view_w, view_h)
             -- it, a swatch is one frame square, and every row carries its name
             -- to the right of that.
             local fh      = imgui.GetFrameHeight();
-            local size_w  = fh * 2 + imgui.CalcTextSize('000');
+            -- InputInt spends the width it is given on the field and both step
+            -- buttons, with ImGui's own spacing and frame padding coming out of
+            -- the field's share, so the digits are asked for with room around
+            -- them rather than flush: two digits' worth of slack covers that
+            -- padding at every font size the atlas is built at.
+            local size_w  = fh * 2 + imgui.CalcTextSize('0000');
             local panel_w = size_w + POPUP_PAD + imgui.CalcTextSize('Size');
             for _, pick in ipairs(picks) do
                 panel_w = math.max(panel_w,
