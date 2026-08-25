@@ -355,9 +355,9 @@ local default_settings = T{
     -- The three colour pickers, as the { r, g, b, a } floats ImGui edits in
     -- place.  Their defaults are the packed constants above, unpacked: a file
     -- that has never been near a picker draws exactly what it always did.
-    col_text  = T{ 0.0, 0.0, 0.0, 1.0 },   -- map text
-    col_stamp = T{ 1.0, 1.0, 1.0, 0.5 },   -- the stamp behind it
-    col_hover = T{ 1.0, 1.0, 1.0, 0.18 },  -- fill under the row the cursor is on
+    col_text    = T{ 0.0, 0.0, 0.0, 1.0 },   -- map text
+    col_outline = T{ 1.0, 1.0, 1.0, 0.5 },   -- the outline behind it
+    col_hover   = T{ 1.0, 1.0, 1.0, 0.18 },  -- fill under the row the cursor is on
     favs   = T{ },   -- saved warp rows, in the order they are listed in
     widget = false,  -- the gamepad favorites widget is on
     -- The EXP Guide errand.  On by default, unlike the widget: that one takes
@@ -403,8 +403,8 @@ end
 local function repack_cols()
     COL_TEXT      = pack_col(cfg.col_text);
     COL_TEXT_DIM  = pack_col(cfg.col_text, DIM_ALPHA);
-    COL_STAMP     = pack_col(cfg.col_stamp);
-    COL_STAMP_DIM = pack_col(cfg.col_stamp, DIM_ALPHA);
+    COL_STAMP     = pack_col(cfg.col_outline);
+    COL_STAMP_DIM = pack_col(cfg.col_outline, DIM_ALPHA);
     COL_HOVER     = pack_col(cfg.col_hover);
 end
 
@@ -417,9 +417,9 @@ local function fill_defaults()
     -- A settings file written before the pickers existed carries no colours,
     -- and a picker handed a nil table would index it on the first frame.  Copied
     -- rather than shared, so editing one does not write the defaults above.
-    cfg.col_text  = cfg.col_text  or default_settings.col_text:copy(true);
-    cfg.col_stamp = cfg.col_stamp or default_settings.col_stamp:copy(true);
-    cfg.col_hover = cfg.col_hover or default_settings.col_hover:copy(true);
+    cfg.col_text    = cfg.col_text    or default_settings.col_text:copy(true);
+    cfg.col_outline = cfg.col_outline or default_settings.col_outline:copy(true);
+    cfg.col_hover   = cfg.col_hover   or default_settings.col_hover:copy(true);
     repack_cols();
     -- A settings file written before the errand existed has no entry for it,
     -- and a nil there is not the same as off: the default is on.  Written back
@@ -2700,9 +2700,9 @@ local function draw_map(view_w, view_h)
                                        ImGuiColorEditFlags_AlphaPreview);
             imgui.PushStyleVar(ImGuiStyleVar_FramePadding,
                                { 6, math.max(0, (row_h - imgui.GetFontSize()) / 2) });
-            local picks = { { 'Text',  cfg.col_text },
-                            { 'Outline', cfg.col_stamp },
-                            { 'Hover', cfg.col_hover } };
+            local picks = { { 'Text',    cfg.col_text },
+                            { 'Outline', cfg.col_outline },
+                            { 'Hover',   cfg.col_hover } };
             -- A label wider than its swatch widens that column rather than
             -- running into its neighbour, so the strip stays right-anchored.
             local total, lbl_h = 0, 0;

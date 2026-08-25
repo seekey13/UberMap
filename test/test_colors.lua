@@ -55,9 +55,9 @@ assert(pack_col({ 2.0, -1.0, 0.0, 1.0 }) == 0xFF0000FF, 'channels clamp to 0..1'
 -- Every picker default packs to the constant it replaced, so a file that has
 -- never been near a picker draws exactly what the map always did.
 local pairs_ = {
-    { 'col_text',  'COL_TEXT',  'COL_TEXT_DIM'  },
-    { 'col_stamp', 'COL_STAMP', 'COL_STAMP_DIM' },
-    { 'col_hover', 'COL_HOVER', nil             },
+    { 'col_text',    'COL_TEXT',  'COL_TEXT_DIM'  },
+    { 'col_outline', 'COL_STAMP', 'COL_STAMP_DIM' },
+    { 'col_hover',   'COL_HOVER', nil             },
 };
 for _, p in ipairs(pairs_) do
     local c = default(p[1]);
@@ -70,7 +70,7 @@ for _, p in ipairs(pairs_) do
 end
 
 -- The dim pair only fades the alpha: the colour underneath is the same.
-local stamp = default('col_stamp');
+local stamp = default('col_outline');
 assert(pack_col(stamp, DIM) % 0x1000000 == pack_col(stamp) % 0x1000000,
        'dimming changed more than the alpha');
 
