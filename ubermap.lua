@@ -14,7 +14,7 @@
 
 addon.name    = 'UberMap';
 addon.author  = 'Seekey';
-addon.version = '1.0';
+addon.version = '1.1';
 addon.desc    = 'Displays the server map, automatically on Home Point interaction.';
 
 require('common');

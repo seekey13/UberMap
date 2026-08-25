@@ -59,6 +59,23 @@ While **Multisend** is lit every command — warp rows, scroll and ring alike �
 
 **Favorites** are warp rows you saved, in your order. Right-click any row for *Add point to favorites list* — a row you cannot travel on right now works too, so a destination can be saved from anywhere. Each is named by its zone and row, e.g. `Windurst Woods - Home Point #2`. Clicking one warps exactly as its original row would. Stood at a Home Point, Survival Guide or Unity Concord the list narrows to the rows that NPC can send — the rest cannot be taken from there, so they are not listed — and stepping away brings the whole list back. A destination you have not registered still reads red. Drag a row up or down to reorder the list, including inside a narrowed one; right-click offers *Remove point from favorites list*.
 
+## Config panel
+
+`/um config` opens a small panel in the map's top-right corner: a font pulldown, a **Size** box and four colour pickers, one to a row. Everything on it retints the map as you drag, and writes to your settings the moment you let go of the mouse.
+
+| Row | Edits |
+| --- | --- |
+| Font | The face every label, warp row and tooltip on the map is drawn in. `ProggyClean` is ImGui's own built-in font and the default; the rest are read out of `C:\Windows\Fonts` -- Arial, Calibri, Consola, Georgia, Segoeui, Tahoma, Times, Verdana. A face that will not load falls back to ProggyClean |
+| Size | Text height in screen pixels, 8 to 48, typed or stepped (±1 by the arrows, ±4 by ctrl-click). Until it is touched it reads `0`, meaning whatever size ImGui is already drawing at; a typed number is clamped into range, so `0` cannot be picked back afterwards |
+| Text | Map text itself. Black by default |
+| Outline | The stamp behind the text that keeps it readable over the art. White, half alpha |
+| Background | A plate drawn under the text. Fully transparent by default, i.e. off -- raise its alpha for a solid label instead of an outlined one |
+| Hover | Fill under the warp row the cursor is on. White, near-transparent |
+
+Each picker has an alpha bar, so a colour can be faded rather than only changed; click a swatch to open the picker, and drag inside it to watch the map change under it. Dragging anywhere on the panel does not pan the map underneath.
+
+Font and size are shared with the point editor and the panels; the four colours are yours alone and are saved with the rest of the per-character settings, so recolouring your map changes nothing anyone else sees.
+
 ## Scroll pickup
 
 Walk within 7 yalms of an **EXP Guide** or **EXP Guide (S)** carrying no Instant Warp scroll and with a free inventory slot, and one is asked for and taken without you stopping: the guide is poked with the same packet pressing its target sends, and Escape backs out of the talk the scroll arrives in.
@@ -90,7 +107,7 @@ Stand at a warp NPC and the map narrows to it: only that kind of row stays lit, 
 
 A dimmed filter reaches the map itself: a zone marker with no row left fades back the way an unfocused group does and stops taking the cursor. Dim **Guide** and **Unity** and only Home Point zones stay lit.
 
-The Multisend gate, your favorites and the three toggles are saved per character in `config/addons/UberMap/<name>_<server id>/settings.lua` the moment you change one.
+The Multisend gate, your favorites, the three toggles and everything on the config panel are saved per character in `config/addons/UberMap/<name>_<server id>/settings.lua` the moment you change one.
 
 ## Credits
 
