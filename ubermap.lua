@@ -198,7 +198,7 @@ local ICON_BORDER  = 2.0;   -- screen pixels
 local ICON_HOT     = 1.05;  -- hovered nation icons draw this larger
 local HOT_GROUP    = 'Nations';  -- the only group that grows on hover
 
--- What the four scale boxes on the config panel will take, as whole percents of
+-- What the five scale boxes on the config panel will take, as whole percents of
 -- the sizes above, and the steps their arrows move in.  One table rather than a
 -- constant apiece, for the reason FONT_PX below is one: this file is close
 -- enough to Lua's 200-local ceiling for a chunk that loose constants cost more
@@ -430,9 +430,9 @@ local default_settings = T{
     -- What the map's art is drawn at, as whole percents of the sizes the addon
     -- has always used: 100 is exactly what it drew before these boxes existed,
     -- which is what a settings file that has never been near them carries.
-    -- Four rather than one, because the four things they size are read at four
-    -- different distances -- markers at arm's length on a zoomed map, the
-    -- toolbar at a glance from across the desk.
+    -- Five rather than one, because the things they size are read at different
+    -- distances -- markers at arm's length on a zoomed map, the toolbar at a
+    -- glance from across the desk.
     scale_point   = 100,  -- zone point markers, i.e. every icon carrying a size
     scale_nation  = 100,  -- the nation art, which carries none
     scale_tool    = 100,  -- toolbar row height, i.e. every icon on that line
@@ -597,7 +597,7 @@ local ui = T{
     hot         = false,     -- cursor was over a widget, not the map
     config      = false,     -- the config panel is on screen
     cfg_dirty   = false,     -- a picker on the config strip has been moved
-    cfg_typing  = false,     -- the Size box held the keyboard on the last frame
+    cfg_typing  = false,     -- a numeric box held the keyboard on the last frame
     dragging    = false,
     drag_x      = 0,
     drag_y      = 0,
@@ -668,7 +668,7 @@ end
 *
 * Points and nations are told apart by that same field, which is how
 * lib/points.lua has always split them: a zone point is written with
-* 'size = POINT_SIZE' and the five city icons are written without a size at all.
+* 'size = POINT_SIZE' and the city icons are written without a size at all.
 --]]
 function SCALE.px(ic)
     return ic.size and (ic.size * cfg.scale_point / 100)
@@ -680,6 +680,12 @@ settings.register('settings', 'settings_update', function (s)
     cfg = s;
     fill_defaults();
     ui.font_px[1]  = cfg.font_px;
+    -- The scale boxes get the same treatment, and by mutating the tables rather
+    -- than replacing them: ImGui edits the ones ui.scale already holds, so a
+    -- fresh table here would leave the panel writing into an orphan.
+    for _, row in ipairs(SCALE.rows) do
+        ui.scale[row[1]][1] = cfg[row[1]];
+    end
 end);
 
 local function map_size()
@@ -2949,8 +2955,10 @@ local function draw_map(view_w, view_h)
             -- the field's share, so the digits are asked for with room around
             -- them rather than flush: three digits' worth of slack covers that
             -- padding at every font size the atlas is built at, where two left
-            -- the second digit of a two-digit size clipped.
-            local size_w  = fh * 2 + imgui.CalcTextSize('00000');
+            -- the second digit of a two-digit size clipped.  Asked for at the
+            -- widest a box holds, which is the scales' three digits rather than
+            -- the Size box's two, or every scale row clips at ImGui's own font.
+            local size_w  = fh * 2 + imgui.CalcTextSize('000000');
             local panel_w = 0;
             for _, num in ipairs(nums) do
                 panel_w = math.max(panel_w,
@@ -3024,7 +3032,6 @@ local function draw_map(view_w, view_h)
             -- The Size box and the scale boxes, stacked under the pulldown.
             -- The map reads cfg every frame, so a scale takes effect as its
             -- arrows are held rather than on the frame the panel is closed.
-            ui.cfg_typing = false;
             for i, num in ipairs(nums) do
                 imgui.SetCursorPos({ row_x, row_y + pitch * i });
                 imgui.SetNextItemWidth(size_w);
@@ -3042,9 +3049,10 @@ local function draw_map(view_w, view_h)
                 -- panel's own rect once a picker popup is up and so is not
                 -- covered by the test above.  Also what defers the write:
                 -- InputInt reports a change per keystroke, so a number typed a
-                -- digit at a time would otherwise be a save per digit -- and a
-                -- '2' on the way to '24' clamps up to the minimum and snaps the
-                -- map to it mid-type.
+                -- digit at a time would otherwise be a save per digit.  The map
+                -- still follows every one of those keystrokes -- a '2' on the
+                -- way to '24' clamps up to the minimum and draws at it -- since
+                -- what is deferred is the save, not the write to cfg.
                 ui.cfg_typing = ui.cfg_typing or imgui.IsItemActive();
             end
             ui.hot = ui.hot or ui.cfg_typing;
@@ -3065,7 +3073,10 @@ local function draw_map(view_w, view_h)
         end
 
         -- Everything below the toolbar row stacks from here.
-        local edit_y = UI_MARGIN + row_h + TOGGLE_GAP;
+        -- Under the taller of the two: Search H can take the box past the
+        -- toolbar's height, and stacking on row_h alone would lay the editor's
+        -- own rows over the bottom of it.
+        local edit_y = UI_MARGIN + math.max(row_h, search_h) + TOGGLE_GAP;
 
         -- Editor panel, stacked under the toolbar row.  Its widgets feed
         -- ui.hot too, so dragging in them edits text instead of panning.

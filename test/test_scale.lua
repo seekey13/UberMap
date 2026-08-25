@@ -58,9 +58,10 @@ assert(src:find('math.min(math.max(math.floor(tonumber(cfg[row[1]]) or 100),', 1
 -- test at another.
 assert(not src:find('or ICON_SIZE) / 2', 1, true),
        'a marker size is still read raw rather than through SCALE.px');
-local pxs = select(2, src:gsub('SCALE%.px%(', ''));
-assert(pxs == 4,
-       ('SCALE.px is used %d times, not the 4 the map draws, hit tests and'
+-- Less the definition, which the same pattern matches.
+local pxs = select(2, src:gsub('SCALE%.px%(', '')) - 1;
+assert(pxs == 3,
+       ('SCALE.px is called %d times, not the 3 the map draws, hit tests and'
         .. ' anchors the warp popup with'):format(pxs));
 
 -- The toolbar and the search box are sized off cfg directly, once each.
@@ -72,10 +73,25 @@ end
 
 -- Scaling the search box's font is a window property, so it has to be put back
 -- or the toggles sharing that row go with it.
-local ups   = select(2, src:gsub('SetWindowFontScale%(cfg%.scale_search / 100%)', ''));
-local downs = select(2, src:gsub('SetWindowFontScale%(1%.0%)', ''));
+-- Counted inside the toolbar row alone: text_size and outlined_text put the
+-- scale back too, and a whole-file count of the restores would be green with
+-- the search box's own deleted.
+local row = assert(src:match('local search_h(.-)%-%- Config panel'),
+                   'the toolbar row no longer runs from the search box to the'
+                   .. ' config panel');
+local ups   = select(2, row:gsub('SetWindowFontScale%(cfg%.scale_search / 100%)', ''));
+local downs = select(2, row:gsub('SetWindowFontScale%(1%.0%)', ''));
 assert(ups == 1, 'the search box font scale is set more than once');
-assert(downs >= ups, 'the search box font scale is not put back');
+assert(downs == ups, 'the search box font scale is not put back');
+
+-- The boxes are filled from cfg once, at load.  Logging in swaps cfg for that
+-- character's own file, so the callback that does it has to fill them again --
+-- or the panel shows the numbers of whoever was on before, and the first press
+-- of an arrow writes those back over the ones the map is drawing at.
+local resync = assert(src:match("'settings_update'(.-)end%);"),
+                      'the settings_update callback is no longer one block');
+assert(resync:find('ui.scale[row[1]][1] = cfg[row[1]];', 1, true),
+       'a character switch no longer refreshes the scale boxes');
 
 print(('ok: %d scales clamp to %d..%d, all default to 100, and the map reads'
        .. ' every one of them'):format(#rows, MIN, MAX));
