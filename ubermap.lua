@@ -2089,6 +2089,15 @@ function nav.focus(view_w, view_h)
 end
 
 --[[
+* The warp rows the panel is showing, or nil while it is shut.  The same call
+* the panel makes for itself, kept out here so the gamepad's row arithmetic is
+* not tangled up in the drawing.
+--]]
+function nav.rows()
+    return (ui.warp ~= nil) and warp_rows(ui.warp.label) or nil;
+end
+
+--[[
 * Acts on one queued press, at the frame that knows how big the viewport is.
 *
 * Nested the way the game's own menus are: the overview, the zone points inside
@@ -2099,6 +2108,50 @@ end
 * ways in share the one way out.
 --]]
 function nav.act(act, view_w, view_h)
+    -- The innermost tier first: with a warp list open it is what every press
+    -- is for, and the markers underneath are not to move about behind it.
+    local rows = nav.rows();
+    if (rows ~= nil) then
+        if (act == 'b') then
+            ui.warp = nil;
+            return;
+        end
+        if (ui.gp_row == nil) then
+            -- The list was opened with the cursor, which lights no row of its
+            -- own.  The first press lands on the top row rather than stepping
+            -- off a selection nothing on screen is showing.
+            ui.gp_row = 1;
+            return;
+        end
+        -- The toggles can empty rows out from under a list that is open, so
+        -- the landing is pulled back inside it before it steps.
+        local n = #rows;
+        ui.gp_row = mm.clamp(ui.gp_row, 1, n);
+        if (act == 'up') then
+            -- Wraps at both ends, like the widget's list and the game's menus.
+            ui.gp_row = (ui.gp_row - 2) % n + 1;
+        elseif (act == 'down') then
+            ui.gp_row = ui.gp_row % n + 1;
+        elseif (act == 'a') then
+            -- The same two tests the row is coloured on: it travels only from
+            -- the kind of NPC in reach, and only somewhere registered.  A row
+            -- that fails either takes no press, exactly as it takes no click:
+            -- the /uw would be turned down at the NPC, and a row that looks
+            -- live but does nothing reads as a broken list.
+            local r = rows[ui.gp_row];
+            if (r ~= nil and r.type == ui.near_kind
+                and warp_known(ui.warp.label, r)) then
+                local cmd = warp_cmd(ui.warp.label, r);
+                if (cmd ~= nil) then
+                    -- Which closes the map and the panel with it, the way
+                    -- sending always has.
+                    send_cmd(cmd);
+                end
+            end
+        end
+        return;
+    end
+
     local list, i = nav.focus(view_w, view_h);
 
     if (act == 'a') then
@@ -2116,6 +2169,14 @@ function nav.act(act, view_w, view_h)
             if (zoom_to_group(ic.label, view_w, view_h)) then
                 ui.gp_from = ic;
                 ui.gp_icon = nil;
+            end
+        else
+            -- A zone nothing warps to leaves the panel shut rather than
+            -- opening an empty one, the same test the click makes.  Opened
+            -- from the pad, so the top row is lit and A would send it.
+            if (warp_rows(ic.label) ~= nil) then
+                ui.warp   = ic;
+                ui.gp_row = 1;
             end
         end
         return;
@@ -2657,6 +2718,16 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                               0, ImDrawCornerFlags_All);
             pdl:AddRect({ px, py }, { px + w, py + h }, COL_OUTLINE,
                         0, ImDrawCornerFlags_All, ICON_BORDER);
+            -- Kept inside the outline at both ends, so a lit first or last row
+            -- does not paint over the border it sits against.  The same fill
+            -- the favorites list lights its own rows with.
+            local function light(ry)
+                pdl:AddRectFilled(
+                    { px + ICON_BORDER, math.max(ry, py + ICON_BORDER) },
+                    { px + w - ICON_BORDER,
+                      math.min(ry + POPUP_ROW, py + h - ICON_BORDER) },
+                    COL_HOVER, 0, ImDrawCornerFlags_All);
+            end
             -- hot_row is the row a left-click would send, so it is only
             -- ever a live one; hot_any is the row under the cursor whether
             -- it is live or not, which is what the right-click menu goes
@@ -2688,13 +2759,17 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                     hot_any  = r;
                     hot_lock = (not known) and LOCK_TIP[r.type] or nil;
                 end
+                -- The gamepad's landing, lit whatever the cursor is doing, the
+                -- way the favorites widget lights its own selection.  Nil
+                -- while the list was opened with the mouse, which lights the
+                -- row under the cursor and nothing else.  A row that is both
+                -- reads brighter, the two fills stacking.
+                if (i == ui.gp_row) then
+                    light(ry);
+                end
                 if (live and known and over) then
                     hot_row = r;
-                    pdl:AddRectFilled(
-                        { px + ICON_BORDER, math.max(ry, py + ICON_BORDER) },
-                        { px + w - ICON_BORDER,
-                          math.min(ry + POPUP_ROW, py + h - ICON_BORDER) },
-                        COL_HOVER, 0, ImDrawCornerFlags_All);
+                    light(ry);
                 end
                 local tex, iw, ih = icon_texture(WARP_ICON[r.type]);
                 if (tex ~= nil) then
@@ -2938,6 +3013,10 @@ local function draw_map(view_w, view_h)
                 -- A zone nothing warps to leaves the panel shut rather than
                 -- opening an empty one.
                 ui.warp = (warp_rows(ui.press.label) ~= nil) and ui.press or nil;
+                -- Opened with the cursor, so no row is lit: the hover is what
+                -- says which one a click would send, and a second highlight
+                -- sitting on the top row would only argue with it.
+                ui.gp_row = nil;
             end
             ui.press = nil;
         end
