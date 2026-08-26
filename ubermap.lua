@@ -8,13 +8,15 @@
 * alongside a Warp Ring button and a Multisend toggle that warps every
 * logged-in character at once.
 *
-* Mouse wheel zooms, left-drag pans, Escape closes.  /ubermap or /um toggles
-* the map by hand; /um edit turns on the point editor (ctrl+click to place).
+* Mouse wheel zooms, left-drag pans, Escape closes.  A controller drives the
+* whole thing too: the D-pad walks the markers, A opens what is under it and B
+* backs out.  /ubermap or /um toggles the map by hand; /um edit turns on the
+* point editor (ctrl+click to place).
 --]]
 
 addon.name    = 'UberMap';
 addon.author  = 'Seekey';
-addon.version = '1.2';
+addon.version = '1.3';
 addon.desc    = 'Displays the server map, automatically on Home Point interaction.';
 
 require('common');

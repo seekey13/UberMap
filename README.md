@@ -20,6 +20,7 @@ Drop the `UberMap` folder into `Ashita/addons/`, then `/addon load ubermap`.
 ## The map
 
 Mouse wheel zooms, left-drag pans, **shift**-drag moves the window/widget.  
+A controller works it too — see [Gamepad map navigation](#gamepad-map-navigation).  
 Talking to a warp NPC opens it; or use the command `/uw`.  
 It closes itself once you walk away or a warp is used.  
 The UberMap widget will open when approaching a warp point.
@@ -108,6 +109,20 @@ The widget and the map's panel are one list drawn twice, so the mouse works the 
 The list is narrowed the same way the panel's is, so every row on it is one the NPC holding it up can send; a destination you have not registered still reads red, and A refuses it. With nothing saved for that kind of NPC the widget stays down. The window has no title bar and sizes itself to the list; like the map, hold shift to drag it somewhere else. Off by default, and saved per character with the rest of the settings.
 
 XInput only: an Xbox pad, or anything Windows presents as one. A DirectInput controller (DualShock, DualSense) still works by mouse.
+
+## Gamepad map navigation
+
+The map itself reads the pad whenever it is open — no toggle, because unlike the widget it is somewhere you deliberately went. A hover appears on the marker nearest the middle of the view the first time you press anything, and the buttons are the map's until it closes.
+
+| Button | Effect |
+| --- | --- |
+| D-pad | Move the hover to the marker that way. Nothing that way, nothing moves — it does not wrap round the world |
+| A | Zoom into the nation or region under the hover, then open a zone point's warp list, then send the row |
+| B | Back out one step: the warp list, then the whole map with the nation you came out of still hovered, then the map closes |
+
+Three tiers, nested the way the game's own menus are, and the mouse walks the same ones: click a nation and **B** still backs out of it, click a zone point and the D-pad still walks the rows that come up. A list opened with the mouse lights no row until you press something, so the cursor's own hover is never argued with.
+
+The favorites widget wins while it is up. Walk to a Home Point with the map open and the widget takes the pad; dismiss it with **B** and the map answers again. The rows behave the same either way — a destination you have not registered reads red, a row saved off a different kind of NPC reads grey, and **A** refuses both.
 
 ## Filters set themselves
 
