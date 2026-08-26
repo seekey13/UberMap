@@ -332,12 +332,17 @@ local POPUP_GAP      = 6;   -- screen pixels between the marker and the panel
 local COL_POPUP_BG   = 0xE0101010;  -- near black, a little of the map showing through
 local COL_POPUP_TEXT = 0xFFFFFFFF;  -- the panel has its own ground, so white reads
 local COL_POPUP_OFF  = 0x60FFFFFF;  -- a row whose kind of NPC is not in reach
--- Dim red, held apart from the grey above: not being in front of the right NPC
--- is a thing the player can walk off and fix, while a destination they have
--- never stood at is not, so the two do not read the same.  Text only - the icon
--- still says which kind of NPC the row travels from, which is worth reading
--- whether or not the destination is registered.
-local COL_POPUP_LOCK = 0xA04040FF;
+-- Light green, { 0.7, 1.0, 0.7, 1.0 }: a warp row already on the favorites
+-- list.  On the map's warp panel only -- the favorites list itself is nothing
+-- but favorites, and colouring every row of it green says nothing.
+local COL_POPUP_FAV  = 0xFFB3FFB3;
+-- Light red, { 1.0, 0.7, 0.7, 1.0 }, held apart from the grey above: not being
+-- in front of the right NPC is a thing the player can walk off and fix, while a
+-- destination they have never stood at is not, so the two do not read the same.
+-- It also outranks the green: a favorite that will not travel is worth knowing
+-- about whether or not it was saved.  Text only - the icon still says which kind
+-- of NPC the row travels from, which is worth reading either way.
+local COL_POPUP_LOCK = 0xFFB3B3FF;
 -- What a red row says when the cursor stops on it.
 local LOCK_TIP = T{
     home  = 'Not registered - interact with this Home Point once to unlock it',
@@ -2870,7 +2875,16 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                                  live and COL_ICON or COL_ICON_OFF);
                 end
                 local ty  = ry + (POPUP_ROW - th) / 2;
+                -- Red first: a destination nobody has registered will not
+                -- travel whether or not it was saved, and that is the thing
+                -- worth knowing.  Then green for a row already on the list, so
+                -- the panel says what is saved without opening the heart.
+                -- Asked per row per frame like the two tests above it, since a
+                -- Y press on the row underneath can save one while this panel
+                -- is on screen.
                 local col = (not known) and COL_POPUP_LOCK
+                            or (fav_index(ui.warp.label, r) ~= nil)
+                               and COL_POPUP_FAV
                             or live and COL_POPUP_TEXT or COL_POPUP_OFF;
                 pdl:AddText({ px + lab_x, ty }, col, r.label);
                 if (r.pos ~= nil) then

@@ -36,8 +36,9 @@ Left-click a zone point — for a panel of that zone's destinations. Clicking a 
 | Look | Meaning |
 | --- | --- |
 | Normal | Travels now |
+| **Green** | Already on your favorites list. Map's warp panel only — the favorites list is nothing but favorites |
 | Grey | Wrong kind of NPC for where you stand; the icon says what to walk up to |
-| **Red** | Never registered; takes no click from anywhere, hover says why |
+| **Red** | Never registered; takes no click from anywhere, hover says why. Outranks the green, so a saved row you cannot reach still reads red |
 
 ## Toolbar
 
