@@ -61,7 +61,7 @@ While **Multisend** is lit every command — warp rows, scroll and ring alike �
 
 ## Config panel
 
-`/um config` opens a small panel in the map's top-right corner: a font pulldown, a **Size** box, five scale boxes and four colour pickers, one to a row. Everything on it changes the map as you drag, and writes to your settings once you let go of the mouse or leave the box you are typing in — one write per edit rather than one per frame of it.
+`/um config` opens a small panel in the map's top-right corner: a font pulldown, a **Size** box, four scale boxes and four colour pickers, one to a row. Everything on it changes the map as you drag, and writes to your settings once you let go of the mouse or leave the box you are typing in — one write per edit rather than one per frame of it.
 
 | Row | Edits |
 | --- | --- |
@@ -69,15 +69,14 @@ While **Multisend** is lit every command — warp rows, scroll and ring alike �
 | Size | Height of that same text in screen pixels, 8 to 48, typed or stepped (±1 by the arrows, ±4 by ctrl-click). It opens showing whatever size ImGui is already drawing at, so a map that has never been near the box looks exactly as it always did |
 | Points | Size of the zone point markers, as a percent |
 | Nations | Size of the nation art on the world overview, as a percent |
-| Tools | Height of the toolbar icons that share the search box's line — the past/present switch, the layer toggles, Instant Warp and Warp Ring — and of the Favorites and Multisend icons in the bottom corners. The widths follow from each piece of art's own shape |
-| Search H | Height of the search box and of the text typed into it |
-| Search W | Width of the search box. It will not grow past half the map's width, so the toolbar icons beside it always stay on screen |
+| Tools | Height of everything on the search box's line — the past/present switch, the layer toggles, Instant Warp, Warp Ring and the search box itself, text included — and of the Favorites and Multisend icons in the bottom corners. The widths follow from each piece of art's own shape |
+| Search W | Width of the search box. It will not grow into the room the toolbar icons beside it need. A large **Tools** still can: the row does not wrap, so icons sized past the viewport run off its edge |
 | Text | The map's text itself. Black by default |
 | Outline | The stamp behind that text that keeps it readable over the art. White, half alpha |
 | Background | A plate drawn under it. Fully transparent by default, i.e. off -- raise its alpha for a solid label instead of an outlined one |
 | Hover | Fill under the row the cursor is on: warp rows, favorites and the right-click menu. White, near-transparent |
 
-The five scale rows are whole percents, 25 to 400, typed or stepped (±5 by the arrows, ±25 by ctrl-click). 100 is what the map has always drawn at, which is what a settings file that has never been near them carries.
+The four scale rows are whole percents, 25 to 400, typed or stepped (±5 by the arrows, ±25 by ctrl-click). 100 is what the map has always drawn at, which is what a settings file that has never been near them carries.
 
 The warp, favorites and right-click panels are ImGui widgets rather than map text, so they keep Ashita's own font and size; **Font** and **Size** move the text drawn onto the map itself.
 
