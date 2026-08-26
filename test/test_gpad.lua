@@ -2,9 +2,10 @@
 * Self-check for which gamepad buttons the map takes and which it leaves to the
 * client.  Mirrors the xinput_button handler in ubermap.lua: the favorites
 * widget is asked first and wins outright, the map takes buttons only while it
-* is on screen, and a release is blocked exactly when its press was -- a
-* release handed to the client without the press would leave a button stuck
-* down in the game's own menus.  Run with any Lua 5.1+:
+* is on screen, a press that only takes the pad back off the mouse is spent
+* doing that, and a release is blocked exactly when its press was -- a release
+* handed to the client without the press would leave a button stuck down in
+* the game's own menus.  Run with any Lua 5.1+:
 *     lua test/test_gpad.lua
 --]]
 
@@ -16,18 +17,27 @@ local function check(ok, msg)
     end
 end
 
--- The two tables, exactly as ubermap.lua keys them: the XInput button index
--- the event delivers.
+-- The table, exactly as ubermap.lua keys it: the XInput button index the event
+-- delivers.  The widget reads the four that are not left and right.
 local GP = { [0] = 'up', [1] = 'down', [2] = 'left', [3] = 'right',
              [12] = 'a', [13] = 'b' };
-local FW = { [0] = 'up', [1] = 'down', [12] = 'a', [13] = 'b' };
-local GP_QUEUE_MAX = 8;
+local QUEUE_MAX = 8;
 
 local ui, favs_n;
 local function reset()
+    -- Driving by default, so each case says outright when it is starting from
+    -- a map the mouse has just taken.
     ui = { fw_on = false, is_open = { false, }, zoom = 1.0, fw_sel = 1,
-           gp_q = { }, gp_held = { }, fw_held = { } };
+           gp_active = true, gp_q = { }, pad_held = { } };
     favs_n = 0;
+end
+
+-- nav.wake: marks the pad as what is driving, and says whether the press is
+-- spent doing only that.
+local function wake()
+    local was = ui.gp_active;
+    ui.gp_active = true;
+    return not was;
 end
 
 -- The handler, minus the two calls into the map that need a frame behind them.
@@ -38,17 +48,20 @@ local function button(index, state)
         return false;
     end
     if (state ~= 1) then
-        if (ui.fw_held[index] or ui.gp_held[index]) then
-            ui.fw_held[index], ui.gp_held[index] = nil, nil;
+        if (ui.pad_held[index]) then
+            ui.pad_held[index] = nil;
             return true;
         end
         return false;
     end
     if (ui.fw_on) then
-        if (FW[index] == nil or favs_n == 0) then
+        if (act == 'left' or act == 'right' or favs_n == 0) then
             return false;
         end
-        ui.fw_held[index] = true;
+        ui.pad_held[index] = true;
+        if (wake()) then
+            return true;
+        end
         if (act == 'up') then
             ui.fw_sel = (ui.fw_sel - 2) % favs_n + 1;
         elseif (act == 'down') then
@@ -59,20 +72,17 @@ local function button(index, state)
     if (not ui.is_open[1] or ui.zoom == nil) then
         return false;
     end
-    ui.gp_held[index] = true;
-    if (#ui.gp_q < GP_QUEUE_MAX) then
+    ui.pad_held[index] = true;
+    if (wake()) then
+        return true;
+    end
+    if (#ui.gp_q < QUEUE_MAX) then
         table.insert(ui.gp_q, act);
     end
     return true;
 end
 
 local ALL = { 0, 1, 2, 3, 12, 13 };
-
--- Every button the widget reads is one the map reads, under the same name, so
--- the two never disagree about what a press means.
-for i, name in pairs(FW) do
-    check(GP[i] == name, ('button %d should mean %q to both'):format(i, name));
-end
 
 -- Map shut: every one of the six is the client's, and nothing is queued.
 reset();
@@ -125,8 +135,33 @@ for _ = 1, 20 do
     button(0, 1);
     button(0, 0);
 end
-check(#ui.gp_q == GP_QUEUE_MAX,
-      ('the queue should cap at %d, holds %d'):format(GP_QUEUE_MAX, #ui.gp_q));
+check(#ui.gp_q == QUEUE_MAX,
+      ('the queue should cap at %d, holds %d'):format(QUEUE_MAX, #ui.gp_q));
+
+-- The mouse took the map off the pad.  The press that takes it back is still
+-- the map's -- the client must not see it -- but it is spent lighting the
+-- selection again rather than walking off one nothing on screen was showing.
+reset();
+ui.is_open[1], ui.gp_active = true, false;
+check(button(0, 1), 'the waking press should still be taken');
+check(#ui.gp_q == 0, 'the waking press should queue nothing');
+check(ui.gp_active, 'the waking press should mark the pad as driving');
+check(button(0, 0), 'the waking press should release like any other');
+check(button(1, 1), 'the press after the wake should be taken');
+check(#ui.gp_q == 1,
+      ('the press after the wake should queue, queued %d'):format(#ui.gp_q));
+
+-- The same at the widget, whose row the mouse puts out the same way: the
+-- waking press lights it rather than stepping it, or worse sending it.
+reset();
+ui.fw_on, favs_n, ui.gp_active = true, 3, false;
+check(button(1, 1), 'the widget should take the waking press');
+check(ui.fw_sel == 1,
+      ('a waking press should not step the row, is %d'):format(ui.fw_sel));
+check(button(1, 0), 'the waking press should release like any other');
+button(1, 1);
+check(ui.fw_sel == 2,
+      ('the press after the wake should step the row, is %d'):format(ui.fw_sel));
 
 -- Nothing else on the pad is anybody's business: Start, X and Y stay the
 -- client's with the map wide open.
