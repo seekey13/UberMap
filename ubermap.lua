@@ -14,7 +14,7 @@
 
 addon.name    = 'UberMap';
 addon.author  = 'Seekey';
-addon.version = '1.1';
+addon.version = '1.2';
 addon.desc    = 'Displays the server map, automatically on Home Point interaction.';
 
 require('common');
@@ -197,6 +197,24 @@ local ICON_ROUND   = 0.0625;  -- corner radius, as a fraction of the drawn size
 local ICON_BORDER  = 2.0;   -- screen pixels
 local ICON_HOT     = 1.05;  -- hovered nation icons draw this larger
 local HOT_GROUP    = 'Nations';  -- the only group that grows on hover
+
+-- What the five scale boxes on the config panel will take, as whole percents of
+-- the sizes above, and the steps their arrows move in.  One table rather than a
+-- constant apiece, for the reason FONT_PX below is one: this file is close
+-- enough to Lua's 200-local ceiling for a chunk that loose constants cost more
+-- than the indirection does.
+local SCALE = {
+    min = 25, max = 400, step = 5, fast = 25,
+    -- Every scale the panel offers, as cfg key and the name of the row it is
+    -- drawn on, in the order they stack.  One list rather than a loose local
+    -- apiece: the clamp on load, the boxes ImGui edits and the panel itself all
+    -- walk it, so a box cannot drift from the setting it writes.
+    rows = { { 'scale_point',   'Points'   },
+             { 'scale_nation',  'Nations'  },
+             { 'scale_tool',    'Tools'    },
+             { 'scale_search',  'Search H' },
+             { 'scale_searchw', 'Search W' } },
+};
 local COL_ICON     = 0xFFFFFFFF;  -- white: tint that leaves the art untouched
 local COL_SELECT   = 0xFF00FFFF;  -- yellow: ring around the point being edited
 
@@ -409,6 +427,17 @@ local default_settings = T{
     -- The face it is drawn in, named the way FONT_PX.list names them.  Empty is
     -- ImGui's own font, which is what the map always drew with.
     font    = '',
+    -- What the map's art is drawn at, as whole percents of the sizes the addon
+    -- has always used: 100 is exactly what it drew before these boxes existed,
+    -- which is what a settings file that has never been near them carries.
+    -- Five rather than one, because the things they size are read at different
+    -- distances -- markers at arm's length on a zoomed map, the toolbar at a
+    -- glance from across the desk.
+    scale_point   = 100,  -- zone point markers, i.e. every icon carrying a size
+    scale_nation  = 100,  -- the nation art, which carries none
+    scale_tool    = 100,  -- toolbar row height, i.e. every icon on that line
+    scale_search  = 100,  -- search box height and the text inside it
+    scale_searchw = 100,  -- search box width
     -- The search box takes the keyboard the moment the map opens.  Off by
     -- default: the box swallows every key while it holds focus, movement
     -- included, so it is only worth opening the map into if you came to look
@@ -523,6 +552,14 @@ local function fill_defaults()
     if (not FONT_PX.list:contains(cfg.font or '')) then
         cfg.font = '';
     end
+    -- The scale boxes take a typed number the way the Size box does, and the
+    -- file is hand-editable besides: a zero would be a marker with no pixels in
+    -- it, and a missing key would multiply out to a nil size on the first frame
+    -- rather than to the size the map has always drawn.
+    for _, row in ipairs(SCALE.rows) do
+        cfg[row[1]] = math.min(math.max(math.floor(tonumber(cfg[row[1]]) or 100),
+                                        SCALE.min), SCALE.max);
+    end
     repack_cols();
     -- A settings file written before the errand existed has no entry for it,
     -- and a nil there is not the same as off: the default is on.  Written back
@@ -558,9 +595,9 @@ local ui = T{
     search_at   = '',        -- search text the view was last framed for
     focus_next  = false,     -- hand the search box the keyboard on the next frame
     hot         = false,     -- cursor was over a widget, not the map
-    config      = false,     -- the colour pickers are on screen
+    config      = false,     -- the config panel is on screen
     cfg_dirty   = false,     -- a picker on the config strip has been moved
-    cfg_typing  = false,     -- the Size box held the keyboard on the last frame
+    cfg_typing  = false,     -- a numeric box held the keyboard on the last frame
     dragging    = false,
     drag_x      = 0,
     drag_y      = 0,
@@ -612,17 +649,43 @@ local ui = T{
     edit_name   = { '', },
     edit_group  = { '', },
     font_px     = { 0, },    -- the Size box, which edits cfg.font_px
+    -- The scale boxes, keyed by the cfg key each one edits, in the shape
+    -- InputInt wants.  Filled from SCALE.rows below rather than written out.
+    scale       = T{ },
     -- What imgui.SetWindowFontScale is handed to draw the map's text at
     -- cfg.font_px, resolved once at the top of a frame rather than per label.
     font_scale  = 1.0,
 };
 ui.font_px[1] = cfg.font_px;
+for _, row in ipairs(SCALE.rows) do
+    ui.scale[row[1]] = { cfg[row[1]], };
+end
+
+--[[
+* The screen pixels an icon is drawn at: the size its entry carries, or
+* ICON_SIZE for the nation art that carries none, taken through whichever of the
+* two marker scales owns it.
+*
+* Points and nations are told apart by that same field, which is how
+* lib/points.lua has always split them: a zone point is written with
+* 'size = POINT_SIZE' and the city icons are written without a size at all.
+--]]
+function SCALE.px(ic)
+    return ic.size and (ic.size * cfg.scale_point / 100)
+                    or (ICON_SIZE * cfg.scale_nation / 100);
+end
 
 -- Logging in, or switching characters, hands back that character's own file.
 settings.register('settings', 'settings_update', function (s)
     cfg = s;
     fill_defaults();
     ui.font_px[1]  = cfg.font_px;
+    -- The scale boxes get the same treatment, and by mutating the tables rather
+    -- than replacing them: ImGui edits the ones ui.scale already holds, so a
+    -- fresh table here would leave the panel writing into an orphan.
+    for _, row in ipairs(SCALE.rows) do
+        ui.scale[row[1]][1] = cfg[row[1]];
+    end
 end);
 
 local function map_size()
@@ -1524,7 +1587,7 @@ local function point_at(mx, my)
     for _, ic in ipairs(ICONS) do
         -- The drawn size is in screen pixels, so it shrinks in map space as
         -- the view zooms in.
-        local half = (ic.size or ICON_SIZE) / 2 / ui.zoom;
+        local half = SCALE.px(ic) / 2 / ui.zoom;
         if (ic.user and icon_visible(ic)
             and mx >= ic.x - half and mx <= ic.x + half
             and my >= ic.y - half and my <= ic.y + half) then
@@ -1763,7 +1826,7 @@ local function draw_icons(origin_x, origin_y, view_w, view_h, over_map)
 
     for _, ic in ipairs(ICONS) do
       if (icon_visible(ic)) then
-        local half = (ic.size or ICON_SIZE) / 2;
+        local half = SCALE.px(ic) / 2;
         local cx = mm.to_screen(ic.x, ui.pan_x, ui.zoom, origin_x);
         local cy = mm.to_screen(ic.y, ui.pan_y, ui.zoom, origin_y);
         if (cx + half >= origin_x and cx - half <= origin_x + view_w
@@ -2424,7 +2487,7 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
 
             -- Hung under the marker and clamped both ways, so a point near
             -- an edge does not push the panel off the viewport.
-            local half = (ui.warp.size or ICON_SIZE) / 2;
+            local half = SCALE.px(ui.warp) / 2;
             local px = mm.clamp_box(
                 mm.to_screen(ui.warp.x, ui.pan_x, ui.zoom, origin_x) - w / 2,
                 w, origin_x, view_w);
@@ -2709,7 +2772,10 @@ local function draw_map(view_w, view_h)
             ui.press = nil;
         end
 
-        local row_h = imgui.GetFrameHeight() * ROW_H_MULT;
+        -- The toolbar's height, and so the height every icon on it is fitted
+        -- to: the widths follow from the art's own aspect, so the Tools box
+        -- sizes the whole line by this one number.
+        local row_h = imgui.GetFrameHeight() * ROW_H_MULT * cfg.scale_tool / 100;
 
         -- Every widget on the row below ORs into ui.hot, which is what
         -- keeps the map from panning or zooming underneath one.  Cleared here
@@ -2733,17 +2799,32 @@ local function draw_map(view_w, view_h)
         -- marker whose label does not match, which is icon_dim's doing; nothing
         -- is hidden, so the map keeps its shape while a search narrows it.
         local search_x = UI_MARGIN + time_w + TOGGLE_GAP;
-        local search_h = imgui.GetFrameHeight() * SEARCH_H_MULT;
+        local search_h = imgui.GetFrameHeight() * SEARCH_H_MULT
+                         * cfg.scale_search / 100;
+        -- The text inside the box goes up with the box, or Search H would only
+        -- ever buy empty padding around glyphs that stayed the size they were.
+        -- A window property, so it is put straight back below, the way
+        -- outlined_text does it -- the toggles are drawn on this same row.
+        imgui.SetWindowFontScale(cfg.scale_search / 100);
         imgui.PushStyleVar(ImGuiStyleVar_FramePadding,
                            { 6, math.max(0, (search_h - imgui.GetFontSize()) / 2) });
         -- Nudged down by half of what it gives up, so a shorter box still sits
         -- on the middle of the row rather than riding its top edge.
-        imgui.SetCursorPos({ search_x, UI_MARGIN + (row_h - search_h) / 2 });
+        -- Never above the row's own top edge: Search H can take the box past
+        -- the toolbar's height, and a negative offset would ride it up out of
+        -- the map child rather than centring it.
+        imgui.SetCursorPos({ search_x,
+                             UI_MARGIN + math.max(0, (row_h - search_h) / 2) });
         -- Everything on this row is placed by absolute cursor position and none
         -- of it wraps, so a full-width box would push the toggles and the warp
         -- icons off the edge of a small viewport.  A share of the width instead,
         -- which leaves FIELD_W alone at 1080p and above.
-        local search_w = math.min(FIELD_W, view_w * 0.35);
+        -- Search W widens that share, but not past half the viewport: the row
+        -- is placed by absolute cursor position and does not wrap, so a box
+        -- taken to 400% would otherwise carry the toggles and the warp icons
+        -- off the edge with no way to press them back.
+        local search_w = math.min(math.min(FIELD_W, view_w * 0.35)
+                                  * cfg.scale_searchw / 100, view_w * 0.5);
         imgui.SetNextItemWidth(search_w);
         -- Handed the keyboard on the frame after an open, when the setting asks
         -- for it.  ImGui takes the focus request for the next item drawn, so
@@ -2754,6 +2835,7 @@ local function draw_map(view_w, view_h)
         end
         imgui.InputTextWithHint('##ubermap_search', 'Search', ui.search, FIELD_MAX);
         imgui.PopStyleVar();
+        imgui.SetWindowFontScale(1.0);
         -- Only while the mouse is working the field, the way the editor's rows
         -- below feed it: IsItemActive stays true for the whole time the caret
         -- sits in the box, and on its own it would leave the map unable to
@@ -2832,10 +2914,11 @@ local function draw_map(view_w, view_h)
         end
 
         -- Config panel, pinned to the viewport's top-right corner: the face
-        -- pulldown, the Size box and the four colour pickers, one to a row.
-        -- ImGui writes into the
-        -- tables cfg keeps, and repack_cols turns those back into the words the
-        -- draw lists take, so the map retints as a picker moves.  NoInputs
+        -- pulldown, the Size box, the five scale boxes and the four colour
+        -- pickers, one to a row.  ImGui writes into the tables cfg keeps, and
+        -- repack_cols turns those back into the words the draw lists take, so
+        -- the map retints as a picker moves.  The scales are read straight off
+        -- cfg by the draw, so the map resizes as an arrow is held.  NoInputs
         -- leaves only the swatch, which opens the picker on click; the name
         -- ImGui draws beside it labels the row, so nothing has to be stamped by
         -- hand the way it did over the map.  Widgets are left at ImGui's own
@@ -2852,19 +2935,35 @@ local function draw_map(view_w, view_h)
                             { 'Outline',    cfg.col_outline },
                             { 'Background', cfg.col_bg },
                             { 'Hover',      cfg.col_hover } };
-            -- The widest row decides the panel's width: the Size box wants two
-            -- digits and the pair of step buttons InputInt puts on the end of
-            -- it, a swatch is one frame square, and every row carries its name
-            -- to the right of that.
+            -- Every InputInt row, as the name it is drawn under, the box ImGui
+            -- edits, the cfg key it writes and the bounds it clamps to.  Size
+            -- is one of them rather than a case of its own: the six boxes differ
+            -- only in what they are called and what they will take.
+            local nums = { { 'Size', ui.font_px, 'font_px',
+                             FONT_PX.min, FONT_PX.max, 1, 4 } };
+            for _, row in ipairs(SCALE.rows) do
+                table.insert(nums, { row[2], ui.scale[row[1]], row[1],
+                                     SCALE.min, SCALE.max, SCALE.step, SCALE.fast });
+            end
+            -- The widest row decides the panel's width: an InputInt wants its
+            -- digits and the pair of step buttons ImGui puts on the end of it, a
+            -- swatch is one frame square, and every row carries its name to the
+            -- right of that.
             local fh      = imgui.GetFrameHeight();
             -- InputInt spends the width it is given on the field and both step
             -- buttons, with ImGui's own spacing and frame padding coming out of
             -- the field's share, so the digits are asked for with room around
             -- them rather than flush: three digits' worth of slack covers that
             -- padding at every font size the atlas is built at, where two left
-            -- the second digit of a two-digit size clipped.
-            local size_w  = fh * 2 + imgui.CalcTextSize('00000');
-            local panel_w = size_w + POPUP_PAD + imgui.CalcTextSize('Size');
+            -- the second digit of a two-digit size clipped.  Asked for at the
+            -- widest a box holds, which is the scales' three digits rather than
+            -- the Size box's two, or every scale row clips at ImGui's own font.
+            local size_w  = fh * 2 + imgui.CalcTextSize('000000');
+            local panel_w = 0;
+            for _, num in ipairs(nums) do
+                panel_w = math.max(panel_w,
+                                   size_w + POPUP_PAD + imgui.CalcTextSize(num[1]));
+            end
             for _, pick in ipairs(picks) do
                 panel_w = math.max(panel_w,
                                    fh + POPUP_PAD + imgui.CalcTextSize(pick[1]));
@@ -2878,7 +2977,9 @@ local function draw_map(view_w, view_h)
             end
             panel_w = panel_w + POPUP_PAD * 2;
             local pitch   = fh + TOGGLE_GAP;
-            local panel_h = pitch * (#picks + 2) - TOGGLE_GAP + POPUP_PAD * 2;
+            -- The face pulldown, then every numeric row, then the pickers.
+            local panel_h = pitch * (#picks + #nums + 1) - TOGGLE_GAP
+                            + POPUP_PAD * 2;
             local px      = view_w - UI_MARGIN - panel_w;
             local py      = UI_MARGIN;
 
@@ -2928,30 +3029,36 @@ local function draw_map(view_w, view_h)
             end
             ui.hot = ui.hot or imgui.IsItemActive();
 
-            -- Size box, second row.
-            imgui.SetCursorPos({ row_x, row_y + pitch });
-            imgui.SetNextItemWidth(size_w);
-            if (imgui.InputInt('Size##ubermap_font_px', ui.font_px, 1, 4)) then
-                -- Clamped rather than trusted: the box takes a typed number as
-                -- well as the step buttons, and a zero or a four-digit one would
-                -- be a map with no labels on it either way.  Written back so the
-                -- box shows what was actually taken.
-                cfg.font_px   = math.min(math.max(ui.font_px[1], FONT_PX.min),
-                                         FONT_PX.max);
-                ui.font_px[1] = cfg.font_px;
-                ui.cfg_dirty  = true;
+            -- The Size box and the scale boxes, stacked under the pulldown.
+            -- The map reads cfg every frame, so a scale takes effect as its
+            -- arrows are held rather than on the frame the panel is closed.
+            for i, num in ipairs(nums) do
+                imgui.SetCursorPos({ row_x, row_y + pitch * i });
+                imgui.SetNextItemWidth(size_w);
+                if (imgui.InputInt(num[1] .. '##ubermap_' .. num[3],
+                                   num[2], num[6], num[7])) then
+                    -- Clamped rather than trusted: a box takes a typed number as
+                    -- well as its step buttons, and a zero or a four-digit one
+                    -- would be a map with no labels or no markers on it either
+                    -- way.  Written back so the box shows what was taken.
+                    cfg[num[3]] = math.min(math.max(num[2][1], num[4]), num[5]);
+                    num[2][1]   = cfg[num[3]];
+                    ui.cfg_dirty = true;
+                end
+                -- Held while a box has the keyboard, which is outside the
+                -- panel's own rect once a picker popup is up and so is not
+                -- covered by the test above.  Also what defers the write:
+                -- InputInt reports a change per keystroke, so a number typed a
+                -- digit at a time would otherwise be a save per digit.  The map
+                -- still follows every one of those keystrokes -- a '2' on the
+                -- way to '24' clamps up to the minimum and draws at it -- since
+                -- what is deferred is the save, not the write to cfg.
+                ui.cfg_typing = ui.cfg_typing or imgui.IsItemActive();
             end
-            -- Held while the box has the keyboard, which is outside the panel's
-            -- own rect once a picker popup is up and so is not covered by the
-            -- test above.  Also what defers the write: InputInt reports a change
-            -- per keystroke, so a size typed a digit at a time would otherwise
-            -- be a save per digit -- and a '2' on the way to '24' clamps up to
-            -- the minimum and snaps the map to it mid-type.
-            ui.cfg_typing = imgui.IsItemActive();
-            ui.hot        = ui.hot or ui.cfg_typing;
+            ui.hot = ui.hot or ui.cfg_typing;
 
             for i, pick in ipairs(picks) do
-                imgui.SetCursorPos({ row_x, row_y + pitch * (i + 1) });
+                imgui.SetCursorPos({ row_x, row_y + pitch * (i + #nums) });
                 if (imgui.ColorEdit4(pick[1], pick[2], pick_flags)) then
                     -- Repacked on the frame it moved, so the map retints under
                     -- the picker rather than at the end of the drag.
@@ -2966,7 +3073,10 @@ local function draw_map(view_w, view_h)
         end
 
         -- Everything below the toolbar row stacks from here.
-        local edit_y = UI_MARGIN + row_h + TOGGLE_GAP;
+        -- Under the taller of the two: Search H can take the box past the
+        -- toolbar's height, and stacking on row_h alone would lay the editor's
+        -- own rows over the bottom of it.
+        local edit_y = UI_MARGIN + math.max(row_h, search_h) + TOGGLE_GAP;
 
         -- Editor panel, stacked under the toolbar row.  Its widgets feed
         -- ui.hot too, so dragging in them edits text instead of panning.
@@ -3260,12 +3370,12 @@ ashita.events.register('command', 'ubermap_command', function (e)
 
     if (sub == 'config') then
         ui.config = not ui.config;
-        -- Opens the map with it: the pickers are drawn on the map, so turning
-        -- them on with the map shut would put them nowhere.
+        -- Opens the map with it: the panel is drawn on the map, so turning it
+        -- on with the map shut would put it nowhere.
         if (ui.config) then
             ui.is_open[1] = true;
         end
-        notify(('colour pickers: %s'):fmt(ui.config
+        notify(('config panel: %s'):fmt(ui.config
             and 'on, top-right of the map'
             or 'off'));
         return;
