@@ -2090,9 +2090,57 @@ end
 
 --[[
 * Acts on one queued press, at the frame that knows how big the viewport is.
+*
+* Nested the way the game's own menus are: the overview, the zone points inside
+* one marker of it, and the warp list inside one of those.  A takes the next
+* one down and B comes back up.  There is no level held anywhere, because the
+* view already says which one it is on -- ui.focus is set exactly while a
+* marker has been zoomed into, by a click as much as by an A press, so the two
+* ways in share the one way out.
 --]]
 function nav.act(act, view_w, view_h)
     local list, i = nav.focus(view_w, view_h);
+
+    if (act == 'a') then
+        local ic = ui.gp_icon;
+        if (ic == nil) then
+            return;
+        end
+        if (OVERVIEW[ic.group]) then
+            -- Into the marker's zone points, framed the way a click frames
+            -- them.  The selection is dropped rather than carried down: the
+            -- view has moved, so the next nav.focus lands on the centre-most
+            -- point of what was just framed.  A marker standing for no zone
+            -- points at all frames nothing and stays where it is, exactly as
+            -- a click on it does.
+            if (zoom_to_group(ic.label, view_w, view_h)) then
+                ui.gp_from = ic;
+                ui.gp_icon = nil;
+            end
+        end
+        return;
+    end
+
+    if (act == 'b') then
+        if (ui.focus ~= nil) then
+            -- Back out to the whole map with the marker that was zoomed into
+            -- lit, so the way back in is one A press.  gp_from is nil when the
+            -- view was framed by a search rather than by a marker, and then
+            -- the selection restarts in the middle like any other stale one.
+            zoom_to_map(view_w, view_h);
+            ui.focus   = nil;
+            ui.warp    = nil;
+            ui.gp_icon = ui.gp_from;
+            ui.gp_from = nil;
+        else
+            -- Already at the top, so B is what it is everywhere else in the
+            -- game: the way out.  Escape does this for a keyboard, and a
+            -- controller has nothing else that would.
+            ui.is_open[1] = false;
+        end
+        return;
+    end
+
     local j = gpn.step(list, i, act);
     if (j ~= nil) then
         ui.gp_icon = list[j];
@@ -2879,7 +2927,13 @@ local function draw_map(view_w, view_h)
         end
         if (ui.press ~= nil and imgui.IsMouseReleased(0)) then
             if (OVERVIEW[ui.press.group]) then
-                zoom_to_group(ui.press.label, view_w, view_h);
+                -- A click is the mouse's own way down the same nesting the
+                -- gamepad walks, so B backs out of one as readily as the
+                -- other: whichever marker was gone into is the one the way
+                -- back out lands on.
+                if (zoom_to_group(ui.press.label, view_w, view_h)) then
+                    ui.gp_from = ui.press;
+                end
             else
                 -- A zone nothing warps to leaves the panel shut rather than
                 -- opening an empty one.
