@@ -370,16 +370,17 @@ local FAV_NONE     = 'No favorites for this warp';
 -- buttons it reads, and the D-pad belongs to the game's own menus everywhere
 -- else.  Off by default for the same reason: taking buttons off the client is
 -- the surprising thing to do, so it has to be asked for.  It reads four of the
--- six below and leaves left and right to the client.
+-- seven below and leaves left, right and Y to the client.
 --
--- The map reads all six.  It takes them only while it is on screen, which is a
--- place the player put it rather than one they walked into, so unlike the
+-- The map reads all seven.  It takes them only while it is on screen, which is
+-- a place the player put it rather than one they walked into, so unlike the
 -- widget it needs no toggle to justify swallowing them: the map is what a
--- press is for while it is up.
+-- press is for while it is up.  Y is the pad's right-click: on a warp row it
+-- opens the same favorites menu the mouse's second button does.
 --
 -- Keyed by the XInput button index Ashita's xinput_button event delivers, so
 -- one lookup answers both questions the handler has: whether the button is
--- read at all, and which of the six it is.
+-- read at all, and which of the seven it is.
 local GP = {
     [0]  = 'up',
     [1]  = 'down',
@@ -387,6 +388,7 @@ local GP = {
     [3]  = 'right',
     [12] = 'a',
     [13] = 'b',
+    [15] = 'y',
 };
 
 -- The map data lives in lib/points.lua under the addon: the overview groups, in
@@ -628,6 +630,11 @@ local ui = T{
     open_z      = nil,       -- nil until the first frame after opening reads it
     warp        = nil,       -- zone point whose warp popup is open
     warp_hot    = false,     -- cursor was inside that popup last frame
+    -- The popup's top-left, stashed by the draw that worked it out, so a Y
+    -- press can hang the favorites menu off the lit row without repeating the
+    -- clamping that decided where the panel went.
+    warp_px     = 0,
+    warp_py     = 0,
     favs_open   = false,     -- favorites panel is up
     -- The gamepad widget.  fw_on is what the xinput handler reads to decide
     -- whether a button is its to take, and is written by the draw each frame,
@@ -2139,6 +2146,21 @@ end
 * ways in share the one way out.
 --]]
 function nav.act(act, view_w, view_h)
+    -- Inside even the warp list: while the favorites menu is up it is what
+    -- every press is for, the same way a mouse click anywhere belongs to it
+    -- rather than to what it is lying over.  A picks its one item, B and a
+    -- second Y dismiss it, and everything else is swallowed so the list and
+    -- the markers do not walk about behind it.
+    if (ui.ctx ~= nil) then
+        if (act == 'a') then
+            fav_toggle(ui.ctx.key, ui.ctx.row);
+        end
+        if (act == 'a' or act == 'b' or act == 'y') then
+            ui.ctx = nil;
+        end
+        return;
+    end
+
     -- The innermost tier first: with a warp list open it is what every press
     -- is for, and the markers underneath are not to move about behind it.
     -- The rows the panel is showing, or nil while it is shut: the same call
@@ -2147,6 +2169,21 @@ function nav.act(act, view_w, view_h)
     if (rows ~= nil) then
         if (act == 'b') then
             ui.warp = nil;
+            return;
+        end
+        if (act == 'y') then
+            -- The pad's right-click: the favorites menu on the lit row, live
+            -- or not, exactly as the mouse's second button opens it.  Hung off
+            -- the row itself, out of the panel's own top-left, so it reads as
+            -- belonging to what was pressed rather than to the last place the
+            -- cursor happened to be.  A list opened with the mouse lights no
+            -- row yet, and a press that has nothing to point at opens nothing.
+            local r = (ui.gp_row ~= nil) and rows[ui.gp_row] or nil;
+            if (r ~= nil) then
+                ui.ctx = { x = ui.warp_px + POPUP_PAD * 2,
+                           y = ui.warp_py + POPUP_ROW * (ui.gp_row - 0.5),
+                           fresh = true, key = ui.warp.label, row = r };
+            end
             return;
         end
         -- Where the press leaves the lit row, and whether it is a send: the
@@ -2759,6 +2796,9 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
             local py = mm.clamp_box(
                 mm.to_screen(ui.warp.y, ui.pan_y, ui.zoom, origin_y) + half + POPUP_GAP,
                 h, origin_y, view_h);
+            -- Kept for the pad: Y hangs the favorites menu off the lit row,
+            -- and the row's place on screen is this corner plus its pitch.
+            ui.warp_px, ui.warp_py = px, py;
 
             pdl:AddRectFilled({ px, py }, { px + w, py + h }, COL_POPUP_BG,
                               0, ImDrawCornerFlags_All);
@@ -2910,7 +2950,10 @@ local function draw_ctx_menu(origin_x, origin_y, view_w, view_h, mouse_x, mouse_
                     0, ImDrawCornerFlags_All, ICON_BORDER);
         local ctx_hot = mouse_x >= px and mouse_x <= px + w
                         and mouse_y >= py and mouse_y <= py + h;
-        if (ctx_hot) then
+        -- Lit under the cursor, and lit outright while the pad is driving: the
+        -- menu is one item, so a pad opening it is already on the only thing
+        -- there is to pick, and an unlit item would read as nothing to press.
+        if (ctx_hot or ui.gp_active) then
             cdl:AddRectFilled({ px + ICON_BORDER, py + ICON_BORDER },
                               { px + w - ICON_BORDER, py + h - ICON_BORDER },
                               COL_HOVER, 0, ImDrawCornerFlags_All);
@@ -3718,8 +3761,9 @@ end);
 * desc : Two things read the pad, and only ever one at a time.  The favorites
 *        widget takes D-pad up and down, A and B while it is on screen, which
 *        is only while a warp NPC is in reach.  The map takes those and the
-*        D-pad's other axis while it is up: the D-pad walks the markers, A
-*        opens what is under it and B backs out.  The widget is asked first, so
+*        D-pad's other axis and Y while it is up: the D-pad walks the markers,
+*        A opens what is under it, B backs out, and Y is the right-click that
+*        opens the favorites menu on a warp row.  The widget is asked first, so
 *        walking up to an NPC puts it in front of a map that is already open
 *        and it has to be dismissed before the map answers again.  Every other
 *        button, and every button at all outside those two, is the client's.
@@ -3752,7 +3796,11 @@ ashita.events.register('xinput_button', 'ubermap_xinput', function (e)
     -- would be the only way to stop the map moving underneath.
     if (ui.fw_on) then
         local n = #fav_view();
-        if (act == 'left' or act == 'right' or n == 0) then
+        -- Y is the map's, not the widget's: the widget's own rows are already
+        -- favorites, and its right-click menu is an ImGui popup hung off the
+        -- hovered row, which a pad has no cursor to hover.  Left to the client
+        -- rather than swallowed, the way left and right are.
+        if (act == 'left' or act == 'right' or act == 'y' or n == 0) then
             return;
         end
         e.blocked = true;
@@ -3794,7 +3842,7 @@ ashita.events.register('xinput_button', 'ubermap_xinput', function (e)
     end
     e.blocked = true;
     ui.pad_held[e.button] = true;
-    -- The map's own six, on the press edge, while the map is up: the only
+    -- The map's own seven, on the press edge, while the map is up: the only
     -- thing that says the pad is what is driving it.  See the widget above.
     if (nav.wake()) then
         return;

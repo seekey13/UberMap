@@ -18,9 +18,9 @@ local function check(ok, msg)
 end
 
 -- The table, exactly as ubermap.lua keys it: the XInput button index the event
--- delivers.  The widget reads the four that are not left and right.
+-- delivers.  The widget reads the four that are not left, right and Y.
 local GP = { [0] = 'up', [1] = 'down', [2] = 'left', [3] = 'right',
-             [12] = 'a', [13] = 'b' };
+             [12] = 'a', [13] = 'b', [15] = 'y' };
 local QUEUE_MAX = 8;
 
 local ui, favs_n;
@@ -55,7 +55,7 @@ local function button(index, state)
         return false;
     end
     if (ui.fw_on) then
-        if (act == 'left' or act == 'right' or favs_n == 0) then
+        if (act == 'left' or act == 'right' or act == 'y' or favs_n == 0) then
             return false;
         end
         ui.pad_held[index] = true;
@@ -82,9 +82,9 @@ local function button(index, state)
     return true;
 end
 
-local ALL = { 0, 1, 2, 3, 12, 13 };
+local ALL = { 0, 1, 2, 3, 12, 13, 15 };
 
--- Map shut: every one of the six is the client's, and nothing is queued.
+-- Map shut: every one of the seven is the client's, and nothing is queued.
 reset();
 for _, i in ipairs(ALL) do
     check(not button(i, 1), ('button %d should be the client\'s with the map shut'):format(i));
@@ -92,14 +92,15 @@ for _, i in ipairs(ALL) do
 end
 check(#ui.gp_q == 0, 'a shut map should queue nothing');
 
--- Map open and the widget down: all six are taken, in the order pressed.
+-- Map open and the widget down: all seven are taken, in the order pressed.
 reset();
 ui.is_open[1] = true;
 for _, i in ipairs(ALL) do
     check(button(i, 1), ('button %d should be taken with the map open'):format(i));
 end
-check(#ui.gp_q == 6, ('six presses should queue six actions, queued %d'):format(#ui.gp_q));
-check(ui.gp_q[1] == 'up' and ui.gp_q[4] == 'right' and ui.gp_q[6] == 'b',
+check(#ui.gp_q == 7, ('seven presses should queue seven actions, queued %d'):format(#ui.gp_q));
+check(ui.gp_q[1] == 'up' and ui.gp_q[4] == 'right' and ui.gp_q[6] == 'b'
+      and ui.gp_q[7] == 'y',
       'the queue should hold the actions in the order they were pressed');
 
 -- The release of a press that was taken is taken too, and only once: a second
@@ -120,9 +121,9 @@ check(#ui.gp_q == 0, 'the map should queue nothing while the widget is up');
 -- One step each way, so the selection is back where it started: both of the
 -- D-pad presses landed on the widget rather than on the map behind it.
 check(ui.fw_sel == 1, ('the widget selection should have walked, is %d'):format(ui.fw_sel));
--- The two the widget does not read stay the client's rather than falling
+-- The three the widget does not read stay the client's rather than falling
 -- through to the map behind it.
-for _, i in ipairs({ 2, 3 }) do
+for _, i in ipairs({ 2, 3, 15 }) do
     check(not button(i, 1), ('button %d should be the client\'s under the widget'):format(i));
 end
 
@@ -163,16 +164,16 @@ button(1, 1);
 check(ui.fw_sel == 2,
       ('the press after the wake should step the row, is %d'):format(ui.fw_sel));
 
--- Nothing else on the pad is anybody's business: Start, X and Y stay the
--- client's with the map wide open.
+-- Nothing else on the pad is anybody's business: Start, the shoulders and X
+-- stay the client's with the map wide open.
 reset();
 ui.is_open[1] = true;
-for _, i in ipairs({ 4, 5, 8, 9, 14, 15 }) do
+for _, i in ipairs({ 4, 5, 8, 9, 14 }) do
     check(not button(i, 1), ('button %d is not the map\'s'):format(i));
 end
 
 if (fails == 0) then
-    print('ok: the widget wins, the map takes the six, releases follow presses');
+    print('ok: the widget wins, the map takes the seven, releases follow presses');
 else
     print(('%d check(s) failed'):format(fails));
     os.exit(1);

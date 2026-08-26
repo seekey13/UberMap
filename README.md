@@ -104,6 +104,8 @@ The guides stand in **Ru'Lude Gardens** and **Lower Jeuno**, and the zone is che
 | A | Warp to the selected row |
 | B | Put the widget away until you walk off the NPC |
 
+**Y** is left to the game while the widget is up: its rows are already favorites, so there is nothing for the menu to add.
+
 The widget and the map's panel are one list drawn twice, so the mouse works the same in either: click a row to warp, drag it up or down to reorder, right-click for *Remove point from favorites list*. Turning the widget on hides the heart and its panel, so the list is on screen in one place, not two.
 
 The list is narrowed the same way the panel's is, so every row on it is one the NPC holding it up can send; a destination you have not registered still reads red, and A refuses it. With nothing saved for that kind of NPC the widget stays down. The window has no title bar and sizes itself to the list; like the map, hold shift to drag it somewhere else. Off by default, and saved per character with the rest of the settings.
@@ -119,6 +121,7 @@ The map itself reads the pad whenever it is open — no toggle, because unlike t
 | D-pad | Move the hover to the marker that way. Nothing that way, nothing moves — it does not wrap round the world |
 | A | Zoom into the nation or region under the hover, then open a zone point's warp list, then send the row |
 | B | Back out one step: the warp list, then the whole map with the nation you came out of still hovered, then the map closes |
+| Y | The pad's right-click: on a warp row it opens the same *Add / Remove point from favorites list* menu the mouse's second button does. **A** picks the item, **B** or a second **Y** dismisses it |
 
 Three tiers, nested the way the game's own menus are, and the mouse walks the same ones: click a nation and **B** still backs out of it, click a zone point and the D-pad still walks the rows that come up. A list opened with the mouse lights no row until you press something, so the cursor's own hover is never argued with.
 

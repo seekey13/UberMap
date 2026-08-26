@@ -92,8 +92,68 @@ check(press(9, 'a') == #rows, 'a stale row should send from the last row, not pa
 -- wraps a list of none would divide by it.
 check(gp.row(2, 0, 'down') == nil, 'an empty list should light no row');
 
+-- Y is the pad's right-click, and the favorites menu it opens sits inside even
+-- the warp list: while it is up every press is its own.  Both branches are
+-- nav.act's rather than gpnav's, so they are mirrored here the same way the A
+-- gate above is.  The favorites themselves stand in as a set of keys.
+local ctx, favs = nil, { };
+local function pad(row, act)
+    if (ctx ~= nil) then
+        if (act == 'a') then
+            favs[ctx] = not favs[ctx];
+        end
+        if (act == 'a' or act == 'b' or act == 'y') then
+            ctx = nil;
+        end
+        return row;
+    end
+    if (act == 'y') then
+        local r = (row ~= nil) and rows[row] or nil;
+        if (r ~= nil) then
+            ctx = 'zone|' .. r.label;
+        end
+        return row;
+    end
+    return (gp.row(row, #rows, act));
+end
+
+-- A list opened with the mouse lights no row, so Y has nothing to point at and
+-- opens nothing rather than a menu on a row nobody picked.
+check(pad(nil, 'y') == nil and ctx == nil,
+      'Y on an unlit list should open no menu');
+
+-- On a lit row it opens the menu on that row, and leaves the row where it is.
+check(pad(2, 'y') == 2, 'Y should not step the row');
+check(ctx == 'zone|Survival Guide',
+      ('Y should open the menu on the lit row, opened %s'):format(tostring(ctx)));
+
+-- With the menu up, the list underneath does not walk about behind it.
+check(pad(2, 'down') == 2, 'the list should not step under an open menu');
+check(ctx ~= nil, 'a direction should not dismiss the menu');
+
+-- A picks the one item, which adds the row, and closes.
+pad(2, 'a');
+check(favs['zone|Survival Guide'], 'A should toggle the row into favorites');
+check(ctx == nil, 'A should close the menu');
+
+-- B closes it without picking: the row stays saved rather than coming back off.
+pad(2, 'y');
+pad(2, 'b');
+check(favs['zone|Survival Guide'], 'B should leave the favorites alone');
+check(ctx == nil, 'B should close the menu');
+
+-- A second Y dismisses it, the way a second right-click does.
+pad(2, 'y');
+pad(2, 'y');
+check(ctx == nil, 'a second Y should dismiss the menu');
+
+-- On a row already saved the item removes it, so the one menu is both ways.
+pad(2, 'y');
+pad(2, 'a');
+check(not favs['zone|Survival Guide'], 'A on a saved row should take it back off');
+
 if (fails == 0) then
-    print('ok: the row wrap, the A gate and the unlit first press all hold');
+    print('ok: the row wrap, the A gate, the unlit first press and Y all hold');
 else
     print(('%d check(s) failed'):format(fails));
     os.exit(1);
