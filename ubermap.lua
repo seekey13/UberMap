@@ -659,6 +659,7 @@ local ui = T{
     ptr_moved   = false,
     gp_row      = nil,       -- the warp list row lit, 1-based, nil for none
     gp_q        = {},        -- actions waiting for a frame to act on them
+    gp_ready    = false,     -- the map drew last frame, so the queue is drained
     -- The favorite being dragged, as { i, live, moved } of the row that was
     -- pressed: i follows the cursor as the list reorders under it, live is
     -- whether it can travel, and moved tells a reorder from a plain click.
@@ -2148,23 +2149,12 @@ function nav.act(act, view_w, view_h)
             ui.warp = nil;
             return;
         end
-        if (ui.gp_row == nil) then
-            -- The list was opened with the cursor, which lights no row of its
-            -- own.  The first press lands on the top row rather than stepping
-            -- off a selection nothing on screen is showing.
-            ui.gp_row = 1;
-            return;
-        end
-        -- The toggles can empty rows out from under a list that is open, so
-        -- the landing is pulled back inside it before it steps.
-        local n = #rows;
-        ui.gp_row = mm.clamp(ui.gp_row, 1, n);
-        if (act == 'up') then
-            -- Wraps at both ends, like the widget's list and the game's menus.
-            ui.gp_row = (ui.gp_row - 2) % n + 1;
-        elseif (act == 'down') then
-            ui.gp_row = ui.gp_row % n + 1;
-        elseif (act == 'a') then
+        -- Where the press leaves the lit row, and whether it is a send: the
+        -- wrapping and the pulling back inside a list the toggles have emptied
+        -- are gpnav's, so test_gpwarp.lua drives the real thing.
+        local send;
+        ui.gp_row, send = gpn.row(ui.gp_row, #rows, act);
+        if (send) then
             -- The same two tests the row is coloured on: it travels only from
             -- the kind of NPC in reach, and only somewhere registered.  A row
             -- that fails either takes no press, exactly as it takes no click:
@@ -3535,6 +3525,15 @@ ashita.events.register('d3d_present', 'ubermap_present', function ()
     end
     draw_fav_widget();
 
+    -- The map's presses are only worth swallowing on the frames it is drawn:
+    -- nav.pump is what drains them, and every early return below -- put away
+    -- by the step just taken, no texture, and further down a window ImGui
+    -- collapsed or sized to nothing -- leaves nothing to do the draining.
+    -- Blocked presses with no drain is a D-pad dead in the game's own menus as
+    -- well as on the map, with nothing on screen to say why.  Put out here and
+    -- set again where the drain actually happens.
+    ui.gp_ready = false;
+
     if (not ui.is_open[1]) then
         return;
     end
@@ -3578,6 +3577,7 @@ ashita.events.register('d3d_present', 'ubermap_present', function ()
     if (imgui.Begin('UberMap', ui.is_open, flags)) then
         local view_w, view_h = imgui.GetContentRegionAvail();
         if (view_w > 0 and view_h > 0) then
+            ui.gp_ready = true;
             draw_map(view_w, view_h);
         end
     end
@@ -3785,10 +3785,11 @@ ashita.events.register('xinput_button', 'ubermap_xinput', function (e)
         return;
     end
 
-    -- The map, while it is on screen and has had a frame size the view.
-    -- Queued rather than acted on here: the zooms need the viewport size, and
-    -- only the draw knows that.
-    if (not ui.is_open[1] or ui.zoom == nil) then
+    -- The map, while it is on screen, has had a frame size the view, and is
+    -- being drawn -- a frame that returns out early has nothing to drain what
+    -- is queued.  Queued rather than acted on here: the zooms need the
+    -- viewport size, and only the draw knows that.
+    if (not ui.is_open[1] or ui.zoom == nil or not ui.gp_ready) then
         return;
     end
     e.blocked = true;

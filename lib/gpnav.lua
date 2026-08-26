@@ -73,4 +73,30 @@ function M.step(list, i, dir)
     return best;
 end
 
+--[[
+* Where a press of 'act' leaves the warp list's lit row, and whether that press
+* is a send.  A nil row is a list opened with the mouse, which lights none of
+* its own: the first press lands on the top row rather than stepping off a
+* selection nothing on screen is showing, and sends nothing.  The row is pulled
+* back inside the list before it steps, since the toggles can empty rows out
+* from under one that is already open.  Up and down wrap at both ends, the way
+* the favorites widget and the game's own menus do.  An empty list has no row
+* at all.
+--]]
+function M.row(row, n, act)
+    if (n < 1) then
+        return nil, false;
+    end
+    if (row == nil) then
+        return 1, false;
+    end
+    row = math.max(1, math.min(row, n));
+    if (act == 'up') then
+        return (row - 2) % n + 1, false;
+    elseif (act == 'down') then
+        return row % n + 1, false;
+    end
+    return row, act == 'a';
+end
+
 return M;
