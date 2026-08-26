@@ -16,7 +16,7 @@
 
 addon.name    = 'UberMap';
 addon.author  = 'Seekey';
-addon.version = '1.3';
+addon.version = '1.2';
 addon.desc    = 'Displays the server map, automatically on Home Point interaction.';
 
 require('common');
@@ -652,10 +652,22 @@ local ui = T{
     -- slot in a list, because the list it walks is built fresh out of whatever
     -- is on screen at each press; gp_from is the overview marker A zoomed in
     -- from, so B can put the view back with that one lit.  Both are nil until
-    -- a button is pressed, which is what keeps a highlight off the map of
-    -- somebody who is only ever using the mouse.
+    -- the map works out where the selection starts, which it only does while
+    -- gp_active: the pad is what is working the map, rather than merely being
+    -- plugged in behind a hand that is on the mouse.  A press the map or the
+    -- widget takes sets it, cursor movement over either clears it, and it
+    -- outlives the map closing -- a pad that was driving one still is when the
+    -- next opens.  Off until then, so a player who never touches one is never
+    -- shown a highlight arguing with their cursor.
     gp_icon     = nil,
     gp_from     = nil,
+    gp_active   = false,
+    -- Where the cursor was on the frame before, and whether it has moved since,
+    -- worked out once a frame so the map and the widget read the same answer
+    -- whichever of them draws first.
+    ptr_x       = nil,
+    ptr_y       = nil,
+    ptr_moved   = false,
     gp_row      = nil,       -- the warp list row lit, 1-based, nil for none
     gp_q        = {},        -- actions waiting for a frame to act on them
     gp_held     = {},        -- buttons whose press the map took, by index
@@ -2100,6 +2112,27 @@ function nav.rows()
 end
 
 --[[
+* The mouse taking the map back off the pad.  Movement over the map or over the
+* widget says the hand is on the mouse, and the cursor's own hover is what says
+* where a click would land there, so the pad's highlights are put out rather
+* than left arguing with it.
+*
+* Only the highlights: gp_from is the way back out of a marker, not something
+* drawn, and the widget's row is kept as a number so its arithmetic still has
+* one -- gp_active is what decides whether either is lit.  Only a press of a
+* button the map or the widget reads sets that again, and the next pump seats
+* a marker under it.
+--]]
+function nav.mouse(hovered)
+    if (not hovered or not ui.ptr_moved) then
+        return;
+    end
+    ui.gp_active = false;
+    ui.gp_icon = nil;
+    ui.gp_row  = nil;
+end
+
+--[[
 * Acts on one queued press, at the frame that knows how big the viewport is.
 *
 * Nested the way the game's own menus are: the overview, the zone points inside
@@ -2213,18 +2246,25 @@ end
 --[[
 * Drains the presses that arrived since the last frame.  A queue rather than
 * one pending action, so two presses inside a frame both land instead of the
-* second eating the first; nothing is touched on a frame with no press in it,
-* which is what keeps the gamepad's highlight off a map nobody has pressed a
-* button at.
+* second eating the first.  Then, for a pad only, the selection is seated if
+* the presses left none: what keeps the highlight off the map of somebody
+* using the mouse is gp_active, not the absence of a press.
 --]]
 function nav.pump(view_w, view_h)
-    if (#ui.gp_q == 0) then
-        return;
+    if (#ui.gp_q > 0) then
+        for _, act in ipairs(ui.gp_q) do
+            nav.act(act, view_w, view_h);
+        end
+        ui.gp_q = { };
     end
-    for _, act in ipairs(ui.gp_q) do
-        nav.act(act, view_w, view_h);
+    -- A pad that is driving has no cursor to say where a press would land, so
+    -- its marker is lit before it is pressed: on opening, and again on the
+    -- frame A frames a nation and drops the selection that framed it.  Only
+    -- where nothing is lit already, so the wheel and the mouse move the view
+    -- without the selection chasing them.
+    if (ui.gp_active and ui.gp_icon == nil) then
+        nav.focus(view_w, view_h);
     end
-    ui.gp_q = { };
 end
 
 --[[
@@ -2583,8 +2623,14 @@ local function draw_fav_widget()
         local m = fav_metrics();
         local mouse_x, mouse_y = imgui.GetMousePos();
         local px, py = imgui.GetCursorScreenPos();
+        -- A cursor moving over the widget hands it to the mouse, whose own
+        -- hover then says which row a click would send; the pad's row is drawn
+        -- again from the next press of one.
+        nav.mouse(imgui.IsWindowHovered(
+            bit.bor(ImGuiHoveredFlags_ChildWindows, ImGuiHoveredFlags_RectOnly)));
         local hot_i = draw_fav_list(px, py, m, mouse_x, mouse_y,
-                                    { sel = ui.fw_sel, grab = not shift });
+                                    { sel = ui.gp_active and ui.fw_sel or nil,
+                                      grab = not shift });
         -- Mouse and D-pad share the one selection: a press of either button on
         -- a row moves it there, so A afterwards sends the row last touched
         -- rather than one the hand has left behind, and a row dragged up or
@@ -2916,6 +2962,12 @@ local function draw_map(view_w, view_h)
     -- keeps it true mid-drag, when an active item would otherwise block it.
     local hovered = imgui.IsWindowHovered(
         bit.bor(ImGuiHoveredFlags_ChildWindows, ImGuiHoveredFlags_RectOnly));
+
+    -- A cursor moving over any of that -- map, toolbar or panel -- is the hand
+    -- leaving the pad, and takes the pad's highlight with it.  After the pump
+    -- rather than before, so a press and a nudge of the mouse on the same
+    -- frame end the way they would on two: with the mouse in charge.
+    nav.mouse(hovered);
 
     -- Ignore the mouse outside the map, and while shift is held, so a
     -- shift-drag moves the window instead of panning underneath it.  Widgets are
@@ -3416,6 +3468,15 @@ ashita.events.register('d3d_present', 'ubermap_present', function ()
     pump_escape(now);
     pump_guide(now);
 
+    -- Has the cursor moved since the last frame?  Answered here, ahead of
+    -- everything that draws, so the map and the widget both read the one
+    -- answer however they are ordered.  The first frame has nothing to compare
+    -- against and counts as still, or loading the addon with the cursor
+    -- anywhere near the map would read as the mouse taking over.
+    local px, py = imgui.GetMousePos();
+    ui.ptr_moved = (ui.ptr_x ~= nil) and (px ~= ui.ptr_x or py ~= ui.ptr_y);
+    ui.ptr_x, ui.ptr_y = px, py;
+
     -- One write per drag rather than one per frame of it: a colour picker
     -- reports a change on every frame the mouse moves inside it, and the Size
     -- box does the same for every keystroke typed into it and for as long as a
@@ -3690,6 +3751,21 @@ ashita.events.register('xinput_button', 'ubermap_xinput', function (e)
         e.blocked = true;
         ui.fw_held[e.button] = true;
 
+        -- Marked here rather than at the head of the handler: what turns the
+        -- pad's highlights back on is a press this widget took, not a pad
+        -- being plugged in.  Anything else -- the other face buttons, a
+        -- release, a trigger -- says nothing about which hand is on the map,
+        -- and a player working the mouse with a controller still in reach had
+        -- the highlight coming back on all of them.
+        local was_active = ui.gp_active;
+        ui.gp_active = true;
+        if (not was_active) then
+            -- The mouse moving over the widget put its row out, so this press
+            -- lights it again rather than stepping off -- or worse, sending --
+            -- a row nothing on screen was showing.
+            return;
+        end
+
         if (act == 'up') then
             -- Wraps at both ends, the way the game's own menus do.  ponytail:
             -- one step a press; a held-D-pad repeat if a list ever gets long
@@ -3715,6 +3791,18 @@ ashita.events.register('xinput_button', 'ubermap_xinput', function (e)
     end
     e.blocked = true;
     ui.gp_held[e.button] = true;
+    -- The map's own six, on the press edge, while the map is up: the only
+    -- thing that says the pad is what is driving it.  See the widget above.
+    local was_active = ui.gp_active;
+    ui.gp_active = true;
+    if (not was_active) then
+        -- The mouse moved over the map and took the highlight off it, so this
+        -- press only puts it back: the next frame's pump seats a marker under
+        -- it, and the press after that is the one that walks or opens.  A
+        -- press that acted here would step off, or A into, a marker nothing on
+        -- screen was showing.
+        return;
+    end
     if (#ui.gp_q < GP_QUEUE_MAX) then
         table.insert(ui.gp_q, act);
     end

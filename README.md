@@ -112,7 +112,7 @@ XInput only: an Xbox pad, or anything Windows presents as one. A DirectInput con
 
 ## Gamepad map navigation
 
-The map itself reads the pad whenever it is open — no toggle, because unlike the widget it is somewhere you deliberately went. A hover appears on the marker nearest the middle of the view the first time you press anything, and the buttons are the map's until it closes.
+The map itself reads the pad whenever it is open — no toggle, because unlike the widget it is somewhere you deliberately went. Press any of its buttons and the marker nearest the middle of the view is hovered; from then on it is hovered the moment the map opens, and again each time **A** frames a nation, so there is always something on screen saying what the next press would act on.
 
 | Button | Effect |
 | --- | --- |
@@ -121,6 +121,8 @@ The map itself reads the pad whenever it is open — no toggle, because unlike t
 | B | Back out one step: the warp list, then the whole map with the nation you came out of still hovered, then the map closes |
 
 Three tiers, nested the way the game's own menus are, and the mouse walks the same ones: click a nation and **B** still backs out of it, click a zone point and the D-pad still walks the rows that come up. A list opened with the mouse lights no row until you press something, so the cursor's own hover is never argued with.
+
+Only one of the two is ever in charge, and it is whichever you last used — the pad being plugged in counts for nothing. Move the mouse over the map or the widget and the pad's hover goes out, since the cursor's own hover now says what a click would open. Press one of the map's own buttons and it comes back on the marker nearest the middle again — that first press only relights, it does not walk or open.
 
 The favorites widget wins while it is up. Walk to a Home Point with the map open and the widget takes the pad; dismiss it with **B** and the map answers again. The rows behave the same either way — a destination you have not registered reads red, a row saved off a different kind of NPC reads grey, and **A** refuses both.
 
