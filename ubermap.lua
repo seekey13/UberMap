@@ -25,6 +25,7 @@ local imgui = require('imgui');
 local ffi   = require('ffi');
 local d3d   = require('d3d8');
 local mm    = require('lib.mapmath');
+local gpn   = require('lib.gpnav');
 local fz    = require('lib.fuzzy');
 local unlocks = require('lib.unlocks');
 local guide   = require('lib.guide');
@@ -378,6 +379,25 @@ local FW = {
     [13] = 'b',
 };
 
+-- The map reads the same four and the D-pad's other axis, keyed the same way.
+-- It takes them only while it is on screen, which is a place the player put it
+-- rather than one they walked into, so unlike the widget it needs no toggle to
+-- justify swallowing them: the map is what a press is for while it is up.
+local GP = {
+    [0]  = 'up',
+    [1]  = 'down',
+    [2]  = 'left',
+    [3]  = 'right',
+    [12] = 'a',
+    [13] = 'b',
+};
+
+-- How many presses may wait for a frame that is not coming.  A queue nothing
+-- is draining is a map that is not being drawn -- the window collapsed, say --
+-- and a hundred presses landing at once when it comes back is worse than
+-- losing them.
+local GP_QUEUE_MAX = 8;
+
 -- The map data lives in lib/points.lua under the addon: the overview groups, in
 -- draw order so later groups land on top of earlier ones where they overlap,
 -- and the zone points placed with /um edit.  Editing writes the file back out.
@@ -626,6 +646,17 @@ local ui = T{
     fw_sel      = 1,         -- the row the D-pad has landed on, 1-based
     fw_hide     = false,     -- B put it away until the player walks off the NPC
     fw_held     = {},        -- buttons whose press the widget took, by index
+    -- Gamepad map navigation.  The selection is the icon itself rather than a
+    -- slot in a list, because the list it walks is built fresh out of whatever
+    -- is on screen at each press; gp_from is the overview marker A zoomed in
+    -- from, so B can put the view back with that one lit.  Both are nil until
+    -- a button is pressed, which is what keeps a highlight off the map of
+    -- somebody who is only ever using the mouse.
+    gp_icon     = nil,
+    gp_from     = nil,
+    gp_row      = nil,       -- the warp list row lit, 1-based, nil for none
+    gp_q        = {},        -- actions waiting for a frame to act on them
+    gp_held     = {},        -- buttons whose press the map took, by index
     -- The favorite being dragged, as { i, live, moved } of the row that was
     -- pressed: i follows the cursor as the list reorders under it, live is
     -- whether it can travel, and moved tells a reorder from a plain click.
@@ -1825,9 +1856,19 @@ local function draw_icons(origin_x, origin_y, view_w, view_h, over_map)
             local hot = over_map and not dim
                 and mouse_x >= cx - half and mouse_x <= cx + half
                 and mouse_y >= cy - half and mouse_y <= cy + half;
-            local tex = nil;
             if (hot) then
                 hot_ic = ic;
+            end
+            -- The gamepad's landing wears the same hover the cursor gives, so
+            -- one thing on screen says what a press would act on.  It is not
+            -- fed back as hot_ic: that is what a click acts on, and a click
+            -- has to mean wherever the cursor actually is.  A marker faded
+            -- back is not lit whatever the selection says, the same way it
+            -- takes no cursor -- a stale selection left behind by the wheel is
+            -- put right at the next press, not here.
+            local lit = hot or (not dim and ic == ui.gp_icon);
+            local tex = nil;
+            if (lit) then
                 tex = icon_texture((ic.file:gsub('_0%.png$', '_1.png')));
             end
             tex = tex or icon_texture(ic.file);
@@ -1835,7 +1876,7 @@ local function draw_icons(origin_x, origin_y, view_w, view_h, over_map)
                 -- Grown only for the draw: the hit test above keeps the plain
                 -- size, so the icon cannot swell out from under the cursor and
                 -- flicker between the two states.
-                local grow  = (hot and ic.group == HOT_GROUP)
+                local grow  = (lit and ic.group == HOT_GROUP)
                               and half * ICON_HOT or half;
                 local id    = tonumber(ffi.cast('uint32_t', tex));
                 local p0    = { cx - grow, cy - grow };
@@ -2000,6 +2041,81 @@ local function zoom_to_search(view_w, view_h)
     return false;
 end
 
+-- The map's own gamepad functions, hung off one table rather than standing as
+-- four locals of their own.  This chunk runs a handful of names short of Lua's
+-- limit of 200 locals to a function, and four more do not fit; it is the shape
+-- SCALE.px is already written in, so it is no stranger here than there.
+-- ponytail: one table because the limit is the whole reason for it.  Split the
+-- chunk into modules and these can go back to being plain locals.
+local nav = { };
+
+--[[
+* Every marker the gamepad can land on right now: what is drawn, minus what is
+* faded back -- the same two tests draw_icons puts a marker on the screen and
+* under the cursor by.  Which tier that is answers itself, since the overview
+* markers are the ones drawn below ZOOM_POINTS and the zone points the ones
+* drawn above it: zooming with the wheel moves the selection between tiers as
+* surely as an A press does, with no separate level to keep in step with it.
+--]]
+function nav.list()
+    local list = { };
+    for _, ic in ipairs(ICONS) do
+        if (icon_visible(ic) and not icon_dim(ic)) then
+            table.insert(list, ic);
+        end
+    end
+    return list;
+end
+
+--[[
+* The list, and where in it the selection sits.  A selection that is not on the
+* list any more -- zoomed past, filtered out by the toggles or the search box,
+* or never made at all -- restarts at the marker nearest the middle of the
+* viewport, which is what puts the first press of a session on the centre-most
+* nation and what recovers every stale one after that.
+--]]
+function nav.focus(view_w, view_h)
+    local list = nav.list();
+    for i, ic in ipairs(list) do
+        if (ic == ui.gp_icon) then
+            return list, i;
+        end
+    end
+    local i = gpn.nearest(list,
+                          mm.to_map(view_w / 2, ui.pan_x, ui.zoom, 0),
+                          mm.to_map(view_h / 2, ui.pan_y, ui.zoom, 0));
+    ui.gp_icon = (i ~= nil) and list[i] or nil;
+    return list, i;
+end
+
+--[[
+* Acts on one queued press, at the frame that knows how big the viewport is.
+--]]
+function nav.act(act, view_w, view_h)
+    local list, i = nav.focus(view_w, view_h);
+    local j = gpn.step(list, i, act);
+    if (j ~= nil) then
+        ui.gp_icon = list[j];
+    end
+end
+
+--[[
+* Drains the presses that arrived since the last frame.  A queue rather than
+* one pending action, so two presses inside a frame both land instead of the
+* second eating the first; nothing is touched on a frame with no press in it,
+* which is what keeps the gamepad's highlight off a map nobody has pressed a
+* button at.
+--]]
+function nav.pump(view_w, view_h)
+    if (#ui.gp_q == 0) then
+        return;
+    end
+    for _, act in ipairs(ui.gp_q) do
+        nav.act(act, view_w, view_h);
+    end
+    ui.gp_q = { };
+end
+
 --[[
 * Asks the server for the map markers, which it answers with the teleport masks
 * among other things.  The same request the client makes for itself every time
@@ -2036,6 +2152,12 @@ local function show()
     -- A menu left open from the last time the map was up would come back with
     -- it, hung over a panel that is no longer there.
     ui.ctx       = nil;
+    -- The gamepad starts where the view does, which the first frame works out,
+    -- and a press left over from the last time the map was up is not this
+    -- one's: nothing is queued between the map closing and it opening again.
+    ui.gp_icon   = nil;
+    ui.gp_from   = nil;
+    ui.gp_q      = {};
     ask_for_masks();
 end
 
@@ -2652,6 +2774,12 @@ local function draw_map(view_w, view_h)
     local map_w, map_h = map_size();
     local cover = mm.cover_zoom(map_w, map_h, view_w, view_h);
     ui.zoom = mm.clamp(ui.zoom or cover, cover, MAX_ZOOM);
+
+    -- The gamepad's presses, acted on here rather than where they arrive: the
+    -- zooms they ask for need the viewport size, and only a frame knows that.
+    -- Ahead of the mouse below, so a press and a click on the same frame land
+    -- in the order they were made.
+    nav.pump(view_w, view_h);
 
     -- The viewport's top-left, captured before the child is opened.
     local origin_x, origin_y = imgui.GetCursorScreenPos();
@@ -3383,13 +3511,17 @@ end);
 
 --[[
 * event: xinput_button
-* desc : D-pad up and down walk the favorites widget, A sends the row it has
-*        landed on and B puts the widget away.  Only while the widget is on
-*        screen, which is only while a warp NPC is in reach; every other button,
-*        and every button at all outside that, is left to the client.
+* desc : Two things read the pad, and only ever one at a time.  The favorites
+*        widget takes D-pad up and down, A and B while it is on screen, which
+*        is only while a warp NPC is in reach.  The map takes those and the
+*        D-pad's other axis while it is up: the D-pad walks the markers, A
+*        opens what is under it and B backs out.  The widget is asked first, so
+*        walking up to an NPC puts it in front of a map that is already open
+*        and it has to be dismissed before the map answers again.  Every other
+*        button, and every button at all outside those two, is the client's.
 --]]
 ashita.events.register('xinput_button', 'ubermap_xinput', function (e)
-    local act = FW[e.button];
+    local act = GP[e.button];
     if (act == nil) then
         return;
     end
@@ -3400,34 +3532,56 @@ ashita.events.register('xinput_button', 'ubermap_xinput', function (e)
     -- in two of the four cases -- B dismisses it and A warps out of range of
     -- the NPC holding it up -- and a release matched against the state after
     -- that would leak a button-up the client never got the button-down for.
+    -- The map's own presses are held for the same reason: A on a warp row
+    -- closes the map before the button comes back up.
     if (e.state ~= 1) then
-        if (ui.fw_held[e.button]) then
+        if (ui.fw_held[e.button] or ui.gp_held[e.button]) then
             ui.fw_held[e.button] = nil;
+            ui.gp_held[e.button] = nil;
             e.blocked = true;
         end
         return;
     end
 
-    local n = #fav_view();
-    if (not ui.fw_on or n == 0) then
+    -- The widget first, and outright: it is only ever up stood at a warp NPC,
+    -- and there it is what a press is for.  The two buttons it does not read
+    -- go to the client rather than to the map behind it, or dismissing it
+    -- would be the only way to stop the map moving underneath.
+    if (ui.fw_on) then
+        local n = #fav_view();
+        if (FW[e.button] == nil or n == 0) then
+            return;
+        end
+        e.blocked = true;
+        ui.fw_held[e.button] = true;
+
+        if (act == 'up') then
+            -- Wraps at both ends, the way the game's own menus do.  ponytail:
+            -- one step a press; a held-D-pad repeat if a list ever gets long
+            -- enough to want one.
+            ui.fw_sel = (ui.fw_sel - 2) % n + 1;
+        elseif (act == 'down') then
+            ui.fw_sel = ui.fw_sel % n + 1;
+        elseif (act == 'a') then
+            fw_confirm();
+        else
+            -- The way back to the NPC's own menu: with A swallowed there would
+            -- otherwise be no reaching it from a controller while stood here.
+            ui.fw_hide = true;
+        end
+        return;
+    end
+
+    -- The map, while it is on screen and has had a frame size the view.
+    -- Queued rather than acted on here: the zooms need the viewport size, and
+    -- only the draw knows that.
+    if (not ui.is_open[1] or ui.zoom == nil) then
         return;
     end
     e.blocked = true;
-    ui.fw_held[e.button] = true;
-
-    if (act == 'up') then
-        -- Wraps at both ends, the way the game's own menus do.  ponytail: one
-        -- step a press; a held-D-pad repeat if a list ever gets long enough to
-        -- want one.
-        ui.fw_sel = (ui.fw_sel - 2) % n + 1;
-    elseif (act == 'down') then
-        ui.fw_sel = ui.fw_sel % n + 1;
-    elseif (act == 'a') then
-        fw_confirm();
-    else
-        -- The way back to the NPC's own menu: with A swallowed there would
-        -- otherwise be no reaching it from a controller while stood here.
-        ui.fw_hide = true;
+    ui.gp_held[e.button] = true;
+    if (#ui.gp_q < GP_QUEUE_MAX) then
+        table.insert(ui.gp_q, act);
     end
 end);
 
