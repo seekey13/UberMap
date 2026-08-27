@@ -1,6 +1,6 @@
 # UberMap
 
-Ashita v4 addon by Seekey. A zoomable, pannable map of Vana'diel that pops up when you talk to a Home Point, Survival Guide or Unity Concord, and warps you (using [Uberwarp](https://github.com/ThornyFFXI/Uberwarp)).   This is created for ACE players on the [CatsEye[(https://catseyexi.com/) private server.
+Ashita v4 addon by Seekey. A zoomable, pannable map of Vana'diel that warps you (using [Uberwarp](https://github.com/ThornyFFXI/Uberwarp)).   This is created for ACE players on the [CatsEye](https://catseyexi.com/) private server.
 <img width="1748" height="977" alt="image" src="https://github.com/user-attachments/assets/bf20febe-6030-4eea-a17d-77ac633817c3" />
 
 
@@ -18,11 +18,11 @@ Drop the `UberMap` folder into `Ashita/addons/`, then `/addon load ubermap`.
 
 Mouse wheel zooms, left-drag pans, **shift**-drag moves the window/widget.  
 A controller works it too — see [Gamepad map navigation](#gamepad-map-navigation).  
-Talking to a warp NPC opens it; or use the command `/uw`.  
+Talking to a warp NPC opens it; or use `/um`.  
 It closes itself once you walk away or a warp is used.  
 The UberMap widget will open when approaching a warp point.
 
-**Past**/**Present**.  
+The **Past**/**Present** switch at the head of the toolbar swaps between the two maps of Vana'diel.  
 
 ## Warp list
 
@@ -144,7 +144,7 @@ The same three tiers off the keyboard, with the arrows standing in for the D-pad
 | Arrows | With the map open, move the hover the same way the D-pad does |
 | Enter | **A**: zoom into a nation, open a zone point's warp list, send the row |
 | Esc | **B**: back out one step, and at the top close the map |
-| Tab | With the map open, put the caret in the search box; press it again to hand the keyboard back to the map |
+| Tab | With the map open, put the caret in the search box; Enter, or Esc -- hands the keyboard back to the map |
 | U | At the widget, swap it for the full map — the **Y** press, on a key |
 | F | At the widget, hand it the arrows. Up and down walk the list, Enter warps, Esc hands them back. With the map open it is **Y** instead: on a warp row it opens the *Add / Remove point from favorites list* menu on the highlighted row, where Enter picks the item and Esc or a second **F** dismisses it. On the map's other screens it is still taken, and does nothing |
 
@@ -152,7 +152,7 @@ Esc at the widget without an **F** first puts the widget away, the way **B** doe
 
 **U** and **F** are taken for the whole time the widget is on screen, whether or not you are using it — so a `/bind u` or `/bind f` of your own will not fire while you stand at a Home Point, Survival Guide or Unity Concord. Untick **Favorites Widget** on the `/um config` panel if you need those keys there. **F** is taken by the open map as well, for the same reason the arrows are.
 
-Typing wins over nearly all of it. The game's own chat line, the map's search box and the config panel's number boxes each take the arrows, Enter and Esc while a caret is in them — with **Search Focus On Open** ticked, that includes the frame the map opens in, so start typing straight away and press Tab, Esc or click the map when you want the keys back. **Tab** is the exception, since a key that could only ever get the keyboard *into* the box would be a door with no handle on the inside: it moves the caret in and back out again, and is taken from the game for as long as the map is up. The chat line and the config panel's number boxes still beat it.
+Typing wins over nearly all of it. The game's own chat line, the map's search box and the config panel's number boxes each take the arrows, Enter and Esc while a caret is in them — with **Search Focus On Open** ticked, that includes the frame the map opens in, so start typing straight away and press Tab, Enter, Esc or click the map when you want the keys back. **Tab** is the exception, since a key that could only ever get the keyboard *into* the box would be a door with no handle on the inside: it moves the caret in and back out again, and is taken from the game for as long as the map is up. The chat line and the config panel's number boxes still beat it.
 
 A key the map takes is kept from the game outright, for as long as it is held, so an arrow walking the markers is not also turning the camera. Numpad Enter counts as Enter; the numpad arrows are left alone, since they are how a lot of people move.
 
