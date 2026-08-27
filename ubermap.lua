@@ -460,6 +460,11 @@ local default_settings = T{
     -- is noise by the time it arrives; /um quiet turns it back on when a warp
     -- is misbehaving and the reason matters.
     quiet  = true,
+    -- Whether walking up to a Home Point, Survival Guide or Unity Concord puts
+    -- the map on screen by itself.  On by default: that is what the map has
+    -- always done, and the reason it exists.  Off leaves '/um' and Y at the
+    -- favorites widget as the ways in.
+    autoopen = true,
 };
 -- Loaded from a copy of the defaults, because the library hands its own default
 -- table back for a key the file has no entry for: without the copy the first
@@ -581,6 +586,11 @@ local function fill_defaults()
     if (cfg.quiet == nil) then
         cfg.quiet = false;
     end
+    -- Same as the errand above: a file written before the toggle existed has no
+    -- entry, and nil there is not off -- opening on the NPC is the default.
+    if (cfg.autoopen == nil) then
+        cfg.autoopen = true;
+    end
     -- The map used to write the Campaign zones '(S)' and rewrite them to '[S]'
     -- on the way out; it names them '[S]' throughout now.  A favorite saved
     -- under the old name still travels, but nothing else about it looks up any
@@ -688,6 +698,8 @@ local ui = T{
     edit_name   = { '', },
     edit_group  = { '', },
     font_px     = { 0, },    -- the Size box, which edits cfg.font_px
+    -- The auto-open checkbox, which edits cfg.autoopen.
+    auto_open   = { true, },
     -- The scale boxes, keyed by the cfg key each edits, in InputInt's shape.
     -- Filled from SCALE.rows below rather than written out.
     scale       = T{ },
@@ -695,7 +707,8 @@ local ui = T{
     -- cfg.font_px, resolved once at the top of a frame rather than per label.
     font_scale  = 1.0,
 };
-ui.font_px[1] = cfg.font_px;
+ui.font_px[1]   = cfg.font_px;
+ui.auto_open[1] = cfg.autoopen;
 for _, row in ipairs(SCALE.rows) do
     ui.scale[row[1]] = { cfg[row[1]], };
 end
@@ -714,7 +727,8 @@ end
 settings.register('settings', 'settings_update', function (s)
     cfg = s;
     fill_defaults();
-    ui.font_px[1]  = cfg.font_px;
+    ui.font_px[1]   = cfg.font_px;
+    ui.auto_open[1] = cfg.autoopen;
     -- Mutated rather than replaced: ImGui edits the tables ui.scale already
     -- holds, so a fresh one here would leave the panel writing into an orphan.
     for _, row in ipairs(SCALE.rows) do
@@ -3294,6 +3308,10 @@ local function draw_map(view_w, view_h)
                             { 'Outline',    cfg.col_outline },
                             { 'Background', cfg.col_bg },
                             { 'Hover',      cfg.col_hover } };
+            -- The one row that is not about how the map looks, so it is written
+            -- out here rather than joining a list: it is measured for the
+            -- panel's width and drawn on the end of it.
+            local auto_label = 'Open Map when interacting with a HP/SG/UC';
             -- Every InputInt row: the name it is drawn under, the box ImGui
             -- edits, the cfg key it writes, and the bounds and steps it takes.
             -- Size is one of them rather than a case of its own.
@@ -3323,6 +3341,11 @@ local function draw_map(view_w, view_h)
                 panel_w = math.max(panel_w,
                                    fh + POPUP_PAD + imgui.CalcTextSize(pick[1]));
             end
+            -- A checkbox is a frame square with its name beside it, the same
+            -- shape as a swatch -- and this name is long enough to be what
+            -- decides the panel's width.
+            panel_w = math.max(panel_w,
+                               fh + POPUP_PAD + imgui.CalcTextSize(auto_label));
             -- The pulldown carries no name, so it spends the panel's whole width
             -- on the face and the arrow ImGui puts on its end -- one frame's
             -- worth, the same as a swatch.
@@ -3332,8 +3355,9 @@ local function draw_map(view_w, view_h)
             end
             panel_w = panel_w + POPUP_PAD * 2;
             local pitch   = fh + TOGGLE_GAP;
-            -- The face pulldown, then every numeric row, then the pickers.
-            local panel_h = pitch * (#picks + #nums + 1) - TOGGLE_GAP
+            -- The face pulldown, then every numeric row, then the pickers,
+            -- then the auto-open checkbox on the end.
+            local panel_h = pitch * (#picks + #nums + 2) - TOGGLE_GAP
                             + POPUP_PAD * 2;
             local px      = view_w - UI_MARGIN - panel_w;
             local py      = UI_MARGIN;
@@ -3421,6 +3445,18 @@ local function draw_map(view_w, view_h)
                 end
                 ui.hot = ui.hot or imgui.IsItemActive();
             end
+
+            -- Auto-open, last row of the panel.  Saved on the spot rather than
+            -- deferred through cfg_dirty like the pickers and the boxes: a
+            -- checkbox reports its change once, not once a frame for as long as
+            -- the mouse is held.
+            imgui.SetCursorPos({ row_x, row_y + pitch * (#nums + #picks + 1) });
+            if (imgui.Checkbox(auto_label .. '##ubermap_autoopen',
+                               ui.auto_open)) then
+                cfg.autoopen = ui.auto_open[1];
+                settings.save();
+            end
+            ui.hot = ui.hot or imgui.IsItemActive();
             -- The write itself is flushed from d3d_present rather than here, so
             -- a change still reaches the file on the frame the panel or the map
             -- is closed out from under it.
@@ -3676,7 +3712,10 @@ ashita.events.register('packet_in', 'ubermap_packet_in', function (e)
 
     -- A talk the map's own command started is not a reason to reopen it: the
     -- send closed it on purpose.
-    if (warp_npc_type(name) ~= nil and os.clock() - ui.sent_at > SEND_QUIET) then
+    -- cfg.autoopen is the '/um config' checkbox: with it off the NPC is walked
+    -- up to in peace, and Y at the favorites widget or '/um' puts the map up.
+    if (warp_npc_type(name) ~= nil and cfg.autoopen
+        and os.clock() - ui.sent_at > SEND_QUIET) then
         show();
     end
 
@@ -3773,14 +3812,16 @@ end);
 --[[
 * event: xinput_button
 * desc : Two things read the pad, and only ever one at a time.  The favorites
-*        widget takes D-pad up and down, A and B while it is on screen, which
-*        is only while a warp NPC is in reach.  The map takes those and the
-*        D-pad's other axis and Y while it is up: the D-pad walks the markers,
-*        A opens what is under it, B backs out, and Y is the right-click that
-*        opens the favorites menu on a warp row.  The widget is asked first, so
-*        walking up to an NPC puts it in front of a map that is already open
-*        and it has to be dismissed before the map answers again.  Every other
-*        button, and every button at all outside those two, is the client's.
+*        widget takes D-pad up and down, A, B and Y while it is on screen,
+*        which is only while a warp NPC is in reach.  The map takes those and
+*        the D-pad's other axis and Y while it is up: the D-pad walks the
+*        markers, A opens what is under it, B backs out, and Y is the
+*        right-click that opens the favorites menu on a warp row -- while at
+*        the widget Y is what swaps the widget for the map itself.  The widget
+*        is asked first, so walking up to an NPC puts it in front of a map
+*        that is already open and it has to be dismissed before the map
+*        answers again.  Every other button, and every button at all outside
+*        those two, is the client's.
 --]]
 ashita.events.register('xinput_button', 'ubermap_xinput', function (e)
     local act = GP[e.button];
@@ -3807,14 +3848,13 @@ ashita.events.register('xinput_button', 'ubermap_xinput', function (e)
     -- The widget first, and outright: it is only ever up stood at a warp NPC,
     -- and there it is what a press is for.  The two buttons it does not read
     -- go to the client rather than to the map behind it, or dismissing it
-    -- would be the only way to stop the map moving underneath.
+    -- would be the only way to reach the NPC's own menu.
     if (ui.fw_on) then
         local n = #fav_view();
-        -- Y is the map's, not the widget's: the widget's own rows are already
-        -- favorites, and its right-click menu is an ImGui popup hung off the
-        -- hovered row, which a pad has no cursor to hover.  Left to the client
-        -- rather than swallowed, the way left and right are.
-        if (act == 'left' or act == 'right' or act == 'y' or n == 0) then
+        -- Left and right stay the client's: the widget is a single column, and
+        -- taking them would leave no way to work the menu behind it short of
+        -- dismissing it.
+        if (act == 'left' or act == 'right' or n == 0) then
             return;
         end
         e.blocked = true;
@@ -3839,6 +3879,13 @@ ashita.events.register('xinput_button', 'ubermap_xinput', function (e)
             ui.fw_sel = ui.fw_sel % n + 1;
         elseif (act == 'a') then
             fw_confirm();
+        elseif (act == 'y') then
+            -- The way up to the full map from the widget, and what the
+            -- auto-open checkbox leaves behind when it is turned off.  The
+            -- widget goes with it rather than staying up over the map: it would
+            -- otherwise keep taking the D-pad and A that the map now wants.
+            ui.fw_hide = true;
+            show();
         else
             -- The way back to the NPC's own menu: with A swallowed there would
             -- otherwise be no reaching it from a controller while stood here.

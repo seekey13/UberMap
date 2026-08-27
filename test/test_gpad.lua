@@ -18,7 +18,7 @@ local function check(ok, msg)
 end
 
 -- The table, exactly as ubermap.lua keys it: the XInput button index the event
--- delivers.  The widget reads the four that are not left, right and Y.
+-- delivers.  The widget reads the five that are not left and right.
 local GP = { [0] = 'up', [1] = 'down', [2] = 'left', [3] = 'right',
              [12] = 'a', [13] = 'b', [15] = 'y' };
 local QUEUE_MAX = 8;
@@ -28,6 +28,7 @@ local function reset()
     -- Driving by default, so each case says outright when it is starting from
     -- a map the mouse has just taken.
     ui = { fw_on = false, is_open = { false, }, zoom = 1.0, fw_sel = 1,
+           fw_hide = false, opened = 0,
            gp_active = true, gp_q = { }, pad_held = { } };
     favs_n = 0;
 end
@@ -55,7 +56,7 @@ local function button(index, state)
         return false;
     end
     if (ui.fw_on) then
-        if (act == 'left' or act == 'right' or act == 'y' or favs_n == 0) then
+        if (act == 'left' or act == 'right' or favs_n == 0) then
             return false;
         end
         ui.pad_held[index] = true;
@@ -66,6 +67,12 @@ local function button(index, state)
             ui.fw_sel = (ui.fw_sel - 2) % favs_n + 1;
         elseif (act == 'down') then
             ui.fw_sel = ui.fw_sel % favs_n + 1;
+        elseif (act == 'y') then
+            -- show(), minus the frame behind it: the widget puts itself away
+            -- for this visit and the map comes up in its place.
+            ui.fw_hide    = true;
+            ui.is_open[1] = true;
+            ui.opened     = ui.opened + 1;
         end
         return true;
     end
@@ -110,8 +117,9 @@ for _, i in ipairs(ALL) do
     check(not button(i, 0), ('button %d should only release once'):format(i));
 end
 
--- The widget in front: it reads four of the six and the map gets none of them,
--- so walking up to a warp NPC still puts the widget first whatever is behind.
+-- The widget in front: it reads five of the seven and the map gets none of
+-- them, so walking up to a warp NPC still puts the widget first whatever is
+-- behind.
 reset();
 ui.is_open[1], ui.fw_on, favs_n = true, true, 3;
 for _, i in ipairs({ 0, 1, 12, 13 }) do
@@ -121,11 +129,23 @@ check(#ui.gp_q == 0, 'the map should queue nothing while the widget is up');
 -- One step each way, so the selection is back where it started: both of the
 -- D-pad presses landed on the widget rather than on the map behind it.
 check(ui.fw_sel == 1, ('the widget selection should have walked, is %d'):format(ui.fw_sel));
--- The three the widget does not read stay the client's rather than falling
+-- The two the widget does not read stay the client's rather than falling
 -- through to the map behind it.
-for _, i in ipairs({ 2, 3, 15 }) do
+for _, i in ipairs({ 2, 3 }) do
     check(not button(i, 1), ('button %d should be the client\'s under the widget'):format(i));
 end
+
+-- Y at the widget is the way up to the full map: the press is the widget's,
+-- the widget puts itself away for this visit, and the map is opened rather
+-- than driven -- nothing is queued for it.
+reset();
+ui.fw_on, favs_n = true, 3;
+check(button(15, 1), 'Y should be taken by the widget');
+check(ui.fw_hide, 'Y should put the widget away');
+check(ui.opened == 1, ('Y should open the map once, opened %d'):format(ui.opened));
+check(#ui.gp_q == 0, 'Y should queue nothing for the map it just opened');
+check(ui.fw_sel == 1, ('Y should not step the row, is %d'):format(ui.fw_sel));
+check(button(15, 0), 'the Y release should follow its press');
 
 -- A queue nothing is draining is a map that is not being drawn -- collapsed,
 -- or behind a texture that failed -- and a hundred presses landing at once
@@ -173,7 +193,7 @@ for _, i in ipairs({ 4, 5, 8, 9, 14 }) do
 end
 
 if (fails == 0) then
-    print('ok: the widget wins, the map takes the seven, releases follow presses');
+    print('ok: the widget wins, Y opens the map, releases follow presses');
 else
     print(('%d check(s) failed'):format(fails));
     os.exit(1);
