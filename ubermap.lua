@@ -645,6 +645,10 @@ local ui = T{
     open_z      = nil,       -- nil until the first frame after opening reads it
     warp        = nil,       -- zone point whose warp popup is open
     warp_hot    = false,     -- cursor was inside that popup last frame
+    -- The same for the right-click menu, which is drawn after everything it
+    -- can land on: whatever is underneath reads this a frame late to know the
+    -- cursor is really on the menu rather than on itself.
+    ctx_hot     = false,
     -- The popup's top-left, stashed by the draw that worked it out, so a Y
     -- press can hang the favorites menu off the lit row without repeating the
     -- clamping that decided where the panel went.
@@ -658,6 +662,10 @@ local ui = T{
     fw_shown    = false,     -- it was up last frame, i.e. this is not its first
     fw_sel      = 1,         -- the row the D-pad has landed on, 1-based
     fw_hide     = false,     -- B put it away until the player walks off the NPC
+    -- The widget's right-click menu was up last frame.  Read the same way as
+    -- ctx_hot: the popup is submitted after the list it hangs off, so the rows
+    -- underneath learn it is there a frame late.
+    fw_ctx      = false,
     pad_held    = {},        -- buttons whose press was taken, by index
     -- Gamepad map navigation.  The selection is the icon itself rather than a
     -- slot in a list, because the list it walks is built fresh out of whatever
@@ -742,12 +750,13 @@ local function map_size()
 end
 
 --[[
-* Tooltip for the item just submitted.  Vetoed by a warp popup lying over that
-* item for the same reason its press is: the row is submitted before the popup,
-* so ImGui hands it the hover of a cursor that is really over the panel.
+* Tooltip for the item just submitted.  Vetoed by a warp popup or the
+* right-click menu lying over that item for the same reason its press is: the
+* row is submitted before either, so ImGui hands it the hover of a cursor that
+* is really over the thing on top.
 --]]
 local function item_tip(text)
-    if (imgui.IsItemHovered() and not ui.warp_hot) then
+    if (imgui.IsItemHovered() and not ui.warp_hot and not ui.ctx_hot) then
         imgui.SetTooltip(text);
     end
 end
@@ -1837,11 +1846,11 @@ end
 * argument list has been through - the list moved between the ImGui versions
 * Ashita has shipped.  Returns whether it was pressed, and the width it took.
 *
-* A warp popup lying over one of these eats the press: this row is submitted
-* before the popup, and ImGui hands hover to the first item that claims it, so
-* a panel over a toggle would otherwise flip it from underneath.  Read a frame
-* late, which is harmless - the panel does not move while it is open.  Missing
-* art draws nothing and takes no press.
+* A warp popup or the right-click menu lying over one of these eats the press:
+* this row is submitted before either, and ImGui hands hover to the first item
+* that claims it, so a panel over a toggle would otherwise flip it from
+* underneath.  Read a frame late, which is harmless - neither moves while it is
+* open.  Missing art draws nothing and takes no press.
 --]]
 local function icon_button(id, file, x, y, h, tint, tip)
     local w = icon_width(file, h);
@@ -1854,7 +1863,8 @@ local function icon_button(id, file, x, y, h, tint, tip)
     imgui.GetWindowDrawList():AddImage(tonumber(ffi.cast('uint32_t', tex)),
                                        { sx, sy }, { sx + w, sy + h },
                                        { 0, 0 }, { 1, 1 }, tint);
-    local hit = imgui.InvisibleButton('##ubermap_' .. id, { w, h }) and not ui.warp_hot;
+    local hit = imgui.InvisibleButton('##ubermap_' .. id, { w, h })
+                and not ui.warp_hot and not ui.ctx_hot;
     if (tip ~= nil) then
         item_tip(tip);
     end
@@ -2354,8 +2364,11 @@ local function show()
     ui.open_x    = nil;
     ui.open_z    = nil;
     -- A menu left open from the last time the map was up would come back with
-    -- it, hung over a panel that is no longer there.
+    -- it, hung over a panel that is no longer there.  Its veto goes with it,
+    -- or the first frame back would have the panels deaf under a menu that is
+    -- not there.
     ui.ctx       = nil;
+    ui.ctx_hot   = false;
     -- The gamepad starts where the view does, which the first frame works out,
     -- and a press left over from the last time the map was up is not this
     -- one's: nothing is queued between the map closing and it opening again.
@@ -2444,7 +2457,8 @@ end
 *
 *   sel  - a row to keep lit whatever the cursor is doing, i.e. the widget's
 *          D-pad landing.  The panel has no selection of its own.
-*   veto - something lying over the list is eating its presses.
+*   veto - something lying over the list is eating its presses, so no row of
+*          it hovers, drags or right-clicks while that is up.
 *   grab - false to draw the rows and take nothing, which is what hands a
 *          press to the window underneath instead.
 *
@@ -2487,7 +2501,8 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
         -- again every frame rather than saved with the entry.
         local live  = f.type == ui.near_kind;
         local known = warp_known(f.key, f);
-        local over  = mouse_x >= px and mouse_x <= px + w
+        local over  = not veto
+                      and mouse_x >= px and mouse_x <= px + w
                       and mouse_y >= ry and mouse_y < ry + POPUP_ROW;
         if (over) then
             hot_i, hot_live = i, live and known;
@@ -2622,6 +2637,9 @@ local function draw_fav_widget()
     local on = cfg.widget and n > 0 and not ui.fw_hide and ui.near_kind;
     if (not on) then
         ui.fw_on, ui.fw_shown = false, false;
+        -- A menu left open by a widget going off screen is gone with it, so
+        -- the veto goes too: a stale one leaves the rows deaf on the way back.
+        ui.fw_ctx = false;
         -- Walking off the NPC is what clears a dismissal: B puts the widget
         -- away for this visit, not for good.
         if (not ui.near_kind) then
@@ -2684,7 +2702,8 @@ local function draw_fav_widget()
             bit.bor(ImGuiHoveredFlags_ChildWindows, ImGuiHoveredFlags_RectOnly)));
         local hot_i = draw_fav_list(px, py, m, mouse_x, mouse_y,
                                     { sel = ui.gp_active and ui.fw_sel or nil,
-                                      grab = not shift });
+                                      grab = not shift,
+                                      veto = ui.fw_ctx });
         -- Mouse and D-pad share the one selection: a press of either button
         -- on a row moves it there, and a row dragged up or down the list
         -- carries the selection along with it.  A click puts the pad's
@@ -2701,7 +2720,26 @@ local function draw_fav_widget()
         -- up: that one is drawn into the map window, which this window stands
         -- in front of.  It hangs off the list's InvisibleButton, and acts on
         -- the row the right-click just moved the selection to.
+        --
+        -- Placed under that row rather than at the cursor, the same as the
+        -- map's menu and for the same reason: a menu lying over the row it
+        -- came from puts its item and that row under the one click.  The rows
+        -- stand down while it is up as well -- an ImGui popup blocks its own
+        -- items from the ones below, but these rows are hand-tested rects and
+        -- know nothing of it.
+        imgui.SetNextWindowPos({ px, py + POPUP_ROW * ui.fw_sel + POPUP_GAP });
+        -- Dressed in the panel's own colours, or this would be the one menu on
+        -- screen wearing ImGui's: the ground and outline the lists draw
+        -- themselves, and the hover the map's Hover picker sets.  Header* is
+        -- what MenuItem lights with.
+        imgui.PushStyleColor(ImGuiCol_PopupBg,
+                             { 0.0627, 0.0627, 0.0627, 0.8784 });
+        imgui.PushStyleColor(ImGuiCol_Border, { 0.0, 0.0, 0.0, 1.0 });
+        imgui.PushStyleColor(ImGuiCol_HeaderHovered, cfg.col_hover);
+        imgui.PushStyleColor(ImGuiCol_HeaderActive, cfg.col_hover);
+        ui.fw_ctx = false;
         if (not shift and imgui.BeginPopupContextItem('##ubermap_fw_ctx')) then
+            ui.fw_ctx = true;
             if (imgui.MenuItem('Remove point from favorites list')) then
                 local f = fav_view()[ui.fw_sel];
                 if (f ~= nil) then
@@ -2713,6 +2751,7 @@ local function draw_fav_widget()
             end
             imgui.EndPopup();
         end
+        imgui.PopStyleColor(4);
     end
     imgui.End();
     imgui.PopStyleVar();
@@ -2761,7 +2800,7 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
         -- put it in this corner.  Read a frame late, which is harmless since
         -- neither panel moves while it is open.
         local hot_i = draw_fav_list(px, py, m, mouse_x, mouse_y,
-                                    { veto = ui.warp_hot });
+                                    { veto = ui.warp_hot or ui.ctx_hot });
 
         -- Right-click a listed favorite to take it back off the list, the
         -- same menu that put it on.  Hung under the row rather than at the
@@ -2867,7 +2906,11 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                 -- The hover is drawn straight into the list rather than
                 -- coming off an ImGui item, for the same reason the click
                 -- below is tested by hand: the panel is one InvisibleButton.
-                local over = mouse_x >= px and mouse_x <= px + w
+                -- The right-click menu is drawn over this panel and hangs off
+                -- one of its own rows, so a row under it takes neither the
+                -- hover nor either button: the menu is what the cursor is on.
+                local over = not ui.ctx_hot
+                             and mouse_x >= px and mouse_x <= px + w
                              and mouse_y >= ry and mouse_y < ry + POPUP_ROW;
                 if (over) then
                     hot_any  = r;
@@ -2967,6 +3010,9 @@ end
 * The favorites right-click menu.  See draw_favs above for why it is out here.
 --]]
 local function draw_ctx_menu(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y)
+    -- Out unless the block below puts it back: a menu that is not up is not
+    -- over anything, and a stale one would leave the panels underneath deaf.
+    ui.ctx_hot = false;
     -- The right-click menu, drawn after both panels so it lands on top of
     -- whichever one it was opened from.  Hand-drawn like they are rather
     -- than an ImGui popup: the panels are one InvisibleButton each and have
@@ -2983,11 +3029,13 @@ local function draw_ctx_menu(origin_x, origin_y, view_w, view_h, mouse_x, mouse_
         -- and flipped above that row when there is no room below.  Never over
         -- it: a menu lying across the row would put its item and that row
         -- under the one click, which reads as picking both.  ui.ctx.ry is the
-        -- row's top, so the two placements are its own pitch either side.
+        -- row's top, so the two placements are its own pitch either side --
+        -- plus POPUP_GAP, the same gap a panel keeps off its marker, so the
+        -- two edges are apart rather than merely not overlapping.
         local px = mm.clamp_box(ui.ctx.x, w, origin_x, view_w);
-        local py = ui.ctx.ry + POPUP_ROW;
+        local py = ui.ctx.ry + POPUP_ROW + POPUP_GAP;
         if (py + h > origin_y + view_h) then
-            py = ui.ctx.ry - h;
+            py = ui.ctx.ry - h - POPUP_GAP;
         end
         -- Clamped last, so a row against either edge still puts the whole item
         -- on screen.
@@ -2999,6 +3047,9 @@ local function draw_ctx_menu(origin_x, origin_y, view_w, view_h, mouse_x, mouse_
                     0, ImDrawCornerFlags_All, ICON_BORDER);
         local ctx_hot = mouse_x >= px and mouse_x <= px + w
                         and mouse_y >= py and mouse_y <= py + h;
+        -- What everything drawn before this reads next frame to know the
+        -- cursor is on the menu and not on itself.
+        ui.ctx_hot = ctx_hot;
         -- Lit under the cursor, and lit outright while the pad is driving: the
         -- menu is one item, so a pad opening it is already on the only thing
         -- there is to pick, and an unlit item would read as nothing to press.
