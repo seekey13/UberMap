@@ -213,6 +213,68 @@ check(fav_index(B_ZONE, B) ~= nil and favs[fav_index(B_ZONE, B)].label == guide,
       'the row the narrowed list hides should still be listed');
 check(#favs == 3, 'narrowing should not add or drop anything, got ' .. #favs);
 
+-- The three starter favorites, and the one thing that must stay true of them:
+-- deleting one keeps it deleted.  settings.load merges the addon's defaults
+-- into the saved file and recurses into tables, so a starter row left sitting
+-- in default_settings is refilled by index on every load -- and the library
+-- saves the merged table straight back to disk, so it stays.  merge below is
+-- Ashita's own (addons/libs/sugar/table.lua), which the tests cannot require,
+-- and seed mirrors the fill_defaults branch that replaced those rows.
+do
+    local function merge(self, src)
+        for k, v in pairs(src) do
+            if (type(v) == 'table') then
+                if (rawget(self, k) == nil) then
+                    self[k] = v;
+                else
+                    merge(self[k], v);
+                end
+            elseif (rawget(self, k) == nil) then
+                self[k] = v;
+            end
+        end
+        return self;
+    end
+
+    local function seed(cfg)
+        if (cfg.seeded ~= true) then
+            cfg.seeded = true;
+            if (#cfg.favs == 0) then
+                for i = 1, 3 do
+                    table.insert(cfg.favs, { key = 'seed' .. i });
+                end
+            end
+        end
+        return cfg;
+    end
+
+    -- One load: the file off disk, the defaults merged in, then fill_defaults.
+    local function load(file)
+        return seed(merge(file, { favs = {}, seeded = false }));
+    end
+
+    local fresh = load({});
+    check(#fresh.favs == 3, 'a new character should start with three favorites');
+
+    -- Emptied on purpose and loaded again: the marker is already in the file,
+    -- so nothing is put back.  This is the case the old defaults got wrong.
+    local emptied = { favs = {}, seeded = true };
+    check(#load(emptied).favs == 0,
+          'an emptied list should stay empty across a load');
+
+    -- And across as many loads as it likes.
+    for _ = 1, 3 do
+        load(emptied);
+    end
+    check(#emptied.favs == 0,
+          'an emptied list should stay empty however often it is loaded');
+
+    -- A list with rows of its own is not topped back up to three either.
+    local kept = { favs = { { key = 'mine' } }, seeded = true };
+    check(#load(kept).favs == 1 and kept.favs[1].key == 'mine',
+          'a saved list should come back exactly as it was saved');
+end
+
 if (fails == 0) then
     print(('ok: %d favorites, add/remove, reorder, narrowing and /uw all hold'):format(#favs));
 else

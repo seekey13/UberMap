@@ -428,14 +428,19 @@ local default_settings = T{
     col_outline = T{ 1.0, 1.0, 1.0, 0.5 },   -- the outline behind it
     col_hover   = T{ 1.0, 1.0, 1.0, 0.18 },  -- fill under the row the cursor is on
     col_bg      = T{ 0.0, 0.0, 0.0, 0.0 },   -- the plate behind the text, off
-    -- Saved warp rows, in the order they are listed in.  A fresh settings file
-    -- starts with three, so the widget has something to show the first time it
-    -- comes up; they are dropped again the same way any other favorite is.
-    favs   = T{
-        T{ key = 'Rolanberry Fields', type = 'unity', label = 'Unity Concord' },
-        T{ key = "Ru'Lude Gardens",   type = 'guide', label = 'Survival Guide' },
-        T{ key = 'Lower Jeuno',       type = 'home',  label = 'Home Point #2 (M)' },
-    },
+    -- Saved warp rows, in the order they are listed in.  Empty here and seeded
+    -- in fill_defaults instead: settings.load merges these defaults into the
+    -- saved file key by key and recurses into tables, array indices included,
+    -- so rows sitting here would grow back into any list they had been deleted
+    -- from -- and it saves the merged file straight back to disk, so they would
+    -- stay.  See the seed in fill_defaults for the marker that tells a new file
+    -- from an emptied one.
+    favs   = T{ },
+    -- Set the first time a character's file is filled in, and never read for
+    -- anything else.  Only a flag written into the file can say whether an
+    -- empty favorites list is one that has never been used or one the player
+    -- emptied on purpose; both look the same on disk.
+    seeded = false,
     widget = true,   -- the gamepad favorites widget is on
     -- The EXP Guide errand.  On by default, the way the widget is: it acts only
     -- on the walk past a guide and can be watched happening.  A toggle all the
@@ -545,6 +550,24 @@ end
 local function fill_defaults()
     cfg.toggle = cfg.toggle or T{};
     cfg.favs   = cfg.favs   or T{};
+    -- Three rows to start with, so the widget has something to show at the
+    -- first warp NPC a new character walks up to.  Seeded here rather than
+    -- from default_settings, which merge would push back into a list they had
+    -- been deleted from on every load; done once and remembered, so deleting
+    -- them sticks.  Saved on the spot, because the merge's own save has
+    -- already been and gone by the time this runs and nothing else here is
+    -- guaranteed to write the file again.
+    if (cfg.seeded ~= true) then
+        cfg.seeded = true;
+        if (#cfg.favs == 0) then
+            -- Plain tables, the shape fav_toggle writes: a saved row is what
+            -- these have to look like once they are on the list.
+            table.insert(cfg.favs, { key = 'Rolanberry Fields', type = 'unity', label = 'Unity Concord' });
+            table.insert(cfg.favs, { key = "Ru'Lude Gardens",   type = 'guide', label = 'Survival Guide' });
+            table.insert(cfg.favs, { key = 'Lower Jeuno',       type = 'home',  label = 'Home Point #2 (M)' });
+        end
+        settings.save();
+    end
     -- A settings file written before the pickers existed carries no colours,
     -- and a picker handed a nil table would index it on the first frame.  The
     -- shape is checked rather than only the nil, for the same reason cfg.font is
@@ -2366,7 +2389,11 @@ end
 --]]
 function nav.pump(view_w, view_h)
     if (#ui.gp_q > 0) then
-        for _, act in ipairs(ui.gp_q) do
+        -- Taken off the queue up front: what is not acted on below is dropped
+        -- on purpose, and only the one case that puts presses back does.
+        local q = ui.gp_q;
+        ui.gp_q = { };
+        for i, act in ipairs(q) do
             -- A press can close the map underneath the rest of them -- sending
             -- a warp does -- and what is left was aimed at a map that is no
             -- longer there.  Acting on it would seat a selection, or open a
@@ -2374,9 +2401,20 @@ function nav.pump(view_w, view_h)
             if (not ui.is_open[1]) then
                 break;
             end
+            local had_warp = ui.warp;
             nav.act(act, view_w, view_h);
+            -- A press that opened the warp list ends the drain, and the rest
+            -- wait for the frame that draws it: ui.warp_px/py are written by
+            -- draw_warp_popup and by nothing else, so a Y queued behind the A
+            -- that opened the list would hang its menu off the last panel's
+            -- corner -- or off 0, 0 if no panel has been drawn at all.
+            if (had_warp == nil and ui.warp ~= nil) then
+                for j = i + 1, #q do
+                    table.insert(ui.gp_q, q[j]);
+                end
+                break;
+            end
         end
-        ui.gp_q = { };
     end
     -- A pad that is driving has no cursor to say where a press would land, so
     -- its marker is lit before it is pressed: on opening, and again on the
@@ -4273,8 +4311,15 @@ end);
 ashita.events.register('key_state', 'ubermap_key_state', function (e)
     local keys = ffi.cast('uint8_t*', e.data_raw);
     for dik, act in pairs(nav.key) do
-        if (keys[dik] ~= 0
-            and (ui.kb_held[dik] or nav.press(act, false))) then
+        if (keys[dik] == 0) then
+            -- The release edge above is what normally clears this, but an
+            -- alt-tab or a device re-acquire while the key is down loses that
+            -- event, and a flag left set wipes the key out of this buffer on
+            -- every later press -- a camera that will not turn for the whole
+            -- of the next hold.  This buffer is the one place that can say a
+            -- key is up whether or not its event ever arrived.
+            ui.kb_held[dik] = nil;
+        elseif (ui.kb_held[dik] or nav.press(act, false)) then
             keys[dik] = 0;
         end
     end

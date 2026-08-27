@@ -54,7 +54,7 @@ While **Multisend** is lit every command — warp rows, scroll and ring alike �
 
 **Favorites** are warp rows you saved, in your order. Right-click any row for *Add point to favorites list* — a row you cannot travel on right now works too, so a destination can be saved from anywhere. Each is named by its zone and row, e.g. `Windurst Woods - Home Point #2`. Clicking one warps exactly as its original row would. Stood at a Home Point, Survival Guide or Unity Concord the list narrows to the rows that NPC can send — the rest cannot be taken from there, so they are not listed — and stepping away brings the whole list back. A destination you have not registered still reads red. Drag a row up or down to reorder the list, including inside a narrowed one; right-click offers *Remove point from favorites list*.
 
-A character who has never saved one starts with three, so the widget has something to show on the first warp NPC you walk up to: **Rolanberry Fields - Unity Concord**, **Ru'Lude Gardens - Survival Guide** and **Lower Jeuno - Home Point #2 (M)**. They come off the list the same way any other favorite does.
+A character who has never saved one starts with three, so the widget has something to show on the first warp NPC you walk up to: **Rolanberry Fields - Unity Concord**, **Ru'Lude Gardens - Survival Guide** and **Lower Jeuno - Home Point #2 (M)**. They come off the list the same way any other favorite does, and stay off — they are written once, on the first load, not filled back in on every one.
 
 ## Config panel
 
@@ -148,6 +148,8 @@ The same three tiers off the keyboard, with the arrows standing in for the D-pad
 | F | At the widget, hand it the arrows. Up and down walk the list, Enter warps, Esc hands them back |
 
 Esc at the widget without an **F** first puts the widget away, the way **B** does; press it again for the NPC's own menu behind it. The map takes the arrows only while it is on screen, and the widget only after an **F**, so walking is never swallowed.
+
+**U** and **F** are taken for the whole time the widget is on screen, whether or not you are using it — so a `/bind u` or `/bind f` of your own will not fire while you stand at a Home Point, Survival Guide or Unity Concord. Untick **Favorites Widget** on the `/um config` panel if you need those keys there.
 
 Typing wins over all of it. The game's own chat line, the map's search box and the config panel's number boxes each take the arrows, Enter and Esc while a caret is in them — with **Search Focus On Open** ticked, that includes the frame the map opens in, so start typing straight away and press Esc or click the map when you want the keys back.
 
