@@ -728,8 +728,6 @@ local ui = T{
     edit_name   = { '', },
     edit_group  = { '', },
     font_px     = { 0, },    -- the Size box, which edits cfg.font_px
-    -- The auto-open checkbox, which edits cfg.autoopen.
-    auto_open   = { true, },
     -- The scale boxes, keyed by the cfg key each edits, in InputInt's shape.
     -- Filled from SCALE.rows below rather than written out.
     scale       = T{ },
@@ -737,8 +735,7 @@ local ui = T{
     -- cfg.font_px, resolved once at the top of a frame rather than per label.
     font_scale  = 1.0,
 };
-ui.font_px[1]   = cfg.font_px;
-ui.auto_open[1] = cfg.autoopen;
+ui.font_px[1] = cfg.font_px;
 for _, row in ipairs(SCALE.rows) do
     ui.scale[row[1]] = { cfg[row[1]], };
 end
@@ -757,8 +754,7 @@ end
 settings.register('settings', 'settings_update', function (s)
     cfg = s;
     fill_defaults();
-    ui.font_px[1]   = cfg.font_px;
-    ui.auto_open[1] = cfg.autoopen;
+    ui.font_px[1] = cfg.font_px;
     -- Mutated rather than replaced: ImGui edits the tables ui.scale already
     -- holds, so a fresh one here would leave the panel writing into an orphan.
     for _, row in ipairs(SCALE.rows) do
@@ -3602,10 +3598,15 @@ local function draw_map(view_w, view_h)
                             { 'Outline',    cfg.col_outline },
                             { 'Background', cfg.col_bg },
                             { 'Hover',      cfg.col_hover } };
-            -- The one row that is not about how the map looks, so it is written
-            -- out here rather than joining a list: it is measured for the
-            -- panel's width and drawn on the end of it.
-            local auto_label = 'Open Map when interacting with a HP/SG/UC';
+            -- The rows that are not about how the map looks, on the end of
+            -- the panel: the name, the box ImGui edits, and the cfg key it
+            -- writes.  The box is built from cfg on the frame it is drawn
+            -- rather than kept, so a toggle made from '/um' shows here without
+            -- anything having to be told about it.
+            local checks = { { 'HP/SG/UC Opens Map',
+                               { cfg.autoopen }, 'autoopen' },
+                             { 'Favorites Widget',
+                               { cfg.widget }, 'widget' } };
             -- Every InputInt row: the name it is drawn under, the box ImGui
             -- edits, the cfg key it writes, and the bounds and steps it takes.
             -- Size is one of them rather than a case of its own.
@@ -3636,10 +3637,12 @@ local function draw_map(view_w, view_h)
                                    fh + POPUP_PAD + imgui.CalcTextSize(pick[1]));
             end
             -- A checkbox is a frame square with its name beside it, the same
-            -- shape as a swatch -- and this name is long enough to be what
+            -- shape as a swatch -- and these names are long enough to be what
             -- decides the panel's width.
-            panel_w = math.max(panel_w,
-                               fh + POPUP_PAD + imgui.CalcTextSize(auto_label));
+            for _, chk in ipairs(checks) do
+                panel_w = math.max(panel_w,
+                                   fh + POPUP_PAD + imgui.CalcTextSize(chk[1]));
+            end
             -- The pulldown carries no name, so it spends the panel's whole width
             -- on the face and the arrow ImGui puts on its end -- one frame's
             -- worth, the same as a swatch.
@@ -3650,8 +3653,8 @@ local function draw_map(view_w, view_h)
             panel_w = panel_w + POPUP_PAD * 2;
             local pitch   = fh + TOGGLE_GAP;
             -- The face pulldown, then every numeric row, then the pickers,
-            -- then the auto-open checkbox on the end.
-            local panel_h = pitch * (#picks + #nums + 2) - TOGGLE_GAP
+            -- then the checkboxes on the end.
+            local panel_h = pitch * (#picks + #nums + #checks + 1) - TOGGLE_GAP
                             + POPUP_PAD * 2;
             local px      = view_w - UI_MARGIN - panel_w;
             local py      = UI_MARGIN;
@@ -3740,17 +3743,25 @@ local function draw_map(view_w, view_h)
                 ui.hot = ui.hot or imgui.IsItemActive();
             end
 
-            -- Auto-open, last row of the panel.  Saved on the spot rather than
-            -- deferred through cfg_dirty like the pickers and the boxes: a
-            -- checkbox reports its change once, not once a frame for as long as
-            -- the mouse is held.
-            imgui.SetCursorPos({ row_x, row_y + pitch * (#nums + #picks + 1) });
-            if (imgui.Checkbox(auto_label .. '##ubermap_autoopen',
-                               ui.auto_open)) then
-                cfg.autoopen = ui.auto_open[1];
-                settings.save();
+            -- The checkboxes, last rows of the panel.  Saved on the spot
+            -- rather than deferred through cfg_dirty like the pickers and the
+            -- boxes: a checkbox reports its change once, not once a frame for
+            -- as long as the mouse is held.
+            for i, chk in ipairs(checks) do
+                imgui.SetCursorPos({ row_x,
+                                     row_y + pitch * (#nums + #picks + i) });
+                if (imgui.Checkbox(chk[1] .. '##ubermap_' .. chk[3], chk[2])) then
+                    cfg[chk[3]] = chk[2][1];
+                    -- Same as '/um widget': asking for the widget back is
+                    -- asking to see it, and a B press earlier in this visit is
+                    -- otherwise only cleared by walking off the NPC.
+                    if (chk[3] == 'widget') then
+                        ui.fw_hide = false;
+                    end
+                    settings.save();
+                end
+                ui.hot = ui.hot or imgui.IsItemActive();
             end
-            ui.hot = ui.hot or imgui.IsItemActive();
             -- The write itself is flushed from d3d_present rather than here, so
             -- a change still reaches the file on the frame the panel or the map
             -- is closed out from under it.
