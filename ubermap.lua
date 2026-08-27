@@ -375,8 +375,8 @@ local FAV_NONE     = 'No favorites for this warp';
 -- buttons it reads, and the D-pad belongs to the game's own menus everywhere
 -- else.  On by default, and turned off from the '/um config' panel: the
 -- buttons it takes are ones the client has nothing to do with while a warp
--- menu is up.  It reads four of the seven below and leaves left, right and Y
--- to the client.
+-- menu is up.  It reads five of the seven below -- up, down, A, B and Y, which
+-- swaps it for the full map -- and leaves left and right to the client.
 --
 -- The map reads all seven.  It takes them only while it is on screen, which is
 -- a place the player put it rather than one they walked into, so unlike the
@@ -2941,7 +2941,14 @@ local function draw_fav_widget()
         -- stand down while it is up as well -- an ImGui popup blocks its own
         -- items from the ones below, but these rows are hand-tested rects and
         -- know nothing of it.
-        imgui.SetNextWindowPos({ px, py + POPUP_ROW * ui.fw_sel + POPUP_GAP });
+        --
+        -- Behind the same shift test as the popup below, or the position is set
+        -- for a popup that is never begun: Ashita shares one ImGui context
+        -- across every addon, and a pending NextWindowPos nothing consumes
+        -- lands on whatever window Begins next in the frame.
+        if (not shift) then
+            imgui.SetNextWindowPos({ px, py + POPUP_ROW * ui.fw_sel + POPUP_GAP });
+        end
         -- Dressed in the panel's own colours, or this would be the one menu on
         -- screen wearing ImGui's: the ground and outline the lists draw
         -- themselves, and the hover the map's Hover picker sets.  Header* is
@@ -4057,9 +4064,11 @@ ashita.events.register('command', 'ubermap_command', function (e)
     if (sub == 'config') then
         ui.config = not ui.config;
         -- Opens the map with it: the panel is drawn on the map, so turning it
-        -- on with the map shut would put it nowhere.
-        if (ui.config) then
-            ui.is_open[1] = true;
+        -- on with the map shut would put it nowhere.  Through show(), which is
+        -- what clears a right-click menu and its veto left over from the last
+        -- time the map was up; a map already open is left exactly as it is.
+        if (ui.config and not ui.is_open[1]) then
+            show();
         end
         notify(('config panel: %s'):fmt(ui.config
             and 'on, top-right of the map'
@@ -4070,7 +4079,9 @@ ashita.events.register('command', 'ubermap_command', function (e)
     if (sub == 'edit') then
         ui.edit = not ui.edit;
         if (ui.edit) then
-            ui.is_open[1] = true;
+            if (not ui.is_open[1]) then
+                show();
+            end
         else
             ui.sel = nil;
         end

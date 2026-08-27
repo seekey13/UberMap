@@ -58,7 +58,7 @@ A character who has never saved one starts with three, so the widget has somethi
 
 ## Config panel
 
-`/um config` opens a small panel in the map's top-right corner: a font pulldown, a **Size** box, four scale boxes, four colour pickers and two checkboxes, one to a row. Everything on it changes the map as you drag, and writes to your settings once you let go of the mouse or leave the box you are typing in — one write per edit rather than one per frame of it.
+`/um config` opens a small panel in the map's top-right corner: a font pulldown, a **Size** box, four scale boxes, four colour pickers and five checkboxes, one to a row. Everything on it changes the map as you drag, and writes to your settings once you let go of the mouse or leave the box you are typing in — one write per edit rather than one per frame of it.
 
 | Row | Edits |
 | --- | --- |
@@ -106,12 +106,13 @@ A small window listing the same favorites, built for a controller. It comes up o
 | D-pad up / down | Move the selection, wrapping at both ends |
 | A | Warp to the selected row |
 | B | Put the widget away until you walk off the NPC |
+| Y | Swap the widget for the full map |
 
-**Y** is left to the game while the widget is up: its rows are already favorites, so there is nothing for the menu to add.
+**Left** and **right** are left to the game while the widget is up: the list is a single column, so taking them would leave no way to work the NPC's own menu behind it.
 
 The widget and the map's panel are one list drawn twice, so the mouse works the same in either: click a row to warp, drag it up or down to reorder, right-click for *Remove point from favorites list*. Turning the widget on hides the heart and its panel, so the list is on screen in one place, not two.
 
-The list is narrowed the same way the panel's is, so every row on it is one the NPC holding it up can send; a destination you have not registered still reads red, and A refuses it. With nothing saved for that kind of NPC the widget stays down. The window has no title bar and sizes itself to the list; like the map, hold shift to drag it somewhere else. On by default -- untick **Favorites widget on gamepad** on the `/um config` panel to turn it off -- and saved per character with the rest of the settings.
+The list is narrowed the same way the panel's is, so every row on it is one the NPC holding it up can send; a destination you have not registered still reads red, and A refuses it. With nothing saved for that kind of NPC the widget stays down. The window has no title bar and sizes itself to the list; like the map, hold shift to drag it somewhere else. On by default -- untick **Favorites Widget** on the `/um config` panel to turn it off -- and saved per character with the rest of the settings. A character who already turned it off keeps it off: the setting is written to their file, and the checkbox is the only way back on.
 
 XInput only: an Xbox pad, or anything Windows presents as one. A DirectInput controller (DualShock, DualSense) still works by mouse.
 
