@@ -427,11 +427,17 @@ local default_settings = T{
     col_outline = T{ 1.0, 1.0, 1.0, 0.5 },   -- the outline behind it
     col_hover   = T{ 1.0, 1.0, 1.0, 0.18 },  -- fill under the row the cursor is on
     col_bg      = T{ 0.0, 0.0, 0.0, 0.0 },   -- the plate behind the text, off
-    favs   = T{ },   -- saved warp rows, in the order they are listed in
-    widget = false,  -- the gamepad favorites widget is on
-    -- The EXP Guide errand.  On by default, unlike the widget: that one takes
-    -- buttons off the client everywhere it is up, while this one acts only on
-    -- the walk past a guide and can be watched happening.  A toggle all the
+    -- Saved warp rows, in the order they are listed in.  A fresh settings file
+    -- starts with three, so the widget has something to show the first time it
+    -- comes up; they are dropped again the same way any other favorite is.
+    favs   = T{
+        T{ key = 'Rolanberry Fields', type = 'unity', label = 'Unity Concord' },
+        T{ key = "Ru'Lude Gardens",   type = 'guide', label = 'Survival Guide' },
+        T{ key = 'Lower Jeuno',       type = 'home',  label = 'Home Point #2 (M)' },
+    },
+    widget = true,   -- the gamepad favorites widget is on
+    -- The EXP Guide errand.  On by default, the way the widget is: it acts only
+    -- on the walk past a guide and can be watched happening.  A toggle all the
     -- same, because it sends a packet and a keystroke with no click behind it.
     guide  = true,
     -- What the map's text is drawn at, in screen pixels.  Zero means the size
