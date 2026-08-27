@@ -12,14 +12,12 @@ Drop the `UberMap` folder into `Ashita/addons/`, then `/addon load ubermap`.
 | --- | --- |
 | `/ubermap`, `/um` | Toggle the map |
 | `/ubermap edit` | Toggle the point editor |
-| `/ubermap config` | Toggle the config panel: map font and size, plus text, outline, background and row hover colours |
-| `/ubermap widget` | Toggle the gamepad friendly favorites widget (off by default) |
-| `/ubermap guide` | Toggle the EXP Guide scroll pickup (on by default) |
-| `/ubermap focus` | Toggle the search box taking the keyboard when the map opens (off by default) |
+| `/ubermap config` | Toggle the config panel: map font and size, text, outline, background and row hover colours, and five checkboxes |
 
 ## The map
 
 Mouse wheel zooms, left-drag pans, **shift**-drag moves the window/widget.  
+A controller works it too — see [Gamepad map navigation](#gamepad-map-navigation).  
 Talking to a warp NPC opens it; or use the command `/uw`.  
 It closes itself once you walk away or a warp is used.  
 The UberMap widget will open when approaching a warp point.
@@ -35,8 +33,9 @@ Left-click a zone point — for a panel of that zone's destinations. Clicking a 
 | Look | Meaning |
 | --- | --- |
 | Normal | Travels now |
+| **Green** | Already on your favorites list. Map's warp panel only — the favorites list is nothing but favorites |
 | Grey | Wrong kind of NPC for where you stand; the icon says what to walk up to |
-| **Red** | Never registered; takes no click from anywhere, hover says why |
+| **Red** | Never registered; takes no click from anywhere, hover says why. Outranks the green, so a saved row you cannot reach still reads red |
 
 ## Toolbar
 
@@ -49,19 +48,17 @@ Left-click a zone point — for a panel of that zone's destinations. Clicking a 
 | **Multisend** | Bottom right | Prefixes every command the map sends with `/mss ` |
 | **Heart** | Bottom left | Opens favorites. Hidden while the gamepad widget is on, since that lists the same rows.  Filters will completely hide results on this list |
 
-`/um quiet` hides Uberwarp's chat lines. Off by default: `[Uberwarp:<module>]`, enable this if you want to clean up the chat log on warps.  Keep in mind you will no longer get error messages.
-
-`/um focus` sets search to focus on open. Off by default: makes it feel better for users who plan on type filtering most of their navigation, you will need to click the map to pan/zoom.
-
 **Warp Ring** works in two steps, since a ring must be worn before use. It looks for item 28540 in your bag and the eight Mog Wardrobes the client will equip out of, re-read twice a second like the scroll. Carrying none: dimmed and dead. Carrying one unworn: dimmed, and clicking sends `/equip ring1 "Warp Ring" <container>`, keeps the map open and goes dead for nine seconds while the ring lands. Wearing one: lit, and clicking sends `/item "Warp Ring" <me>` and closes the map. Hovering says which step it is on.  If you use LuAshitacast keep in mind they will battle each other.
 
 While **Multisend** is lit every command — warp rows, scroll and ring alike — goes out through [Multisend](https://github.com/ThornyFFXI/Multisend) and repeats on every logged-in character. Off and dimmed until clicked.
 
 **Favorites** are warp rows you saved, in your order. Right-click any row for *Add point to favorites list* — a row you cannot travel on right now works too, so a destination can be saved from anywhere. Each is named by its zone and row, e.g. `Windurst Woods - Home Point #2`. Clicking one warps exactly as its original row would. Stood at a Home Point, Survival Guide or Unity Concord the list narrows to the rows that NPC can send — the rest cannot be taken from there, so they are not listed — and stepping away brings the whole list back. A destination you have not registered still reads red. Drag a row up or down to reorder the list, including inside a narrowed one; right-click offers *Remove point from favorites list*.
 
+A character who has never saved one starts with three, so the widget has something to show on the first warp NPC you walk up to: **Rolanberry Fields - Unity Concord**, **Ru'Lude Gardens - Survival Guide** and **Lower Jeuno - Home Point #2 (M)**. They come off the list the same way any other favorite does, and stay off — they are written once, on the first load, not filled back in on every one.
+
 ## Config panel
 
-`/um config` opens a small panel in the map's top-right corner: a font pulldown, a **Size** box, four scale boxes and four colour pickers, one to a row. Everything on it changes the map as you drag, and writes to your settings once you let go of the mouse or leave the box you are typing in — one write per edit rather than one per frame of it.
+`/um config` opens a small panel in the map's top-right corner: a font pulldown, a **Size** box, four scale boxes, four colour pickers and five checkboxes, one to a row. Everything on it changes the map as you drag, and writes to your settings once you let go of the mouse or leave the box you are typing in — one write per edit rather than one per frame of it.
 
 | Row | Edits |
 | --- | --- |
@@ -75,6 +72,13 @@ While **Multisend** is lit every command — warp rows, scroll and ring alike �
 | Outline | The stamp behind that text that keeps it readable over the art. White, half alpha |
 | Background | A plate drawn under it. Fully transparent by default, i.e. off -- raise its alpha for a solid label instead of an outlined one |
 | Hover | Fill under the row the cursor is on: warp rows, favorites and the right-click menu. White, near-transparent |
+| HP/SG/UC Opens Map | Walking up to a Home Point, Survival Guide or Unity Concord puts the map on screen by itself. On by default; off leaves `/um` and **Y** at the favorites widget as the ways in |
+| Favorites Widget | The controller window below. On by default; ticking it back on also undoes a **B** press that put it away for this visit |
+| EXP Guide Pickup | Take an Instant Warp scroll off a guide you walk past, see below. On by default |
+| Search Focus On Open | The search box takes the keyboard the frame the map opens, so you can type straight away. Off by default: while it holds the caret the map takes no clicks to pan or zoom |
+| Hide Uberwarp Chat | Drop Uberwarp's `[Uberwarp:<module>]` lines from the log, errors included. On by default; untick it when a warp misbehaves and you want the reason |
+
+The five checkboxes save the moment they are clicked, rather than on the mouse coming up like the pickers and boxes.
 
 The four scale rows are whole percents, 25 to 400, typed or stepped (±5 by the arrows, ±25 by ctrl-click). 100 is what the map has always drawn at, which is what a settings file that has never been near them carries.
 
@@ -88,26 +92,68 @@ Everything on the panel is yours alone and is saved with the rest of the per-cha
 
 Walk within 7 yalms of an **EXP Guide** or **EXP Guide (S)** carrying no Instant Warp scroll and with a free inventory slot, and one is asked for and taken without you stopping: the guide is poked with the same packet pressing its target sends, and Escape backs out of the talk the scroll arrives in.
 
-`/um guide` turns the pickup off, and it is on by default. All three have to be true — no scroll (4181) in the bag, a slot free for one, a guide in reach — and they get **one** poke between them. Any of the three going false arms the next one, so spending a scroll or walking off and back asks again, while standing at a guide that answered with nothing does not: it is given up on after five seconds and then left alone. So the packet count is one per scroll you actually collect, on no timer of its own.
+**EXP Guide Pickup** on the `/um config` panel turns the pickup off, and it is on by default. All three have to be true — no scroll (4181) in the bag, a slot free for one, a guide in reach — and they get **one** poke between them. Any of the three going false arms the next one, so spending a scroll or walking off and back asks again, while standing at a guide that answered with nothing does not: it is given up on after five seconds and then left alone. So the packet count is one per scroll you actually collect, on no timer of its own.
 
 The guides stand in **Ru'Lude Gardens** and **Lower Jeuno**, and the zone is checked before anything else.
 
 ## Gamepad favorites widget
 <img width="414" height="118" alt="image" src="https://github.com/user-attachments/assets/eeb0dc76-6626-4547-a3e2-79f9441dd8ef" />
 
-`/um widget` turns on a small window listing the same favorites, built for a controller. It comes up on its own the moment you walk up to a Home Point, Survival Guide or Unity Concord — map open or not — and goes away the moment you walk off. Never wider than that, because it swallows the buttons it reads and the D-pad belongs to the game's menus everywhere else.
+A small window listing the same favorites, built for a controller. It comes up on its own the moment you walk up to a Home Point, Survival Guide or Unity Concord — map open or not — and goes away the moment you walk off. Never wider than that, because it swallows the buttons it reads and the D-pad belongs to the game's menus everywhere else.
 
 | Button | Effect |
 | --- | --- |
 | D-pad up / down | Move the selection, wrapping at both ends |
 | A | Warp to the selected row |
 | B | Put the widget away until you walk off the NPC |
+| Y | Swap the widget for the full map |
+
+**Left** and **right** are left to the game while the widget is up: the list is a single column, so taking them would leave no way to work the NPC's own menu behind it.
 
 The widget and the map's panel are one list drawn twice, so the mouse works the same in either: click a row to warp, drag it up or down to reorder, right-click for *Remove point from favorites list*. Turning the widget on hides the heart and its panel, so the list is on screen in one place, not two.
 
-The list is narrowed the same way the panel's is, so every row on it is one the NPC holding it up can send; a destination you have not registered still reads red, and A refuses it. With nothing saved for that kind of NPC the widget stays down. The window has no title bar and sizes itself to the list; like the map, hold shift to drag it somewhere else. Off by default, and saved per character with the rest of the settings.
+The list is narrowed the same way the panel's is, so every row on it is one the NPC holding it up can send; a destination you have not registered still reads red, and A refuses it. With nothing saved for that kind of NPC the widget stays down. The window has no title bar and sizes itself to the list; like the map, hold shift to drag it somewhere else. On by default -- untick **Favorites Widget** on the `/um config` panel to turn it off -- and saved per character with the rest of the settings. A character who already turned it off keeps it off: the setting is written to their file, and the checkbox is the only way back on.
 
 XInput only: an Xbox pad, or anything Windows presents as one. A DirectInput controller (DualShock, DualSense) still works by mouse.
+
+## Gamepad map navigation
+
+The map itself reads the pad whenever it is open — no toggle, because unlike the widget it is somewhere you deliberately went. Press any of its buttons and the marker nearest the middle of the view is hovered; from then on it is hovered the moment the map opens, and again each time **A** frames a nation, so there is always something on screen saying what the next press would act on.
+
+| Button | Effect |
+| --- | --- |
+| D-pad | Move the hover to the marker that way. Nothing that way, nothing moves — it does not wrap round the world |
+| A | Zoom into the nation or region under the hover, then open a zone point's warp list, then send the row |
+| B | Back out one step: the warp list, then the whole map with the nation you came out of still hovered, then the map closes |
+| Y | The pad's right-click: on a warp row it opens the same *Add / Remove point from favorites list* menu the mouse's second button does. **A** picks the item, **B** or a second **Y** dismisses it |
+
+Three tiers, nested the way the game's own menus are, and the mouse walks the same ones: click a nation and **B** still backs out of it, click a zone point and the D-pad still walks the rows that come up. A list opened with the mouse lights no row until you press something, so the cursor's own hover is never argued with.
+
+Only one of the two is ever in charge, and it is whichever you last used — the pad being plugged in counts for nothing. Move the mouse over the map or the widget and the pad's hover goes out, since the cursor's own hover now says what a click would open. Press one of the map's own buttons and it comes back on the marker nearest the middle again — that first press only relights, it does not walk or open. Esc is the exception, since it is the way out of a map covering most of the screen: it acts on the first press however the map was being driven.
+
+While the pad or the keys are in charge the cursor's own hover and its tooltips stay out, so only one marker on screen ever looks pressable. Move the mouse over the map and they come straight back.
+
+The favorites widget wins while it is up. Walk to a Home Point with the map open and the widget takes the pad; dismiss it with **B** and the map answers again. The rows behave the same either way — a destination you have not registered reads red, a row saved off a different kind of NPC reads grey, and **A** refuses both.
+
+## Keyboard navigation
+
+The same three tiers off the keyboard, with the arrows standing in for the D-pad, **Enter** for **A** and **Esc** for **B**. Unlike the pad, the keys are handed back when they are not wanted: the arrows are how you walk, so nothing takes them until you are somewhere they mean something.
+
+| Key | Effect |
+| --- | --- |
+| Arrows | With the map open, move the hover the same way the D-pad does |
+| Enter | **A**: zoom into a nation, open a zone point's warp list, send the row |
+| Esc | **B**: back out one step, and at the top close the map |
+| U | At the widget, swap it for the full map — the **Y** press, on a key |
+| F | At the widget, hand it the arrows. Up and down walk the list, Enter warps, Esc hands them back |
+
+Esc at the widget without an **F** first puts the widget away, the way **B** does; press it again for the NPC's own menu behind it. The map takes the arrows only while it is on screen, and the widget only after an **F**, so walking is never swallowed.
+
+**U** and **F** are taken for the whole time the widget is on screen, whether or not you are using it — so a `/bind u` or `/bind f` of your own will not fire while you stand at a Home Point, Survival Guide or Unity Concord. Untick **Favorites Widget** on the `/um config` panel if you need those keys there.
+
+Typing wins over all of it. The game's own chat line, the map's search box and the config panel's number boxes each take the arrows, Enter and Esc while a caret is in them — with **Search Focus On Open** ticked, that includes the frame the map opens in, so start typing straight away and press Esc or click the map when you want the keys back.
+
+A key the map takes is kept from the game outright, for as long as it is held, so an arrow walking the markers is not also turning the camera. Numpad Enter counts as Enter; the numpad arrows are left alone, since they are how a lot of people move.
 
 ## Filters set themselves
 

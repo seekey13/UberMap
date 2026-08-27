@@ -91,4 +91,18 @@ assert(src:find('if (bg >= 0x1000000) then', 1, true),
 assert(src:find("type(c[4]) == 'number'", 1, true),
        'fill_defaults no longer checks the shape of a saved colour row');
 
-print(('ok: %d picker defaults pack to the constants they replaced'):format(#pairs_));
+-- The two popup words no picker owns.  They are written as packed hex with
+-- their float form in the comment beside them, so the check is that packing the
+-- one lands on the other: a swapped pair of channels is otherwise only visible
+-- in the game, and light red and light green differ by two bytes.
+local FIXED = {
+    { 'COL_POPUP_FAV',  { 0.7, 1.0, 0.7, 1.0 } },
+    { 'COL_POPUP_LOCK', { 1.0, 0.7, 0.7, 1.0 } },
+};
+for _, p in ipairs(FIXED) do
+    assert(pack_col(p[2]) == const(p[1]),
+           ('%s is not the colour its comment names'):format(p[1]));
+end
+
+print(('ok: %d picker defaults and %d fixed words pack to their constants')
+      :format(#pairs_, #FIXED));

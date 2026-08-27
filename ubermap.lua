@@ -8,8 +8,10 @@
 * alongside a Warp Ring button and a Multisend toggle that warps every
 * logged-in character at once.
 *
-* Mouse wheel zooms, left-drag pans, Escape closes.  /ubermap or /um toggles
-* the map by hand; /um edit turns on the point editor (ctrl+click to place).
+* Mouse wheel zooms, left-drag pans, Escape closes.  A controller drives the
+* whole thing too: the D-pad walks the markers, A opens what is under it and B
+* backs out.  /ubermap or /um toggles the map by hand; /um edit turns on the
+* point editor (ctrl+click to place).
 --]]
 
 addon.name    = 'UberMap';
@@ -25,6 +27,7 @@ local imgui = require('imgui');
 local ffi   = require('ffi');
 local d3d   = require('d3d8');
 local mm    = require('lib.mapmath');
+local gpn   = require('lib.gpnav');
 local fz    = require('lib.fuzzy');
 local unlocks = require('lib.unlocks');
 local guide   = require('lib.guide');
@@ -329,12 +332,17 @@ local POPUP_GAP      = 6;   -- screen pixels between the marker and the panel
 local COL_POPUP_BG   = 0xE0101010;  -- near black, a little of the map showing through
 local COL_POPUP_TEXT = 0xFFFFFFFF;  -- the panel has its own ground, so white reads
 local COL_POPUP_OFF  = 0x60FFFFFF;  -- a row whose kind of NPC is not in reach
--- Dim red, held apart from the grey above: not being in front of the right NPC
--- is a thing the player can walk off and fix, while a destination they have
--- never stood at is not, so the two do not read the same.  Text only - the icon
--- still says which kind of NPC the row travels from, which is worth reading
--- whether or not the destination is registered.
-local COL_POPUP_LOCK = 0xA04040FF;
+-- Light green, { 0.7, 1.0, 0.7, 1.0 }: a warp row already on the favorites
+-- list.  On the map's warp panel only -- the favorites list itself is nothing
+-- but favorites, and colouring every row of it green says nothing.
+local COL_POPUP_FAV  = 0xFFB3FFB3;
+-- Light red, { 1.0, 0.7, 0.7, 1.0 }, held apart from the grey above: not being
+-- in front of the right NPC is a thing the player can walk off and fix, while a
+-- destination they have never stood at is not, so the two do not read the same.
+-- It also outranks the green: a favorite that will not travel is worth knowing
+-- about whether or not it was saved.  Text only - the icon still says which kind
+-- of NPC the row travels from, which is worth reading either way.
+local COL_POPUP_LOCK = 0xFFB3B3FF;
 -- What a red row says when the cursor stops on it.
 local LOCK_TIP = T{
     home  = 'Not registered - interact with this Home Point once to unlock it',
@@ -365,17 +373,28 @@ local FAV_NONE     = 'No favorites for this warp';
 -- and driven from the gamepad.  It comes up only where it can be used -- stood
 -- at a Home Point, Survival Guide or Unity Concord -- because it swallows the
 -- buttons it reads, and the D-pad belongs to the game's own menus everywhere
--- else.  Off by default for the same reason: taking buttons off the client is
--- the surprising thing to do, so it has to be asked for.
+-- else.  On by default, and turned off from the '/um config' panel: the
+-- buttons it takes are ones the client has nothing to do with while a warp
+-- menu is up.  It reads five of the seven below -- up, down, A, B and Y, which
+-- swaps it for the full map -- and leaves left and right to the client.
+--
+-- The map reads all seven.  It takes them only while it is on screen, which is
+-- a place the player put it rather than one they walked into, so unlike the
+-- widget it needs no toggle to justify swallowing them: the map is what a
+-- press is for while it is up.  Y is the pad's right-click: on a warp row it
+-- opens the same favorites menu the mouse's second button does.
 --
 -- Keyed by the XInput button index Ashita's xinput_button event delivers, so
--- one lookup answers both questions the handler has: whether the button is the
--- widget's, and which of the four it is.
-local FW = {
+-- one lookup answers both questions the handler has: whether the button is
+-- read at all, and which of the seven it is.
+local GP = {
     [0]  = 'up',
     [1]  = 'down',
+    [2]  = 'left',
+    [3]  = 'right',
     [12] = 'a',
     [13] = 'b',
+    [15] = 'y',
 };
 
 -- The map data lives in lib/points.lua under the addon: the overview groups, in
@@ -409,11 +428,22 @@ local default_settings = T{
     col_outline = T{ 1.0, 1.0, 1.0, 0.5 },   -- the outline behind it
     col_hover   = T{ 1.0, 1.0, 1.0, 0.18 },  -- fill under the row the cursor is on
     col_bg      = T{ 0.0, 0.0, 0.0, 0.0 },   -- the plate behind the text, off
-    favs   = T{ },   -- saved warp rows, in the order they are listed in
-    widget = false,  -- the gamepad favorites widget is on
-    -- The EXP Guide errand.  On by default, unlike the widget: that one takes
-    -- buttons off the client everywhere it is up, while this one acts only on
-    -- the walk past a guide and can be watched happening.  A toggle all the
+    -- Saved warp rows, in the order they are listed in.  Empty here and seeded
+    -- in fill_defaults instead: settings.load merges these defaults into the
+    -- saved file key by key and recurses into tables, array indices included,
+    -- so rows sitting here would grow back into any list they had been deleted
+    -- from -- and it saves the merged file straight back to disk, so they would
+    -- stay.  See the seed in fill_defaults for the marker that tells a new file
+    -- from an emptied one.
+    favs   = T{ },
+    -- Set the first time a character's file is filled in, and never read for
+    -- anything else.  Only a flag written into the file can say whether an
+    -- empty favorites list is one that has never been used or one the player
+    -- emptied on purpose; both look the same on disk.
+    seeded = false,
+    widget = true,   -- the gamepad favorites widget is on
+    -- The EXP Guide errand.  On by default, the way the widget is: it acts only
+    -- on the walk past a guide and can be watched happening.  A toggle all the
     -- same, because it sends a packet and a keystroke with no click behind it.
     guide  = true,
     -- What the map's text is drawn at, in screen pixels.  Zero means the size
@@ -439,9 +469,14 @@ local default_settings = T{
     focus  = false,
     -- Uberwarp narrates every step of a warp it runs into the log, errors
     -- included.  The map is what asked for the warp, so the running commentary
-    -- is noise by the time it arrives; /um quiet turns it back on when a warp
-    -- is misbehaving and the reason matters.
+    -- is noise by the time it arrives; the config panel's Hide Uberwarp Chat
+    -- box turns it back on when a warp is misbehaving and the reason matters.
     quiet  = true,
+    -- Whether walking up to a Home Point, Survival Guide or Unity Concord puts
+    -- the map on screen by itself.  On by default: that is what the map has
+    -- always done, and the reason it exists.  Off leaves '/um' and Y at the
+    -- favorites widget as the ways in.
+    autoopen = true,
 };
 -- Loaded from a copy of the defaults, because the library hands its own default
 -- table back for a key the file has no entry for: without the copy the first
@@ -515,6 +550,24 @@ end
 local function fill_defaults()
     cfg.toggle = cfg.toggle or T{};
     cfg.favs   = cfg.favs   or T{};
+    -- Three rows to start with, so the widget has something to show at the
+    -- first warp NPC a new character walks up to.  Seeded here rather than
+    -- from default_settings, which merge would push back into a list they had
+    -- been deleted from on every load; done once and remembered, so deleting
+    -- them sticks.  Saved on the spot, because the merge's own save has
+    -- already been and gone by the time this runs and nothing else here is
+    -- guaranteed to write the file again.
+    if (cfg.seeded ~= true) then
+        cfg.seeded = true;
+        if (#cfg.favs == 0) then
+            -- Plain tables, the shape fav_toggle writes: a saved row is what
+            -- these have to look like once they are on the list.
+            table.insert(cfg.favs, { key = 'Rolanberry Fields', type = 'unity', label = 'Unity Concord' });
+            table.insert(cfg.favs, { key = "Ru'Lude Gardens",   type = 'guide', label = 'Survival Guide' });
+            table.insert(cfg.favs, { key = 'Lower Jeuno',       type = 'home',  label = 'Home Point #2 (M)' });
+        end
+        settings.save();
+    end
     -- A settings file written before the pickers existed carries no colours,
     -- and a picker handed a nil table would index it on the first frame.  The
     -- shape is checked rather than only the nil, for the same reason cfg.font is
@@ -562,6 +615,11 @@ local function fill_defaults()
     end
     if (cfg.quiet == nil) then
         cfg.quiet = false;
+    end
+    -- Same as the errand above: a file written before the toggle existed has no
+    -- entry, and nil there is not off -- opening on the NPC is the default.
+    if (cfg.autoopen == nil) then
+        cfg.autoopen = true;
     end
     -- The map used to write the Campaign zones '(S)' and rewrite them to '[S]'
     -- on the way out; it names them '[S]' throughout now.  A favorite saved
@@ -617,6 +675,15 @@ local ui = T{
     open_z      = nil,       -- nil until the first frame after opening reads it
     warp        = nil,       -- zone point whose warp popup is open
     warp_hot    = false,     -- cursor was inside that popup last frame
+    -- The same for the right-click menu, which is drawn after everything it
+    -- can land on: whatever is underneath reads this a frame late to know the
+    -- cursor is really on the menu rather than on itself.
+    ctx_hot     = false,
+    -- The popup's top-left, stashed by the draw that worked it out, so a Y
+    -- press can hang the favorites menu off the lit row without repeating the
+    -- clamping that decided where the panel went.
+    warp_px     = 0,
+    warp_py     = 0,
     favs_open   = false,     -- favorites panel is up
     -- The gamepad widget.  fw_on is what the xinput handler reads to decide
     -- whether a button is its to take, and is written by the draw each frame,
@@ -625,7 +692,50 @@ local ui = T{
     fw_shown    = false,     -- it was up last frame, i.e. this is not its first
     fw_sel      = 1,         -- the row the D-pad has landed on, 1-based
     fw_hide     = false,     -- B put it away until the player walks off the NPC
-    fw_held     = {},        -- buttons whose press the widget took, by index
+    -- The widget's right-click menu was up last frame.  Read the same way as
+    -- ctx_hot: the popup is submitted after the list it hangs off, so the rows
+    -- underneath learn it is there a frame late.
+    fw_ctx      = false,
+    -- The widget has the arrow keys.  Asked for with F while it is up and given
+    -- back with Escape, because unlike the pad's D-pad the arrows are the
+    -- player's own movement keys: swallowing them the moment a warp NPC came
+    -- into reach would take walking away with them.
+    fw_key      = false,
+    pad_held    = {},        -- buttons whose press was taken, by index
+    -- The same for the keyboard, by DirectInput scan code.  It is what keeps a
+    -- key held down out of the game for as long as it is held: the buffered
+    -- event says a key went down, but the camera and the movement are read off
+    -- the immediate state buffer every frame after that.
+    kb_held     = {},
+    -- Gamepad map navigation.  The selection is the icon itself rather than a
+    -- slot in a list, because the list it walks is built fresh out of whatever
+    -- is on screen at each press; gp_from is the overview marker A zoomed in
+    -- from, so B can put the view back with that one lit.  Both are nil until
+    -- the map works out where the selection starts, which it only does while
+    -- gp_active: the pad is what is working the map, rather than merely being
+    -- plugged in behind a hand that is on the mouse.  A press the map or the
+    -- widget takes sets it, cursor movement over either clears it, and it
+    -- outlives the map closing -- a pad that was driving one still is when the
+    -- next opens.  Off until then, so a player who never touches one is never
+    -- shown a highlight arguing with their cursor.
+    gp_icon     = nil,
+    gp_from     = nil,
+    gp_active   = false,
+    -- Where the cursor was on the frame before, and whether it has moved since,
+    -- worked out once a frame so the map and the widget read the same answer
+    -- whichever of them draws first.
+    ptr_x       = nil,
+    ptr_y       = nil,
+    ptr_moved   = false,
+    -- The search box held the caret on the last frame.  The arrows, Enter and
+    -- Escape are that box's own editing keys while it does, and ImGui is given
+    -- them whether or not the client is blocked from them, so the key handler
+    -- has to keep its hands off.  Written by the draw and cleared at the head
+    -- of the frame, the same way cfg_typing is.
+    kb_typing   = false,
+    gp_row      = nil,       -- the warp list row lit, 1-based, nil for none
+    gp_q        = {},        -- actions waiting for a frame to act on them
+    gp_ready    = false,     -- the map drew last frame, so the queue is drained
     -- The favorite being dragged, as { i, live, moved } of the row that was
     -- pressed: i follows the cursor as the list reorders under it, live is
     -- whether it can travel, and moved tells a reorder from a plain click.
@@ -668,7 +778,7 @@ end
 settings.register('settings', 'settings_update', function (s)
     cfg = s;
     fill_defaults();
-    ui.font_px[1]  = cfg.font_px;
+    ui.font_px[1] = cfg.font_px;
     -- Mutated rather than replaced: ImGui edits the tables ui.scale already
     -- holds, so a fresh one here would leave the panel writing into an orphan.
     for _, row in ipairs(SCALE.rows) do
@@ -682,12 +792,19 @@ local function map_size()
 end
 
 --[[
-* Tooltip for the item just submitted.  Vetoed by a warp popup lying over that
-* item for the same reason its press is: the row is submitted before the popup,
-* so ImGui hands it the hover of a cursor that is really over the panel.
+* Tooltip for the item just submitted.  Vetoed by a warp popup or the
+* right-click menu lying over that item for the same reason its press is: the
+* row is submitted before either, so ImGui hands it the hover of a cursor that
+* is really over the thing on top.
 --]]
 local function item_tip(text)
-    if (imgui.IsItemHovered() and not ui.warp_hot) then
+    -- And vetoed by the pad or the keys driving, for the same reason the
+    -- cursor's hover art is: a tooltip standing under a cursor nobody is
+    -- holding is the mouse answering for a press it is not going to get.
+    if (ui.gp_active) then
+        return;
+    end
+    if (imgui.IsItemHovered() and not ui.warp_hot and not ui.ctx_hot) then
         imgui.SetTooltip(text);
     end
 end
@@ -1739,6 +1856,12 @@ local function set_time(time)
     ui.press = nil;
     ui.warp  = nil;
     ui.ctx   = nil;
+    -- The pad's landings belong to the map being left as surely as the view
+    -- does: gp_from would otherwise point at an overview marker of the other
+    -- era, with ui.focus no longer holding it.
+    ui.gp_icon = nil;
+    ui.gp_from = nil;
+    ui.gp_row  = nil;
 end
 
 --[[
@@ -1771,11 +1894,11 @@ end
 * argument list has been through - the list moved between the ImGui versions
 * Ashita has shipped.  Returns whether it was pressed, and the width it took.
 *
-* A warp popup lying over one of these eats the press: this row is submitted
-* before the popup, and ImGui hands hover to the first item that claims it, so
-* a panel over a toggle would otherwise flip it from underneath.  Read a frame
-* late, which is harmless - the panel does not move while it is open.  Missing
-* art draws nothing and takes no press.
+* A warp popup or the right-click menu lying over one of these eats the press:
+* this row is submitted before either, and ImGui hands hover to the first item
+* that claims it, so a panel over a toggle would otherwise flip it from
+* underneath.  Read a frame late, which is harmless - neither moves while it is
+* open.  Missing art draws nothing and takes no press.
 --]]
 local function icon_button(id, file, x, y, h, tint, tip)
     local w = icon_width(file, h);
@@ -1788,7 +1911,8 @@ local function icon_button(id, file, x, y, h, tint, tip)
     imgui.GetWindowDrawList():AddImage(tonumber(ffi.cast('uint32_t', tex)),
                                        { sx, sy }, { sx + w, sy + h },
                                        { 0, 0 }, { 1, 1 }, tint);
-    local hit = imgui.InvisibleButton('##ubermap_' .. id, { w, h }) and not ui.warp_hot;
+    local hit = imgui.InvisibleButton('##ubermap_' .. id, { w, h })
+                and not ui.warp_hot and not ui.ctx_hot;
     if (tip ~= nil) then
         item_tip(tip);
     end
@@ -1825,9 +1949,26 @@ local function draw_icons(origin_x, origin_y, view_w, view_h, over_map)
             local hot = over_map and not dim
                 and mouse_x >= cx - half and mouse_x <= cx + half
                 and mouse_y >= cy - half and mouse_y <= cy + half;
-            local tex = nil;
             if (hot) then
                 hot_ic = ic;
+            end
+            -- The gamepad's landing wears the same hover the cursor gives, so
+            -- one thing on screen says what a press would act on.  It is not
+            -- fed back as hot_ic: that is what a click acts on, and a click
+            -- has to mean wherever the cursor actually is.  A marker faded
+            -- back is not lit whatever the selection says, the same way it
+            -- takes no cursor -- a stale selection left behind by the wheel is
+            -- put right at the next press, not here.
+            -- And exactly one of the two is lit: with the pad or the keys
+            -- driving, a cursor parked over some other marker would otherwise
+            -- leave two markers looking equally pressable.  The cursor's own
+            -- hover comes back the moment it moves over the map again, which
+            -- is what hands the map back to the mouse.
+            local lit = ui.gp_active
+                        and (not dim and ic == ui.gp_icon)
+                        or (not ui.gp_active and hot);
+            local tex = nil;
+            if (lit) then
                 tex = icon_texture((ic.file:gsub('_0%.png$', '_1.png')));
             end
             tex = tex or icon_texture(ic.file);
@@ -1835,7 +1976,7 @@ local function draw_icons(origin_x, origin_y, view_w, view_h, over_map)
                 -- Grown only for the draw: the hit test above keeps the plain
                 -- size, so the icon cannot swell out from under the cursor and
                 -- flicker between the two states.
-                local grow  = (hot and ic.group == HOT_GROUP)
+                local grow  = (lit and ic.group == HOT_GROUP)
                               and half * ICON_HOT or half;
                 local id    = tonumber(ffi.cast('uint32_t', tex));
                 local p0    = { cx - grow, cy - grow };
@@ -2000,6 +2141,291 @@ local function zoom_to_search(view_w, view_h)
     return false;
 end
 
+-- The map's own gamepad functions, hung off one table rather than standing as
+-- five locals of their own.  This chunk runs a handful of names short of Lua's
+-- limit of 200 locals to a function, and five more do not fit; it is the shape
+-- SCALE.px is already written in, so it is no stranger here than there.
+-- ponytail: one table because the limit is the whole reason for it.  Split the
+-- chunk into modules and these can go back to being plain locals.
+local nav = { };
+
+--[[
+* The keyboard's half of the same seven: the arrows are the D-pad, Enter is A
+* and Escape is B, so one set of actions serves both and nav.act needs to know
+* nothing about which hand made the press.
+*
+* U and F are the widget's alone and have no pad twin -- U is the Y press that
+* swaps the widget for the map, F is what hands the arrows to the widget in the
+* first place.  They are here rather than as constants of their own because
+* this chunk sits at Lua's limit of 200 locals; see nav's own note above.
+*
+* Keyed by DirectInput scan code rather than by virtual key, because that is
+* what the game reads.  The WNDPROC key event carries virtual keys and can be
+* blocked, but blocking it only keeps a key out of the client's *text* fields:
+* movement, the camera and the menus are all read straight off DirectInput
+* underneath it.  So these are matched in key_data and key_state instead, and
+* the arrows really do stop turning the camera.
+--]]
+nav.key = {
+    [0xC8] = 'up',    [0xD0] = 'down',
+    [0xCB] = 'left',  [0xCD] = 'right',
+    -- Both Enters, since a keyboard has two and only one of them is over by
+    -- the letters.
+    [0x1C] = 'a',     [0x9C] = 'a',
+    [0x01] = 'b',
+    [0x16] = 'u',     [0x21] = 'f',
+};
+
+--[[
+* The list, and where in it the selection sits.  A selection that is not on the
+* list any more -- zoomed past, filtered out by the toggles or the search box,
+* or never made at all -- restarts at the marker nearest the middle of the
+* viewport, which is what puts the first press of a session on the centre-most
+* nation and what recovers every stale one after that.
+--]]
+function nav.focus(view_w, view_h)
+    -- Every marker the pad can land on right now: what is drawn, minus what
+    -- is faded back -- the same two tests draw_icons puts a marker on the
+    -- screen and under the cursor by.  Which tier that is answers itself,
+    -- since the overview markers are the ones drawn below ZOOM_POINTS and the
+    -- zone points the ones above it: zooming with the wheel moves the
+    -- selection between tiers as surely as an A press does, with no separate
+    -- level to keep in step with it.
+    local list = { };
+    for _, ic in ipairs(ICONS) do
+        if (icon_visible(ic) and not icon_dim(ic)) then
+            table.insert(list, ic);
+        end
+    end
+    for i, ic in ipairs(list) do
+        if (ic == ui.gp_icon) then
+            return list, i;
+        end
+    end
+    local i = gpn.nearest(list,
+                          mm.to_map(view_w / 2, ui.pan_x, ui.zoom, 0),
+                          mm.to_map(view_h / 2, ui.pan_y, ui.zoom, 0));
+    ui.gp_icon = (i ~= nil) and list[i] or nil;
+    return list, i;
+end
+
+--[[
+* The mouse taking the map back off the pad.  Movement over the map or over the
+* widget says the hand is on the mouse, and the cursor's own hover is what says
+* where a click would land there, so the pad's highlights are put out rather
+* than left arguing with it.
+*
+* Only the highlights: gp_from is the way back out of a marker, not something
+* drawn, and the widget's row is kept as a number so its arithmetic still has
+* one -- gp_active is what decides whether either is lit.  Only a press of a
+* button the map or the widget reads sets that again, and the next pump seats
+* a marker under it.
+--]]
+function nav.mouse(hovered)
+    if (not hovered or not ui.ptr_moved) then
+        return;
+    end
+    ui.gp_active = false;
+    ui.gp_icon = nil;
+    ui.gp_row  = nil;
+end
+
+--[[
+* Marks the pad as what is driving, and answers whether this press is spent
+* doing only that.  The mouse moving over the map or the widget puts the pad's
+* highlights out, so the press that turns them back on lights what it left
+* rather than acting on it: the next frame seats a selection under it, and the
+* press after that is the one that walks, opens or sends.  A press that acted
+* on the way back in would step off -- or worse, send -- something nothing on
+* screen was showing.
+--]]
+function nav.wake()
+    local was = ui.gp_active;
+    ui.gp_active = true;
+    return not was;
+end
+
+--[[
+* Acts on one queued press, at the frame that knows how big the viewport is.
+*
+* Nested the way the game's own menus are: the overview, the zone points inside
+* one marker of it, and the warp list inside one of those.  A takes the next
+* one down and B comes back up.  There is no level held anywhere, because the
+* view already says which one it is on -- ui.focus is set exactly while a
+* marker has been zoomed into, by a click as much as by an A press, so the two
+* ways in share the one way out.
+--]]
+function nav.act(act, view_w, view_h)
+    -- Inside even the warp list: while the favorites menu is up it is what
+    -- every press is for, the same way a mouse click anywhere belongs to it
+    -- rather than to what it is lying over.  A picks its one item, B and a
+    -- second Y dismiss it, and everything else is swallowed so the list and
+    -- the markers do not walk about behind it.
+    if (ui.ctx ~= nil) then
+        if (act == 'a') then
+            fav_toggle(ui.ctx.key, ui.ctx.row);
+        end
+        if (act == 'a' or act == 'b' or act == 'y') then
+            ui.ctx = nil;
+        end
+        return;
+    end
+
+    -- The innermost tier first: with a warp list open it is what every press
+    -- is for, and the markers underneath are not to move about behind it.
+    -- The rows the panel is showing, or nil while it is shut: the same call
+    -- it makes for itself.
+    local rows = (ui.warp ~= nil) and warp_rows(ui.warp.label) or nil;
+    if (rows ~= nil) then
+        if (act == 'b') then
+            ui.warp = nil;
+            return;
+        end
+        if (act == 'y') then
+            -- The pad's right-click: the favorites menu on the lit row, live
+            -- or not, exactly as the mouse's second button opens it.  Hung off
+            -- the row itself, out of the panel's own top-left, so it reads as
+            -- belonging to what was pressed rather than to the last place the
+            -- cursor happened to be.  Under the row rather than over it, the
+            -- same as the mouse's: the row stays readable and the menu is the
+            -- only thing a press can land on.  A list opened with the mouse
+            -- lights no row yet, and a press with nothing to point at opens
+            -- nothing.
+            local r = (ui.gp_row ~= nil) and rows[ui.gp_row] or nil;
+            if (r ~= nil) then
+                ui.ctx = { x = ui.warp_px + POPUP_PAD * 2,
+                           ry = ui.warp_py + POPUP_ROW * (ui.gp_row - 1),
+                           fresh = true, key = ui.warp.label, row = r };
+            end
+            return;
+        end
+        -- Where the press leaves the lit row, and whether it is a send: the
+        -- wrapping and the pulling back inside a list the toggles have emptied
+        -- are gpnav's, so test_gpwarp.lua drives the real thing.
+        local send;
+        ui.gp_row, send = gpn.row(ui.gp_row, #rows, act);
+        if (send) then
+            -- The same two tests the row is coloured on: it travels only from
+            -- the kind of NPC in reach, and only somewhere registered.  A row
+            -- that fails either takes no press, exactly as it takes no click:
+            -- the /uw would be turned down at the NPC, and a row that looks
+            -- live but does nothing reads as a broken list.
+            local r = rows[ui.gp_row];
+            if (r ~= nil and r.type == ui.near_kind
+                and warp_known(ui.warp.label, r)) then
+                local cmd = warp_cmd(ui.warp.label, r);
+                if (cmd ~= nil) then
+                    -- Which closes the map and the panel with it, the way
+                    -- sending always has.
+                    send_cmd(cmd);
+                end
+            end
+        end
+        return;
+    end
+
+    local list, i = nav.focus(view_w, view_h);
+
+    if (act == 'a') then
+        local ic = ui.gp_icon;
+        if (ic == nil) then
+            return;
+        end
+        if (OVERVIEW[ic.group]) then
+            -- Into the marker's zone points, framed the way a click frames
+            -- them.  The selection is dropped rather than carried down: the
+            -- view has moved, so the next nav.focus lands on the centre-most
+            -- point of what was just framed.  A marker standing for no zone
+            -- points at all frames nothing and stays where it is, exactly as
+            -- a click on it does.
+            if (zoom_to_group(ic.label, view_w, view_h)) then
+                ui.gp_from = ic;
+                ui.gp_icon = nil;
+            end
+        else
+            -- A zone nothing warps to leaves the panel shut rather than
+            -- opening an empty one, the same test the click makes.  Opened
+            -- from the pad, so the top row is lit and A would send it.
+            if (warp_rows(ic.label) ~= nil) then
+                ui.warp   = ic;
+                ui.gp_row = 1;
+            end
+        end
+        return;
+    end
+
+    if (act == 'b') then
+        if (ui.focus ~= nil) then
+            -- Back out to the whole map with the marker that was zoomed into
+            -- lit, so the way back in is one A press.  gp_from is nil when the
+            -- view was framed by a search rather than by a marker, and then
+            -- the selection restarts in the middle like any other stale one.
+            zoom_to_map(view_w, view_h);
+            ui.focus   = nil;
+            ui.warp    = nil;
+            ui.gp_icon = ui.gp_from;
+            ui.gp_from = nil;
+        else
+            -- Already at the top, so B is what it is everywhere else in the
+            -- game: the way out.  Escape does this for a keyboard, and a
+            -- controller has nothing else that would.
+            ui.is_open[1] = false;
+        end
+        return;
+    end
+
+    local j = gpn.step(list, i, act);
+    if (j ~= nil) then
+        ui.gp_icon = list[j];
+    end
+end
+
+--[[
+* Drains the presses that arrived since the last frame.  A queue rather than
+* one pending action, so two presses inside a frame both land instead of the
+* second eating the first.  Then, for a pad only, the selection is seated if
+* the presses left none: what keeps the highlight off the map of somebody
+* using the mouse is gp_active, not the absence of a press.
+--]]
+function nav.pump(view_w, view_h)
+    if (#ui.gp_q > 0) then
+        -- Taken off the queue up front: what is not acted on below is dropped
+        -- on purpose, and only the one case that puts presses back does.
+        local q = ui.gp_q;
+        ui.gp_q = { };
+        for i, act in ipairs(q) do
+            -- A press can close the map underneath the rest of them -- sending
+            -- a warp does -- and what is left was aimed at a map that is no
+            -- longer there.  Acting on it would seat a selection, or open a
+            -- warp list, behind a window that is shut.
+            if (not ui.is_open[1]) then
+                break;
+            end
+            local had_warp = ui.warp;
+            nav.act(act, view_w, view_h);
+            -- A press that opened the warp list ends the drain, and the rest
+            -- wait for the frame that draws it: ui.warp_px/py are written by
+            -- draw_warp_popup and by nothing else, so a Y queued behind the A
+            -- that opened the list would hang its menu off the last panel's
+            -- corner -- or off 0, 0 if no panel has been drawn at all.
+            if (had_warp == nil and ui.warp ~= nil) then
+                for j = i + 1, #q do
+                    table.insert(ui.gp_q, q[j]);
+                end
+                break;
+            end
+        end
+    end
+    -- A pad that is driving has no cursor to say where a press would land, so
+    -- its marker is lit before it is pressed: on opening, and again on the
+    -- frame A frames a nation and drops the selection that framed it.  Only
+    -- where nothing is lit already, so the wheel and the mouse move the view
+    -- without the selection chasing them.
+    if (ui.gp_active and ui.gp_icon == nil) then
+        nav.focus(view_w, view_h);
+    end
+end
+
 --[[
 * Asks the server for the map markers, which it answers with the teleport masks
 * among other things.  The same request the client makes for itself every time
@@ -2034,8 +2460,18 @@ local function show()
     ui.open_x    = nil;
     ui.open_z    = nil;
     -- A menu left open from the last time the map was up would come back with
-    -- it, hung over a panel that is no longer there.
+    -- it, hung over a panel that is no longer there.  Its veto goes with it,
+    -- or the first frame back would have the panels deaf under a menu that is
+    -- not there.
     ui.ctx       = nil;
+    ui.ctx_hot   = false;
+    -- The gamepad starts where the view does, which the first frame works out,
+    -- and a press left over from the last time the map was up is not this
+    -- one's: nothing is queued between the map closing and it opening again.
+    ui.gp_icon   = nil;
+    ui.gp_from   = nil;
+    ui.gp_row    = nil;
+    ui.gp_q      = {};
     ask_for_masks();
 end
 
@@ -2062,6 +2498,157 @@ local function fw_confirm()
         -- back arms it again, the same as a B press does.
         ui.fw_hide = true;
     end
+end
+
+--[[
+* Whether a key is the map's or the widget's right now, and -- on the press
+* edge -- what it does.  Both keyboard handlers come through here: key_data
+* acts on it and blocks the edge, key_state asks it with down false and wipes
+* the key out of the frame's state buffer.  One answer, so the two cannot come
+* apart and leave a key half taken.
+*
+* Hung off nav rather than standing as a local of its own for the reason the
+* rest of nav is, and written down here rather than up beside it because it
+* calls show and fw_confirm, which are locals declared below that point.
+*
+* Read in the same order the pad is: the widget is asked first and wins
+* outright, then the map while it is on screen.  Unlike the pad the keys have
+* to be handed back -- the arrows are how the player walks -- so the widget
+* takes them only after an F and the map only while it is up.
+--]]
+function nav.press(act, down)
+    -- Typing beats all of it.  The game's own chat line or a bazaar comment
+    -- has the keyboard first; the map's search box and its config numbers have
+    -- it next, and the arrows, Enter and Escape are those boxes' own editing
+    -- keys while a caret is in one.  ImGui is fed from WNDPROC, which none of
+    -- this touches, so a key acted on here would land twice.
+    if (bit.band(AshitaCore:GetChatManager():IsInputOpen(), 0x01) ~= 0
+        or ui.kb_typing or ui.cfg_typing) then
+        return false;
+    end
+
+    -- The addon's own Escape, held down through user32 to back out of an NPC's
+    -- menu, comes back round through DirectInput like any other.  Taking it
+    -- would be the map answering a press it made itself -- and wiping it out of
+    -- the state buffer would keep it from the very menu it was sent to close.
+    if (act == 'b' and ui.esc_frames > 0) then
+        return false;
+    end
+
+    -- The widget first, and outright: it is only ever up stood at a warp NPC,
+    -- and there a press is for it.
+    if (ui.fw_on) then
+        local n = #fav_view();
+        if (n == 0) then
+            return false;
+        end
+
+        -- The way up to the full map, and what the auto-open checkbox leaves
+        -- behind when it is turned off: the pad's Y, on a key that is free
+        -- whether or not the widget has been given the arrows.  The widget
+        -- goes with it rather than staying up over the map, or it would keep
+        -- taking the keys the map now wants.
+        if (act == 'u') then
+            if (down) then
+                ui.fw_key  = false;
+                ui.fw_hide = true;
+                show();
+            end
+            return true;
+        end
+
+        if (ui.fw_key) then
+            if (act ~= 'up' and act ~= 'down' and act ~= 'a' and act ~= 'b') then
+                -- Left and right stay the client's even here: the widget is a
+                -- single column, and taking them would leave no way to work
+                -- the NPC's menu behind it.
+                return false;
+            end
+            if (not down) then
+                return true;
+            end
+            -- Escape hands the keys back whatever the highlight is doing, so
+            -- there is always one press out of this mode.  The rest wait for
+            -- the row to be lit again, the same as the pad's do: a press that
+            -- acted on the way back in would step off -- or worse, send --
+            -- something nothing on screen was showing.
+            if (nav.wake() and act ~= 'b') then
+                return true;
+            end
+            if (act == 'up') then
+                -- Wraps at both ends, the way the game's own menus do.
+                ui.fw_sel = (ui.fw_sel - 2) % n + 1;
+            elseif (act == 'down') then
+                ui.fw_sel = ui.fw_sel % n + 1;
+            elseif (act == 'a') then
+                fw_confirm();
+            else
+                -- Out of focus mode and no further: the widget stays up, so
+                -- the F that got here is one press away again.
+                ui.fw_key = false;
+            end
+            return true;
+        end
+
+        -- The arrows are the player's until they are asked for, since walking
+        -- up to a warp NPC is something done while moving.
+        if (act == 'f') then
+            if (down) then
+                ui.fw_key = true;
+                ui.fw_sel = mm.clamp(ui.fw_sel, 1, n);
+                -- Lights the row on the way in, so the first arrow steps it
+                -- rather than being spent turning the highlight back on.
+                nav.wake();
+            end
+            return true;
+        end
+
+        -- Escape outside focus mode dismisses the widget, the way B does on
+        -- the pad: the NPC's own menu is behind it, and a second Escape is
+        -- what backs out of that.
+        if (act == 'b') then
+            if (down) then
+                ui.fw_hide = true;
+            end
+            return true;
+        end
+        return false;
+    end
+
+    -- The map, while it is on screen.  U and F are the widget's alone, so with
+    -- it off screen they go back to the client rather than falling through.
+    if (not ui.is_open[1] or act == 'u' or act == 'f') then
+        return false;
+    end
+
+    -- A frame that is not drawing the map has nothing to drain the queue -- no
+    -- texture, or a window ImGui collapsed -- so a press queued there is lost.
+    -- Escape still has to work out of one, or the map could not be shut.
+    if (ui.zoom == nil or not ui.gp_ready) then
+        if (act ~= 'b') then
+            return false;
+        end
+        if (down) then
+            ui.is_open[1] = false;
+        end
+        return true;
+    end
+
+    if (not down) then
+        return true;
+    end
+    -- Escape is the one exception to the wake: it is the way out of a map
+    -- covering most of the screen, so it acts on the first press however the
+    -- map was being driven.  See the xinput handler for the rest of it.
+    if (nav.wake() and act ~= 'b') then
+        return true;
+    end
+    -- Queued rather than acted on here: the zooms need the viewport size, and
+    -- only the draw knows that.
+    if (#ui.gp_q < 8) then
+        table.insert(ui.gp_q, act);
+    end
+    return true;
 end
 
 --[[
@@ -2117,7 +2704,8 @@ end
 *
 *   sel  - a row to keep lit whatever the cursor is doing, i.e. the widget's
 *          D-pad landing.  The panel has no selection of its own.
-*   veto - something lying over the list is eating its presses.
+*   veto - something lying over the list is eating its presses, so no row of
+*          it hovers, drags or right-clicks while that is up.
 *   grab - false to draw the rows and take nothing, which is what hands a
 *          press to the window underneath instead.
 *
@@ -2160,7 +2748,8 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
         -- again every frame rather than saved with the entry.
         local live  = f.type == ui.near_kind;
         local known = warp_known(f.key, f);
-        local over  = mouse_x >= px and mouse_x <= px + w
+        local over  = not veto
+                      and mouse_x >= px and mouse_x <= px + w
                       and mouse_y >= ry and mouse_y < ry + POPUP_ROW;
         if (over) then
             hot_i, hot_live = i, live and known;
@@ -2228,8 +2817,9 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
     -- ends of the list puts the cursor outside the list, which would otherwise
     -- hand the same press to the map and pan it.
     ui.hot = ui.hot or fav_hot or ui.fav_drag ~= nil;
-    -- Why a red favorite does not travel.
-    if (hot_lock ~= nil and not veto) then
+    -- Why a red favorite does not travel.  Not while the pad or the keys are
+    -- driving: the cursor is not what a press would land on then.
+    if (hot_lock ~= nil and not veto and not ui.gp_active) then
         imgui.SetTooltip(hot_lock);
     end
 
@@ -2295,6 +2885,13 @@ local function draw_fav_widget()
     local on = cfg.widget and n > 0 and not ui.fw_hide and ui.near_kind;
     if (not on) then
         ui.fw_on, ui.fw_shown = false, false;
+        -- A menu left open by a widget going off screen is gone with it, so
+        -- the veto goes too: a stale one leaves the rows deaf on the way back.
+        ui.fw_ctx = false;
+        -- The arrows go back to the player with the list they were walking:
+        -- a widget off screen holding the movement keys is a character that
+        -- will not walk, with nothing on screen to say why.
+        ui.fw_key = false;
         -- Walking off the NPC is what clears a dismissal: B puts the widget
         -- away for this visit, not for good.
         if (not ui.near_kind) then
@@ -2350,12 +2947,20 @@ local function draw_fav_widget()
         local m = fav_metrics();
         local mouse_x, mouse_y = imgui.GetMousePos();
         local px, py = imgui.GetCursorScreenPos();
+        -- A cursor moving over the widget hands it to the mouse, whose own
+        -- hover then says which row a click would send; the pad's row is drawn
+        -- again from the next press of one.
+        nav.mouse(imgui.IsWindowHovered(
+            bit.bor(ImGuiHoveredFlags_ChildWindows, ImGuiHoveredFlags_RectOnly)));
         local hot_i = draw_fav_list(px, py, m, mouse_x, mouse_y,
-                                    { sel = ui.fw_sel, grab = not shift });
-        -- Mouse and D-pad share the one selection: a press of either button on
-        -- a row moves it there, so A afterwards sends the row last touched
-        -- rather than one the hand has left behind, and a row dragged up or
-        -- down the list carries the selection along with it.
+                                    { sel = ui.gp_active and ui.fw_sel or nil,
+                                      grab = not shift,
+                                      veto = ui.fw_ctx });
+        -- Mouse and D-pad share the one selection: a press of either button
+        -- on a row moves it there, and a row dragged up or down the list
+        -- carries the selection along with it.  A click puts the pad's
+        -- highlight out, so the A after one lights the row it left and the A
+        -- after that is what sends it.
         if (ui.fav_drag ~= nil) then
             ui.fw_sel = ui.fav_drag.i;
         elseif (hot_i ~= nil
@@ -2367,7 +2972,33 @@ local function draw_fav_widget()
         -- up: that one is drawn into the map window, which this window stands
         -- in front of.  It hangs off the list's InvisibleButton, and acts on
         -- the row the right-click just moved the selection to.
+        --
+        -- Placed under that row rather than at the cursor, the same as the
+        -- map's menu and for the same reason: a menu lying over the row it
+        -- came from puts its item and that row under the one click.  The rows
+        -- stand down while it is up as well -- an ImGui popup blocks its own
+        -- items from the ones below, but these rows are hand-tested rects and
+        -- know nothing of it.
+        --
+        -- Behind the same shift test as the popup below, or the position is set
+        -- for a popup that is never begun: Ashita shares one ImGui context
+        -- across every addon, and a pending NextWindowPos nothing consumes
+        -- lands on whatever window Begins next in the frame.
+        if (not shift) then
+            imgui.SetNextWindowPos({ px, py + POPUP_ROW * ui.fw_sel + POPUP_GAP });
+        end
+        -- Dressed in the panel's own colours, or this would be the one menu on
+        -- screen wearing ImGui's: the ground and outline the lists draw
+        -- themselves, and the hover the map's Hover picker sets.  Header* is
+        -- what MenuItem lights with.
+        imgui.PushStyleColor(ImGuiCol_PopupBg,
+                             { 0.0627, 0.0627, 0.0627, 0.8784 });
+        imgui.PushStyleColor(ImGuiCol_Border, { 0.0, 0.0, 0.0, 1.0 });
+        imgui.PushStyleColor(ImGuiCol_HeaderHovered, cfg.col_hover);
+        imgui.PushStyleColor(ImGuiCol_HeaderActive, cfg.col_hover);
+        ui.fw_ctx = false;
         if (not shift and imgui.BeginPopupContextItem('##ubermap_fw_ctx')) then
+            ui.fw_ctx = true;
             if (imgui.MenuItem('Remove point from favorites list')) then
                 local f = fav_view()[ui.fw_sel];
                 if (f ~= nil) then
@@ -2379,6 +3010,7 @@ local function draw_fav_widget()
             end
             imgui.EndPopup();
         end
+        imgui.PopStyleColor(4);
     end
     imgui.End();
     imgui.PopStyleVar();
@@ -2427,14 +3059,18 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
         -- put it in this corner.  Read a frame late, which is harmless since
         -- neither panel moves while it is open.
         local hot_i = draw_fav_list(px, py, m, mouse_x, mouse_y,
-                                    { veto = ui.warp_hot });
+                                    { veto = ui.warp_hot or ui.ctx_hot });
 
         -- Right-click a listed favorite to take it back off the list, the
-        -- same menu that put it on.
+        -- same menu that put it on.  Hung under the row rather than at the
+        -- cursor: a menu lying over the row it was opened on puts its item and
+        -- that row under the one click, which reads as picking both.  Rows are
+        -- POPUP_ROW apart from the panel's top, so the hot row's bottom edge is
+        -- its own index times the pitch.
         if (imgui.IsMouseClicked(1) and hot_i ~= nil and not ui.warp_hot) then
             local f = fav_view()[hot_i];
-            ui.ctx = { x = mouse_x, y = mouse_y, fresh = true,
-                       key = f.key, row = f };
+            ui.ctx = { x = mouse_x, ry = py + POPUP_ROW * (hot_i - 1),
+                       fresh = true, key = f.key, row = f };
         end
     end
 end
@@ -2451,7 +3087,9 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
     if (ui.warp ~= nil) then
         local rows = warp_rows(ui.warp.label);
         if (rows == nil) then
-            ui.warp = nil;  -- the toggles emptied it while it was open
+            -- the toggles emptied it while it was open
+            ui.warp   = nil;
+            ui.gp_row = nil;
         else
             local pdl    = imgui.GetWindowDrawList();
             local _, th  = imgui.CalcTextSize(ui.warp.label);
@@ -2482,11 +3120,24 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
             local py = mm.clamp_box(
                 mm.to_screen(ui.warp.y, ui.pan_y, ui.zoom, origin_y) + half + POPUP_GAP,
                 h, origin_y, view_h);
+            -- Kept for the pad: Y hangs the favorites menu off the lit row,
+            -- and the row's place on screen is this corner plus its pitch.
+            ui.warp_px, ui.warp_py = px, py;
 
             pdl:AddRectFilled({ px, py }, { px + w, py + h }, COL_POPUP_BG,
                               0, ImDrawCornerFlags_All);
             pdl:AddRect({ px, py }, { px + w, py + h }, COL_OUTLINE,
                         0, ImDrawCornerFlags_All, ICON_BORDER);
+            -- Kept inside the outline at both ends, so a lit first or last row
+            -- does not paint over the border it sits against.  The same fill
+            -- the favorites list lights its own rows with.
+            local function light(ry)
+                pdl:AddRectFilled(
+                    { px + ICON_BORDER, math.max(ry, py + ICON_BORDER) },
+                    { px + w - ICON_BORDER,
+                      math.min(ry + POPUP_ROW, py + h - ICON_BORDER) },
+                    COL_HOVER, 0, ImDrawCornerFlags_All);
+            end
             -- hot_row is the row a left-click would send, so it is only
             -- ever a live one; hot_any is the row under the cursor whether
             -- it is live or not, which is what the right-click menu goes
@@ -2494,7 +3145,9 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
             -- from in front of the NPC that travels to it.
             -- hot_lock is the tooltip a red row under the cursor should show,
             -- saying why that row will not travel.
-            local hot_row, hot_any, hot_lock = nil, nil, nil;
+            -- hot_ry is where hot_any's row starts, so the right-click menu
+            -- can be hung under it rather than over it.
+            local hot_row, hot_any, hot_lock, hot_ry = nil, nil, nil, nil;
             for i, r in ipairs(rows) do
                 local ry = py + POPUP_ROW * (i - 1);
                 -- A row only travels from the kind of NPC the player is
@@ -2512,19 +3165,28 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                 -- The hover is drawn straight into the list rather than
                 -- coming off an ImGui item, for the same reason the click
                 -- below is tested by hand: the panel is one InvisibleButton.
-                local over = mouse_x >= px and mouse_x <= px + w
+                -- The right-click menu is drawn over this panel and hangs off
+                -- one of its own rows, so a row under it takes neither the
+                -- hover nor either button: the menu is what the cursor is on.
+                local over = not ui.ctx_hot
+                             and mouse_x >= px and mouse_x <= px + w
                              and mouse_y >= ry and mouse_y < ry + POPUP_ROW;
                 if (over) then
                     hot_any  = r;
+                    hot_ry   = ry;
                     hot_lock = (not known) and LOCK_TIP[r.type] or nil;
+                end
+                -- The gamepad's landing, lit while the pad is what is
+                -- driving the map, the way the favorites widget lights its own
+                -- selection.  Out while the mouse has it, which lights the row
+                -- under the cursor and nothing else.  A row that is both reads
+                -- brighter, the two fills stacking.
+                if (ui.gp_active and i == ui.gp_row) then
+                    light(ry);
                 end
                 if (live and known and over) then
                     hot_row = r;
-                    pdl:AddRectFilled(
-                        { px + ICON_BORDER, math.max(ry, py + ICON_BORDER) },
-                        { px + w - ICON_BORDER,
-                          math.min(ry + POPUP_ROW, py + h - ICON_BORDER) },
-                        COL_HOVER, 0, ImDrawCornerFlags_All);
+                    light(ry);
                 end
                 local tex, iw, ih = icon_texture(WARP_ICON[r.type]);
                 if (tex ~= nil) then
@@ -2539,7 +3201,16 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                                  live and COL_ICON or COL_ICON_OFF);
                 end
                 local ty  = ry + (POPUP_ROW - th) / 2;
+                -- Red first: a destination nobody has registered will not
+                -- travel whether or not it was saved, and that is the thing
+                -- worth knowing.  Then green for a row already on the list, so
+                -- the panel says what is saved without opening the heart.
+                -- Asked per row per frame like the two tests above it, since a
+                -- Y press on the row underneath can save one while this panel
+                -- is on screen.
                 local col = (not known) and COL_POPUP_LOCK
+                            or (fav_index(ui.warp.label, r) ~= nil)
+                               and COL_POPUP_FAV
                             or live and COL_POPUP_TEXT or COL_POPUP_OFF;
                 pdl:AddText({ px + lab_x, ty }, col, r.label);
                 if (r.pos ~= nil) then
@@ -2562,7 +3233,7 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
             ui.warp_hot = warp_hot;
             -- Straight from the panel's own button rather than through
             -- item_tip, which vetoes on this very panel lying over things.
-            if (hot_lock ~= nil) then
+            if (hot_lock ~= nil and not ui.gp_active) then
                 imgui.SetTooltip(hot_lock);
             end
             -- A click while the right-click menu is up belongs to the menu,
@@ -2580,9 +3251,11 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                 end
             end
             -- Right-click opens the favorites menu on the row under the
-            -- cursor, live or not.
+            -- cursor, live or not.  Under that row rather than at the cursor,
+            -- so the menu's item and the row it came from are never both under
+            -- the same click.
             if (imgui.IsMouseClicked(1) and hot_any ~= nil) then
-                ui.ctx = { x = mouse_x, y = mouse_y, fresh = true,
+                ui.ctx = { x = mouse_x, ry = hot_ry, fresh = true,
                            key = ui.warp.label, row = hot_any };
             end
         end
@@ -2596,6 +3269,9 @@ end
 * The favorites right-click menu.  See draw_favs above for why it is out here.
 --]]
 local function draw_ctx_menu(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y)
+    -- Out unless the block below puts it back: a menu that is not up is not
+    -- over anything, and a stale one would leave the panels underneath deaf.
+    ui.ctx_hot = false;
     -- The right-click menu, drawn after both panels so it lands on top of
     -- whichever one it was opened from.  Hand-drawn like they are rather
     -- than an ImGui popup: the panels are one InvisibleButton each and have
@@ -2608,10 +3284,21 @@ local function draw_ctx_menu(origin_x, origin_y, view_w, view_h, mouse_x, mouse_
         local tw, th = imgui.CalcTextSize(text);
         local w = tw + POPUP_PAD * 2;
         local h = POPUP_ROW;
-        -- Opened at the cursor, clamped so a right-click near an edge does
-        -- not put the item off the viewport.
+        -- Hung under the row it was opened on, at the cursor's own column,
+        -- and flipped above that row when there is no room below.  Never over
+        -- it: a menu lying across the row would put its item and that row
+        -- under the one click, which reads as picking both.  ui.ctx.ry is the
+        -- row's top, so the two placements are its own pitch either side --
+        -- plus POPUP_GAP, the same gap a panel keeps off its marker, so the
+        -- two edges are apart rather than merely not overlapping.
         local px = mm.clamp_box(ui.ctx.x, w, origin_x, view_w);
-        local py = mm.clamp_box(ui.ctx.y, h, origin_y, view_h);
+        local py = ui.ctx.ry + POPUP_ROW + POPUP_GAP;
+        if (py + h > origin_y + view_h) then
+            py = ui.ctx.ry - h - POPUP_GAP;
+        end
+        -- Clamped last, so a row against either edge still puts the whole item
+        -- on screen.
+        py = mm.clamp_box(py, h, origin_y, view_h);
 
         cdl:AddRectFilled({ px, py }, { px + w, py + h }, COL_POPUP_BG,
                           0, ImDrawCornerFlags_All);
@@ -2619,7 +3306,13 @@ local function draw_ctx_menu(origin_x, origin_y, view_w, view_h, mouse_x, mouse_
                     0, ImDrawCornerFlags_All, ICON_BORDER);
         local ctx_hot = mouse_x >= px and mouse_x <= px + w
                         and mouse_y >= py and mouse_y <= py + h;
-        if (ctx_hot) then
+        -- What everything drawn before this reads next frame to know the
+        -- cursor is on the menu and not on itself.
+        ui.ctx_hot = ctx_hot;
+        -- Lit under the cursor, and lit outright while the pad is driving: the
+        -- menu is one item, so a pad opening it is already on the only thing
+        -- there is to pick, and an unlit item would read as nothing to press.
+        if (ctx_hot or ui.gp_active) then
             cdl:AddRectFilled({ px + ICON_BORDER, py + ICON_BORDER },
                               { px + w - ICON_BORDER, py + h - ICON_BORDER },
                               COL_HOVER, 0, ImDrawCornerFlags_All);
@@ -2653,6 +3346,12 @@ local function draw_map(view_w, view_h)
     local cover = mm.cover_zoom(map_w, map_h, view_w, view_h);
     ui.zoom = mm.clamp(ui.zoom or cover, cover, MAX_ZOOM);
 
+    -- The gamepad's presses, acted on here rather than where they arrive: the
+    -- zooms they ask for need the viewport size, and only a frame knows that.
+    -- Ahead of the mouse below, so a press and a click on the same frame land
+    -- in the order they were made.
+    nav.pump(view_w, view_h);
+
     -- The viewport's top-left, captured before the child is opened.
     local origin_x, origin_y = imgui.GetCursorScreenPos();
     local mouse_x, mouse_y   = imgui.GetMousePos();
@@ -2663,6 +3362,12 @@ local function draw_map(view_w, view_h)
     -- keeps it true mid-drag, when an active item would otherwise block it.
     local hovered = imgui.IsWindowHovered(
         bit.bor(ImGuiHoveredFlags_ChildWindows, ImGuiHoveredFlags_RectOnly));
+
+    -- A cursor moving over any of that -- map, toolbar or panel -- is the hand
+    -- leaving the pad, and takes the pad's highlight with it.  After the pump
+    -- rather than before, so a press and a nudge of the mouse on the same
+    -- frame end the way they would on two: with the mouse in charge.
+    nav.mouse(hovered);
 
     -- Ignore the mouse outside the map, and while shift is held, so a
     -- shift-drag moves the window instead of panning underneath it.  Widgets are
@@ -2751,11 +3456,21 @@ local function draw_map(view_w, view_h)
         end
         if (ui.press ~= nil and imgui.IsMouseReleased(0)) then
             if (OVERVIEW[ui.press.group]) then
-                zoom_to_group(ui.press.label, view_w, view_h);
+                -- A click is the mouse's own way down the same nesting the
+                -- gamepad walks, so B backs out of one as readily as the
+                -- other: whichever marker was gone into is the one the way
+                -- back out lands on.
+                if (zoom_to_group(ui.press.label, view_w, view_h)) then
+                    ui.gp_from = ui.press;
+                end
             else
                 -- A zone nothing warps to leaves the panel shut rather than
                 -- opening an empty one.
                 ui.warp = (warp_rows(ui.press.label) ~= nil) and ui.press or nil;
+                -- Opened with the cursor, so no row is lit: the hover is what
+                -- says which one a click would send, and a second highlight
+                -- sitting on the top row would only argue with it.
+                ui.gp_row = nil;
             end
             ui.press = nil;
         end
@@ -2831,10 +3546,17 @@ local function draw_map(view_w, view_h)
         -- below feed it: IsItemActive stays true for the whole time the caret
         -- sits in the box, and on its own it would leave the map unable to
         -- zoom, pan or be clicked for as long as a search was being typed --
-        -- including, with /um focus on, the frame the map opens in.  Held mouse
-        -- included, so dragging a selection across the text does not pan.
+        -- including, with Search Focus On Open ticked, the frame the map
+        -- opens in.  Held mouse included, so dragging a selection across the
+        -- text does not pan.
         ui.hot = ui.hot or imgui.IsItemHovered()
                  or (imgui.IsItemActive() and imgui.IsMouseDown(0));
+        -- The caret being in the box, which is the whole of it rather than the
+        -- mouse's share above: the arrows walk the text, Enter and Escape leave
+        -- the field, and none of the three are the map's while it is being
+        -- typed into -- including, with Search Focus On Open ticked, the frame
+        -- the map opens in.
+        ui.kb_typing = ui.kb_typing or imgui.IsItemActive();
 
         -- Reframed on every change to the text, so narrowing a search closes in
         -- on what is left.  Only on a change: refitting every frame would fight
@@ -2924,6 +3646,21 @@ local function draw_map(view_w, view_h)
                             { 'Outline',    cfg.col_outline },
                             { 'Background', cfg.col_bg },
                             { 'Hover',      cfg.col_hover } };
+            -- The rows that are not about how the map looks, on the end of
+            -- the panel: the name, the box ImGui edits, and the cfg key it
+            -- writes.  The box is built from cfg on the frame it is drawn
+            -- rather than kept, so a toggle made from '/um' shows here without
+            -- anything having to be told about it.
+            local checks = { { 'HP/SG/UC Opens Map',
+                               { cfg.autoopen }, 'autoopen' },
+                             { 'Favorites Widget',
+                               { cfg.widget }, 'widget' },
+                             { 'EXP Guide Pickup',
+                               { cfg.guide }, 'guide' },
+                             { 'Search Focus On Open',
+                               { cfg.focus }, 'focus' },
+                             { 'Hide Uberwarp Chat',
+                               { cfg.quiet }, 'quiet' } };
             -- Every InputInt row: the name it is drawn under, the box ImGui
             -- edits, the cfg key it writes, and the bounds and steps it takes.
             -- Size is one of them rather than a case of its own.
@@ -2953,6 +3690,13 @@ local function draw_map(view_w, view_h)
                 panel_w = math.max(panel_w,
                                    fh + POPUP_PAD + imgui.CalcTextSize(pick[1]));
             end
+            -- A checkbox is a frame square with its name beside it, the same
+            -- shape as a swatch -- and these names are long enough to be what
+            -- decides the panel's width.
+            for _, chk in ipairs(checks) do
+                panel_w = math.max(panel_w,
+                                   fh + POPUP_PAD + imgui.CalcTextSize(chk[1]));
+            end
             -- The pulldown carries no name, so it spends the panel's whole width
             -- on the face and the arrow ImGui puts on its end -- one frame's
             -- worth, the same as a swatch.
@@ -2962,8 +3706,9 @@ local function draw_map(view_w, view_h)
             end
             panel_w = panel_w + POPUP_PAD * 2;
             local pitch   = fh + TOGGLE_GAP;
-            -- The face pulldown, then every numeric row, then the pickers.
-            local panel_h = pitch * (#picks + #nums + 1) - TOGGLE_GAP
+            -- The face pulldown, then every numeric row, then the pickers,
+            -- then the checkboxes on the end.
+            local panel_h = pitch * (#picks + #nums + #checks + 1) - TOGGLE_GAP
                             + POPUP_PAD * 2;
             local px      = view_w - UI_MARGIN - panel_w;
             local py      = UI_MARGIN;
@@ -3048,6 +3793,26 @@ local function draw_map(view_w, view_h)
                     -- the picker rather than at the end of the drag.
                     repack_cols();
                     ui.cfg_dirty = true;
+                end
+                ui.hot = ui.hot or imgui.IsItemActive();
+            end
+
+            -- The checkboxes, last rows of the panel.  Saved on the spot
+            -- rather than deferred through cfg_dirty like the pickers and the
+            -- boxes: a checkbox reports its change once, not once a frame for
+            -- as long as the mouse is held.
+            for i, chk in ipairs(checks) do
+                imgui.SetCursorPos({ row_x,
+                                     row_y + pitch * (#nums + #picks + i) });
+                if (imgui.Checkbox(chk[1] .. '##ubermap_' .. chk[3], chk[2])) then
+                    cfg[chk[3]] = chk[2][1];
+                    -- Ticking it back on is asking to see it, and a B press
+                    -- earlier in this visit is otherwise only cleared by
+                    -- walking off the NPC.
+                    if (chk[3] == 'widget') then
+                        ui.fw_hide = false;
+                    end
+                    settings.save();
                 end
                 ui.hot = ui.hot or imgui.IsItemActive();
             end
@@ -3153,6 +3918,15 @@ ashita.events.register('d3d_present', 'ubermap_present', function ()
     pump_escape(now);
     pump_guide(now);
 
+    -- Has the cursor moved since the last frame?  Answered here, ahead of
+    -- everything that draws, so the map and the widget both read the one
+    -- answer however they are ordered.  The first frame has nothing to compare
+    -- against and counts as still, or loading the addon with the cursor
+    -- anywhere near the map would read as the mouse taking over.
+    local px, py = imgui.GetMousePos();
+    ui.ptr_moved = (ui.ptr_x ~= nil) and (px ~= ui.ptr_x or py ~= ui.ptr_y);
+    ui.ptr_x, ui.ptr_y = px, py;
+
     -- One write per drag rather than one per frame of it: a colour picker
     -- reports a change on every frame the mouse moves inside it, and the Size
     -- box does the same for every keystroke typed into it and for as long as a
@@ -3164,6 +3938,9 @@ ashita.events.register('d3d_present', 'ubermap_present', function ()
         settings.save();
     end
     ui.cfg_typing = false;
+    -- Cleared here and written by the draw, so a map put away with the caret in
+    -- the search box does not leave the keys deaf behind it.
+    ui.kb_typing  = false;
 
     -- What the map's text is scaled by, resolved once here rather than per
     -- label.  Ahead of the map, and of the readout and labels it draws through
@@ -3202,6 +3979,15 @@ ashita.events.register('d3d_present', 'ubermap_present', function ()
         poll_near(now);
     end
     draw_fav_widget();
+
+    -- The map's presses are only worth swallowing on the frames it is drawn:
+    -- nav.pump is what drains them, and every early return below -- put away
+    -- by the step just taken, no texture, and further down a window ImGui
+    -- collapsed or sized to nothing -- leaves nothing to do the draining.
+    -- Blocked presses with no drain is a D-pad dead in the game's own menus as
+    -- well as on the map, with nothing on screen to say why.  Put out here and
+    -- set again where the drain actually happens.
+    ui.gp_ready = false;
 
     if (not ui.is_open[1]) then
         return;
@@ -3246,6 +4032,7 @@ ashita.events.register('d3d_present', 'ubermap_present', function ()
     if (imgui.Begin('UberMap', ui.is_open, flags)) then
         local view_w, view_h = imgui.GetContentRegionAvail();
         if (view_w > 0 and view_h > 0) then
+            ui.gp_ready = true;
             draw_map(view_w, view_h);
         end
     end
@@ -3287,7 +4074,10 @@ ashita.events.register('packet_in', 'ubermap_packet_in', function (e)
 
     -- A talk the map's own command started is not a reason to reopen it: the
     -- send closed it on purpose.
-    if (warp_npc_type(name) ~= nil and os.clock() - ui.sent_at > SEND_QUIET) then
+    -- cfg.autoopen is the '/um config' checkbox: with it off the NPC is walked
+    -- up to in peace, and Y at the favorites widget or '/um' puts the map up.
+    if (warp_npc_type(name) ~= nil and cfg.autoopen
+        and os.clock() - ui.sent_at > SEND_QUIET) then
         show();
     end
 
@@ -3309,52 +4099,14 @@ ashita.events.register('command', 'ubermap_command', function (e)
 
     local sub = args[2] ~= nil and args[2]:lower() or nil;
 
-    if (sub == 'widget') then
-        cfg.widget = not cfg.widget;
-        -- Asking for it back is asking to see it: a B press earlier in this
-        -- visit would otherwise leave it hidden with nothing on screen saying
-        -- why, since only walking off the NPC clears that.
-        ui.fw_hide = false;
-        settings.save();
-        notify(('favorites widget: %s'):fmt(cfg.widget
-            and 'on, shows at a Home Point, Survival Guide or Unity Concord'
-            or 'off'));
-        return;
-    end
-
-    if (sub == 'guide') then
-        cfg.guide = not cfg.guide;
-        settings.save();
-        notify(('EXP Guide scroll pickup: %s'):fmt(cfg.guide
-            and 'on, fetches an Instant Warp scroll when you pass a guide'
-            or 'off'));
-        return;
-    end
-
-    if (sub == 'focus') then
-        cfg.focus = not cfg.focus;
-        settings.save();
-        notify(('search box focus on open: %s'):fmt(cfg.focus
-            and 'on, the map opens ready to type in'
-            or 'off'));
-        return;
-    end
-
-    if (sub == 'quiet') then
-        cfg.quiet = not cfg.quiet;
-        settings.save();
-        notify(('Uberwarp chat lines: %s'):fmt(cfg.quiet
-            and 'hidden, including its errors'
-            or 'shown'));
-        return;
-    end
-
     if (sub == 'config') then
         ui.config = not ui.config;
         -- Opens the map with it: the panel is drawn on the map, so turning it
-        -- on with the map shut would put it nowhere.
-        if (ui.config) then
-            ui.is_open[1] = true;
+        -- on with the map shut would put it nowhere.  Through show(), which is
+        -- what clears a right-click menu and its veto left over from the last
+        -- time the map was up; a map already open is left exactly as it is.
+        if (ui.config and not ui.is_open[1]) then
+            show();
         end
         notify(('config panel: %s'):fmt(ui.config
             and 'on, top-right of the map'
@@ -3365,7 +4117,9 @@ ashita.events.register('command', 'ubermap_command', function (e)
     if (sub == 'edit') then
         ui.edit = not ui.edit;
         if (ui.edit) then
-            ui.is_open[1] = true;
+            if (not ui.is_open[1]) then
+                show();
+            end
         else
             ui.sel = nil;
         end
@@ -3383,13 +4137,20 @@ end);
 
 --[[
 * event: xinput_button
-* desc : D-pad up and down walk the favorites widget, A sends the row it has
-*        landed on and B puts the widget away.  Only while the widget is on
-*        screen, which is only while a warp NPC is in reach; every other button,
-*        and every button at all outside that, is left to the client.
+* desc : Two things read the pad, and only ever one at a time.  The favorites
+*        widget takes D-pad up and down, A, B and Y while it is on screen,
+*        which is only while a warp NPC is in reach.  The map takes those and
+*        the D-pad's other axis and Y while it is up: the D-pad walks the
+*        markers, A opens what is under it, B backs out, and Y is the
+*        right-click that opens the favorites menu on a warp row -- while at
+*        the widget Y is what swaps the widget for the map itself.  The widget
+*        is asked first, so walking up to an NPC puts it in front of a map
+*        that is already open and it has to be dismissed before the map
+*        answers again.  Every other button, and every button at all outside
+*        those two, is the client's.
 --]]
 ashita.events.register('xinput_button', 'ubermap_xinput', function (e)
-    local act = FW[e.button];
+    local act = GP[e.button];
     if (act == nil) then
         return;
     end
@@ -3400,34 +4161,85 @@ ashita.events.register('xinput_button', 'ubermap_xinput', function (e)
     -- in two of the four cases -- B dismisses it and A warps out of range of
     -- the NPC holding it up -- and a release matched against the state after
     -- that would leak a button-up the client never got the button-down for.
+    -- The map's own presses are held for the same reason: A on a warp row
+    -- closes the map before the button comes back up.
     if (e.state ~= 1) then
-        if (ui.fw_held[e.button]) then
-            ui.fw_held[e.button] = nil;
+        if (ui.pad_held[e.button]) then
+            ui.pad_held[e.button] = nil;
             e.blocked = true;
         end
         return;
     end
 
-    local n = #fav_view();
-    if (not ui.fw_on or n == 0) then
+    -- The widget first, and outright: it is only ever up stood at a warp NPC,
+    -- and there it is what a press is for.  The two buttons it does not read
+    -- go to the client rather than to the map behind it, or dismissing it
+    -- would be the only way to reach the NPC's own menu.
+    if (ui.fw_on) then
+        local n = #fav_view();
+        -- Left and right stay the client's: the widget is a single column, and
+        -- taking them would leave no way to work the menu behind it short of
+        -- dismissing it.
+        if (act == 'left' or act == 'right' or n == 0) then
+            return;
+        end
+        e.blocked = true;
+        ui.pad_held[e.button] = true;
+
+        -- Marked here rather than at the head of the handler: what turns the
+        -- pad's highlights back on is a press this widget took, not a pad
+        -- being plugged in.  Anything else -- the other face buttons, a
+        -- release, a trigger -- says nothing about which hand is on the map,
+        -- and a player working the mouse with a controller still in reach had
+        -- the highlight coming back on all of them.
+        if (nav.wake()) then
+            return;
+        end
+
+        if (act == 'up') then
+            -- Wraps at both ends, the way the game's own menus do.  ponytail:
+            -- one step a press; a held-D-pad repeat if a list ever gets long
+            -- enough to want one.
+            ui.fw_sel = (ui.fw_sel - 2) % n + 1;
+        elseif (act == 'down') then
+            ui.fw_sel = ui.fw_sel % n + 1;
+        elseif (act == 'a') then
+            fw_confirm();
+        elseif (act == 'y') then
+            -- The way up to the full map from the widget, and what the
+            -- auto-open checkbox leaves behind when it is turned off.  The
+            -- widget goes with it rather than staying up over the map: it would
+            -- otherwise keep taking the D-pad and A that the map now wants.
+            ui.fw_hide = true;
+            show();
+        else
+            -- The way back to the NPC's own menu: with A swallowed there would
+            -- otherwise be no reaching it from a controller while stood here.
+            ui.fw_hide = true;
+        end
+        return;
+    end
+
+    -- The map, while it is on screen, has had a frame size the view, and is
+    -- being drawn -- a frame that returns out early has nothing to drain what
+    -- is queued.  Queued rather than acted on here: the zooms need the
+    -- viewport size, and only the draw knows that.
+    if (not ui.is_open[1] or ui.zoom == nil or not ui.gp_ready) then
         return;
     end
     e.blocked = true;
-    ui.fw_held[e.button] = true;
-
-    if (act == 'up') then
-        -- Wraps at both ends, the way the game's own menus do.  ponytail: one
-        -- step a press; a held-D-pad repeat if a list ever gets long enough to
-        -- want one.
-        ui.fw_sel = (ui.fw_sel - 2) % n + 1;
-    elseif (act == 'down') then
-        ui.fw_sel = ui.fw_sel % n + 1;
-    elseif (act == 'a') then
-        fw_confirm();
-    else
-        -- The way back to the NPC's own menu: with A swallowed there would
-        -- otherwise be no reaching it from a controller while stood here.
-        ui.fw_hide = true;
+    ui.pad_held[e.button] = true;
+    -- The map's own seven, on the press edge, while the map is up: the only
+    -- thing that says the pad is what is driving it.  See the widget above.
+    if (nav.wake()) then
+        return;
+    end
+    -- How many presses may wait for a frame that is not coming.  A queue
+    -- nothing is draining is a map that is not being drawn -- the window
+    -- collapsed, say -- and a hundred presses landing at once when it comes
+    -- back is worse than losing them.
+    if (#ui.gp_q < 8) then
+        table.insert(ui.gp_q, act);
     end
 end);
 
@@ -3440,34 +4252,87 @@ ashita.events.register('unload', 'ubermap_unload', function ()
 end);
 
 --[[
-* event: key
-* desc : Escape puts the map away, the way it closes the game's own windows.
+* event: key_data
+* desc : The keyboard's half of the gamepad, read the same way and in the same
+*        order.  The widget is asked first and wins outright, exactly as it
+*        does on the pad: U swaps it for the full map, F hands it the arrows,
+*        and Escape puts it away.  With it off screen the map takes the arrows,
+*        Enter and Escape while it is up -- the arrows walk the markers, Enter
+*        opens what is under one and Escape backs out, which at the top is what
+*        closes the map the way it closes the game's own windows.
+*
+*        This is DirectInput's buffered stream -- the edges, as the game reads
+*        them -- and not the WNDPROC key event.  Blocking that one only keeps a
+*        key out of the client's text fields; movement, the camera and the
+*        menus are all read from here and from the state buffer below, which is
+*        why an arrow taken there still turned the camera.
+*
+*        Both edges are taken, and which one was is remembered rather than
+*        re-tested: the press is what closes the map in two of these cases, and
+*        a release matched against the state after that would leak a key-up the
+*        client never got the key-down for.
 --]]
-ashita.events.register('key', 'ubermap_key', function (e)
-    if (e.wparam ~= VK_ESCAPE or not ui.is_open[1]) then
-        return;
+ashita.events.register('key_data', 'ubermap_key_data', function (e)
+    local act = nav.key[e.key];
+    if (act == nil) then
+        return false;
     end
 
-    -- The event is the WNDPROC message, whose lparam carries the transition
-    -- state: bit 31 set is the release, which nothing here has to answer.
-    if (bit.band(e.lparam, bit.lshift(0x8000, 0x10)) ~= 0) then
-        return;
+    if (not e.down) then
+        if (ui.kb_held[e.key]) then
+            ui.kb_held[e.key] = nil;
+            e.blocked = true;
+            return true;
+        end
+        return false;
     end
 
-    -- Swallowed, or the client opens its own menu behind the map that just
-    -- went away.
-    ui.is_open[1] = false;
+    if (not nav.press(act, true)) then
+        return false;
+    end
+    ui.kb_held[e.key] = true;
     e.blocked = true;
+    return true;
+end);
+
+--[[
+* event: key_state
+* desc : DirectInput's immediate state buffer, read once a frame: what the game
+*        polls a held key from, so blocking the edge above is not enough on its
+*        own -- the camera turns for as long as an arrow is down, and it never
+*        looks at the buffered stream to learn that.
+*
+*        Two things are wiped out of it.  A key whose press was taken, for as
+*        long as it is held, which is the whole of the case above; and a key
+*        that is down and would be taken, which covers the frame the two
+*        buffers are read in the other order and the game would otherwise see
+*        one frame of it.
+--]]
+ashita.events.register('key_state', 'ubermap_key_state', function (e)
+    local keys = ffi.cast('uint8_t*', e.data_raw);
+    for dik, act in pairs(nav.key) do
+        if (keys[dik] == 0) then
+            -- The release edge above is what normally clears this, but an
+            -- alt-tab or a device re-acquire while the key is down loses that
+            -- event, and a flag left set wipes the key out of this buffer on
+            -- every later press -- a camera that will not turn for the whole
+            -- of the next hold.  This buffer is the one place that can say a
+            -- key is up whether or not its event ever arrived.
+            ui.kb_held[dik] = nil;
+        elseif (ui.kb_held[dik] or nav.press(act, false)) then
+            keys[dik] = 0;
+        end
+    end
 end);
 
 --[[
 * event: text_in
-* desc : Drops Uberwarp's own chat lines while /um quiet is on.  Every line it
-*        writes is stamped '[Uberwarp:<module>]', so a line is its own only when
-*        both names are on it: matching the plugin name alone would swallow
-*        anything else that so much as says the word, this addon included.  The
-*        two are looked for apart rather than as one string because the plugin
-*        writes a colour byte between them.  Blocked rather than emptied, which
+* desc : Drops Uberwarp's own chat lines while Hide Uberwarp Chat is ticked.
+*        Every line it writes is stamped '[Uberwarp:<module>]', so a line is
+*        its own only when both names are on it: matching the plugin name alone
+*        would swallow anything else that so much as says the word, this addon
+*        included.  The two are looked for apart rather than as one string
+*        because the plugin writes a colour byte between them.  Blocked rather than emptied, which
 *        keeps the line out of the log file as well.
 --]]
 -- The task modules Uberwarp names itself after, straight out of the plugin.
