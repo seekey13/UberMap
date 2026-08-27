@@ -12,9 +12,7 @@ Drop the `UberMap` folder into `Ashita/addons/`, then `/addon load ubermap`.
 | --- | --- |
 | `/ubermap`, `/um` | Toggle the map |
 | `/ubermap edit` | Toggle the point editor |
-| `/ubermap config` | Toggle the config panel: map font and size, text, outline, background and row hover colours, plus the auto-open and gamepad widget checkboxes |
-| `/ubermap guide` | Toggle the EXP Guide scroll pickup (on by default) |
-| `/ubermap focus` | Toggle the search box taking the keyboard when the map opens (off by default) |
+| `/ubermap config` | Toggle the config panel: map font and size, text, outline, background and row hover colours, and five checkboxes |
 
 ## The map
 
@@ -50,10 +48,6 @@ Left-click a zone point — for a panel of that zone's destinations. Clicking a 
 | **Multisend** | Bottom right | Prefixes every command the map sends with `/mss ` |
 | **Heart** | Bottom left | Opens favorites. Hidden while the gamepad widget is on, since that lists the same rows.  Filters will completely hide results on this list |
 
-`/um quiet` hides Uberwarp's chat lines. Off by default: `[Uberwarp:<module>]`, enable this if you want to clean up the chat log on warps.  Keep in mind you will no longer get error messages.
-
-`/um focus` sets search to focus on open. Off by default: makes it feel better for users who plan on type filtering most of their navigation, you will need to click the map to pan/zoom.
-
 **Warp Ring** works in two steps, since a ring must be worn before use. It looks for item 28540 in your bag and the eight Mog Wardrobes the client will equip out of, re-read twice a second like the scroll. Carrying none: dimmed and dead. Carrying one unworn: dimmed, and clicking sends `/equip ring1 "Warp Ring" <container>`, keeps the map open and goes dead for nine seconds while the ring lands. Wearing one: lit, and clicking sends `/item "Warp Ring" <me>` and closes the map. Hovering says which step it is on.  If you use LuAshitacast keep in mind they will battle each other.
 
 While **Multisend** is lit every command — warp rows, scroll and ring alike — goes out through [Multisend](https://github.com/ThornyFFXI/Multisend) and repeats on every logged-in character. Off and dimmed until clicked.
@@ -78,10 +72,13 @@ A character who has never saved one starts with three, so the widget has somethi
 | Outline | The stamp behind that text that keeps it readable over the art. White, half alpha |
 | Background | A plate drawn under it. Fully transparent by default, i.e. off -- raise its alpha for a solid label instead of an outlined one |
 | Hover | Fill under the row the cursor is on: warp rows, favorites and the right-click menu. White, near-transparent |
-| Open Map when interacting with a HP/SG/UC | Whether walking up to a Home Point, Survival Guide or Unity Concord puts the map on screen by itself. On by default; off leaves `/um` and **Y** at the favorites widget as the ways in |
-| Favorites widget on gamepad | The controller window below. On by default; ticking it back on also undoes a **B** press that put it away for this visit |
+| HP/SG/UC Opens Map | Walking up to a Home Point, Survival Guide or Unity Concord puts the map on screen by itself. On by default; off leaves `/um` and **Y** at the favorites widget as the ways in |
+| Favorites Widget | The controller window below. On by default; ticking it back on also undoes a **B** press that put it away for this visit |
+| EXP Guide Pickup | Take an Instant Warp scroll off a guide you walk past, see below. On by default |
+| Search Focus On Open | The search box takes the keyboard the frame the map opens, so you can type straight away. Off by default: while it holds the caret the map takes no clicks to pan or zoom |
+| Hide Uberwarp Chat | Drop Uberwarp's `[Uberwarp:<module>]` lines from the log, errors included. On by default; untick it when a warp misbehaves and you want the reason |
 
-The two checkboxes save the moment they are clicked, rather than on the mouse coming up like the pickers and boxes.
+The five checkboxes save the moment they are clicked, rather than on the mouse coming up like the pickers and boxes.
 
 The four scale rows are whole percents, 25 to 400, typed or stepped (±5 by the arrows, ±25 by ctrl-click). 100 is what the map has always drawn at, which is what a settings file that has never been near them carries.
 
@@ -95,7 +92,7 @@ Everything on the panel is yours alone and is saved with the rest of the per-cha
 
 Walk within 7 yalms of an **EXP Guide** or **EXP Guide (S)** carrying no Instant Warp scroll and with a free inventory slot, and one is asked for and taken without you stopping: the guide is poked with the same packet pressing its target sends, and Escape backs out of the talk the scroll arrives in.
 
-`/um guide` turns the pickup off, and it is on by default. All three have to be true — no scroll (4181) in the bag, a slot free for one, a guide in reach — and they get **one** poke between them. Any of the three going false arms the next one, so spending a scroll or walking off and back asks again, while standing at a guide that answered with nothing does not: it is given up on after five seconds and then left alone. So the packet count is one per scroll you actually collect, on no timer of its own.
+**EXP Guide Pickup** on the `/um config` panel turns the pickup off, and it is on by default. All three have to be true — no scroll (4181) in the bag, a slot free for one, a guide in reach — and they get **one** poke between them. Any of the three going false arms the next one, so spending a scroll or walking off and back asks again, while standing at a guide that answered with nothing does not: it is given up on after five seconds and then left alone. So the packet count is one per scroll you actually collect, on no timer of its own.
 
 The guides stand in **Ru'Lude Gardens** and **Lower Jeuno**, and the zone is checked before anything else.
 
@@ -151,7 +148,7 @@ The same three tiers off the keyboard, with the arrows standing in for the D-pad
 
 Esc at the widget without an **F** first puts the widget away, the way **B** does; press it again for the NPC's own menu behind it. The map takes the arrows only while it is on screen, and the widget only after an **F**, so walking is never swallowed.
 
-Typing wins over all of it. The game's own chat line, the map's search box and the config panel's number boxes each take the arrows, Enter and Esc while a caret is in them — with `/um focus` on, that includes the frame the map opens in, so start typing straight away and press Esc or click the map when you want the keys back.
+Typing wins over all of it. The game's own chat line, the map's search box and the config panel's number boxes each take the arrows, Enter and Esc while a caret is in them — with **Search Focus On Open** ticked, that includes the frame the map opens in, so start typing straight away and press Esc or click the map when you want the keys back.
 
 A key the map takes is kept from the game outright, for as long as it is held, so an arrow walking the markers is not also turning the camera. Numpad Enter counts as Enter; the numpad arrows are left alone, since they are how a lot of people move.
 

@@ -22,8 +22,8 @@ local rows = {};
 for label, box, key in checks:gmatch("{%s*'([^']-)',%s*\n?%s*{ cfg%.([%w_]+) }%s*,%s*'([%w_]+)'%s*}") do
     rows[#rows + 1] = { label = label, box = box, key = key };
 end
-assert(#rows == 2,
-       ('the panel lists %d checkbox rows, not the 2 it offers'):format(#rows));
+assert(#rows == 5,
+       ('the panel lists %d checkbox rows, not the 5 it offers'):format(#rows));
 
 local seen = {};
 for _, row in ipairs(rows) do
@@ -33,8 +33,14 @@ for _, row in ipairs(rows) do
            :format(row.key, row.box));
     seen[row.key] = true;
 end
-assert(seen.autoopen, 'the auto-open row is gone from the config panel');
-assert(seen.widget, 'the favorites widget row is gone from the config panel');
+-- Every setting that has no other way in now that the panel is the only
+-- place these are toggled from: the commands they replaced are gone.
+for _, key in ipairs({ 'autoopen', 'widget', 'guide', 'focus', 'quiet' }) do
+    assert(seen[key], ('the %s row is gone from the config panel'):format(key));
+    assert(not src:find(("sub == '%s'"):format(key), 1, true),
+           ('/um %s is back, so the checkbox is no longer the only way in')
+           :format(key));
+end
 
 -- Both keys are real settings, or the checkbox writes somewhere nothing reads.
 local defaults = src:match('local default_settings%s*=%s*T{(.-)\n};');
@@ -60,4 +66,4 @@ assert(src:match('for _, chk in ipairs%(checks%) do%s*\n%s*panel_w = math%.max')
 assert(src:match("if %(chk%[3%] == 'widget'%) then%s*\n%s*ui%.fw_hide = false;"),
        'the widget checkbox no longer clears ui.fw_hide');
 
-print('ok: 2 checkbox rows, both live off cfg, panel sized to fit them');
+print('ok: 5 checkbox rows, all live off cfg, panel sized to fit them');

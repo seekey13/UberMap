@@ -464,8 +464,8 @@ local default_settings = T{
     focus  = false,
     -- Uberwarp narrates every step of a warp it runs into the log, errors
     -- included.  The map is what asked for the warp, so the running commentary
-    -- is noise by the time it arrives; /um quiet turns it back on when a warp
-    -- is misbehaving and the reason matters.
+    -- is noise by the time it arrives; the config panel's Hide Uberwarp Chat
+    -- box turns it back on when a warp is misbehaving and the reason matters.
     quiet  = true,
     -- Whether walking up to a Home Point, Survival Guide or Unity Concord puts
     -- the map on screen by itself.  On by default: that is what the map has
@@ -3501,14 +3501,16 @@ local function draw_map(view_w, view_h)
         -- below feed it: IsItemActive stays true for the whole time the caret
         -- sits in the box, and on its own it would leave the map unable to
         -- zoom, pan or be clicked for as long as a search was being typed --
-        -- including, with /um focus on, the frame the map opens in.  Held mouse
-        -- included, so dragging a selection across the text does not pan.
+        -- including, with Search Focus On Open ticked, the frame the map
+        -- opens in.  Held mouse included, so dragging a selection across the
+        -- text does not pan.
         ui.hot = ui.hot or imgui.IsItemHovered()
                  or (imgui.IsItemActive() and imgui.IsMouseDown(0));
         -- The caret being in the box, which is the whole of it rather than the
         -- mouse's share above: the arrows walk the text, Enter and Escape leave
         -- the field, and none of the three are the map's while it is being
-        -- typed into -- including, with /um focus on, the frame the map opens.
+        -- typed into -- including, with Search Focus On Open ticked, the frame
+        -- the map opens in.
         ui.kb_typing = ui.kb_typing or imgui.IsItemActive();
 
         -- Reframed on every change to the text, so narrowing a search closes in
@@ -3607,7 +3609,13 @@ local function draw_map(view_w, view_h)
             local checks = { { 'HP/SG/UC Opens Map',
                                { cfg.autoopen }, 'autoopen' },
                              { 'Favorites Widget',
-                               { cfg.widget }, 'widget' } };
+                               { cfg.widget }, 'widget' },
+                             { 'EXP Guide Pickup',
+                               { cfg.guide }, 'guide' },
+                             { 'Search Focus On Open',
+                               { cfg.focus }, 'focus' },
+                             { 'Hide Uberwarp Chat',
+                               { cfg.quiet }, 'quiet' } };
             -- Every InputInt row: the name it is drawn under, the box ImGui
             -- edits, the cfg key it writes, and the bounds and steps it takes.
             -- Size is one of them rather than a case of its own.
@@ -4046,33 +4054,6 @@ ashita.events.register('command', 'ubermap_command', function (e)
 
     local sub = args[2] ~= nil and args[2]:lower() or nil;
 
-    if (sub == 'guide') then
-        cfg.guide = not cfg.guide;
-        settings.save();
-        notify(('EXP Guide scroll pickup: %s'):fmt(cfg.guide
-            and 'on, fetches an Instant Warp scroll when you pass a guide'
-            or 'off'));
-        return;
-    end
-
-    if (sub == 'focus') then
-        cfg.focus = not cfg.focus;
-        settings.save();
-        notify(('search box focus on open: %s'):fmt(cfg.focus
-            and 'on, the map opens ready to type in'
-            or 'off'));
-        return;
-    end
-
-    if (sub == 'quiet') then
-        cfg.quiet = not cfg.quiet;
-        settings.save();
-        notify(('Uberwarp chat lines: %s'):fmt(cfg.quiet
-            and 'hidden, including its errors'
-            or 'shown'));
-        return;
-    end
-
     if (sub == 'config') then
         ui.config = not ui.config;
         -- Opens the map with it: the panel is drawn on the map, so turning it
@@ -4290,12 +4271,12 @@ end);
 
 --[[
 * event: text_in
-* desc : Drops Uberwarp's own chat lines while /um quiet is on.  Every line it
-*        writes is stamped '[Uberwarp:<module>]', so a line is its own only when
-*        both names are on it: matching the plugin name alone would swallow
-*        anything else that so much as says the word, this addon included.  The
-*        two are looked for apart rather than as one string because the plugin
-*        writes a colour byte between them.  Blocked rather than emptied, which
+* desc : Drops Uberwarp's own chat lines while Hide Uberwarp Chat is ticked.
+*        Every line it writes is stamped '[Uberwarp:<module>]', so a line is
+*        its own only when both names are on it: matching the plugin name alone
+*        would swallow anything else that so much as says the word, this addon
+*        included.  The two are looked for apart rather than as one string
+*        because the plugin writes a colour byte between them.  Blocked rather than emptied, which
 *        keeps the line out of the log file as well.
 --]]
 -- The task modules Uberwarp names itself after, straight out of the plugin.
