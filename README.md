@@ -146,10 +146,11 @@ The same three tiers off the keyboard, with the arrows standing in for the D-pad
 | Esc | **B**: back out one step, and at the top close the map |
 | U | At the widget, swap it for the full map — the **Y** press, on a key |
 | F | At the widget, hand it the arrows. Up and down walk the list, Enter warps, Esc hands them back |
+| F | With the map open, **Y**: on a warp row it opens the *Add / Remove point from favorites list* menu on the highlighted row. Enter picks the item, Esc or a second **F** dismisses it |
 
 Esc at the widget without an **F** first puts the widget away, the way **B** does; press it again for the NPC's own menu behind it. The map takes the arrows only while it is on screen, and the widget only after an **F**, so walking is never swallowed.
 
-**U** and **F** are taken for the whole time the widget is on screen, whether or not you are using it — so a `/bind u` or `/bind f` of your own will not fire while you stand at a Home Point, Survival Guide or Unity Concord. Untick **Favorites Widget** on the `/um config` panel if you need those keys there.
+**U** and **F** are taken for the whole time the widget is on screen, whether or not you are using it — so a `/bind u` or `/bind f` of your own will not fire while you stand at a Home Point, Survival Guide or Unity Concord. Untick **Favorites Widget** on the `/um config` panel if you need those keys there. **F** is taken by the open map as well, for the same reason the arrows are.
 
 Typing wins over all of it. The game's own chat line, the map's search box and the config panel's number boxes each take the arrows, Enter and Esc while a caret is in them — with **Search Focus On Open** ticked, that includes the frame the map opens in, so start typing straight away and press Esc or click the map when you want the keys back.
 

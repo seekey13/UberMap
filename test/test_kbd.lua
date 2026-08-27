@@ -5,7 +5,8 @@
 * outright, the arrows are the player's own until an F asks for them, the map
 * takes them only while it is on screen, a press that only takes the map back
 * off the mouse is spent doing that -- except Escape, which always has to work
-* -- and U and F mean nothing once the widget is off screen.
+* -- and U means nothing once the widget is off screen, while F carries on
+* as the map's own Y.
 *
 * The half that matters most here is the state buffer.  Blocking the buffered
 * edge keeps a key out of the game's menus, but the camera and the movement are
@@ -125,8 +126,11 @@ local function press(act, down)
         return false;
     end
 
-    if (not ui.is_open[1] or act == 'u' or act == 'f') then
+    if (not ui.is_open[1] or act == 'u') then
         return false;
+    end
+    if (act == 'f') then
+        act = 'y';
     end
     if (ui.zoom == nil or not ui.gp_ready) then
         if (act ~= 'b') then
@@ -214,11 +218,16 @@ check(ui.gp_q[1] == 'up' and ui.gp_q[4] == 'right' and ui.gp_q[5] == 'a'
 check(key(DIK.pad_enter, true), 'the numpad Enter should be taken too');
 check(ui.gp_q[7] == 'a', 'the numpad Enter should queue the same action');
 key(DIK.pad_enter, false);
--- U and F are the widget's alone; the map behind it never sees them.
+-- U is the widget's alone; the map behind it never sees it.  F is the map's
+-- own Y, so with the widget gone it queues the favorites menu instead of
+-- going back to the client.
 check(not key(DIK.u, true), 'U should be the client\'s with the widget off screen');
-check(not key(DIK.f, true), 'F should be the client\'s with the widget off screen');
-check(state({ DIK.u, DIK.f })[DIK.u] ~= nil,
+check(state({ DIK.u })[DIK.u] ~= nil,
       'U should survive the state buffer with the widget off screen');
+check(key(DIK.f, true), 'F should be taken by the map with the widget off screen');
+check(ui.gp_q[8] == 'y', 'F should queue the same action the pad\'s Y does');
+check(state({ DIK.f })[DIK.f] == nil, 'F should be kept from the game while held');
+key(DIK.f, false);
 
 -- A key held down stays out of the game's state buffer for the whole hold,
 -- which is what stops the arrows turning the camera: the edge is read once,

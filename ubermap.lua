@@ -2154,10 +2154,12 @@ local nav = { };
 * and Escape is B, so one set of actions serves both and nav.act needs to know
 * nothing about which hand made the press.
 *
-* U and F are the widget's alone and have no pad twin -- U is the Y press that
-* swaps the widget for the map, F is what hands the arrows to the widget in the
-* first place.  They are here rather than as constants of their own because
-* this chunk sits at Lua's limit of 200 locals; see nav's own note above.
+* U is the widget's alone and has no pad twin: the Y press that swaps the
+* widget for the map.  F is read twice over -- at the widget it hands it the
+* arrows, and on the map it is the pad's Y, which opens the favorites menu on
+* the lit warp row.  They are here rather than as constants of their own
+* because this chunk sits at Lua's limit of 200 locals; see nav's own note
+* above.
 *
 * Keyed by DirectInput scan code rather than by virtual key, because that is
 * what the game reads.  The WNDPROC key event carries virtual keys and can be
@@ -2615,10 +2617,18 @@ function nav.press(act, down)
         return false;
     end
 
-    -- The map, while it is on screen.  U and F are the widget's alone, so with
-    -- it off screen they go back to the client rather than falling through.
-    if (not ui.is_open[1] or act == 'u' or act == 'f') then
+    -- The map, while it is on screen.  U is the widget's alone, so with the
+    -- widget off screen it goes back to the client rather than falling
+    -- through.  F is the map's own Y -- the favorites menu on the lit warp
+    -- row -- so past here it travels as one: nav.act knows nothing about which
+    -- hand made the press, and 'y' is the name that half of it already answers
+    -- to.  At the top of the map it steps nothing and is dropped, exactly as
+    -- the pad's Y is there.
+    if (not ui.is_open[1] or act == 'u') then
         return false;
+    end
+    if (act == 'f') then
+        act = 'y';
     end
 
     -- A frame that is not drawing the map has nothing to drain the queue -- no
