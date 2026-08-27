@@ -55,8 +55,8 @@ assert(src:find('row_y + pitch * (#nums + #picks + i) });', 1, true),
 assert(src:match('for _, chk in ipairs%(checks%) do%s*\n%s*panel_w = math%.max'),
        'the panel width no longer measures the checkbox names');
 
--- Ticking the widget back on has to clear a B press the same way '/um widget'
--- does, or the box reads on with nothing on screen.
+-- Ticking the widget back on has to clear a B press taken earlier in the
+-- visit, or the box reads on with nothing on screen.
 assert(src:match("if %(chk%[3%] == 'widget'%) then%s*\n%s*ui%.fw_hide = false;"),
        'the widget checkbox no longer clears ui.fw_hide');
 

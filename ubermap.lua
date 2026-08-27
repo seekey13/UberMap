@@ -373,9 +373,10 @@ local FAV_NONE     = 'No favorites for this warp';
 -- and driven from the gamepad.  It comes up only where it can be used -- stood
 -- at a Home Point, Survival Guide or Unity Concord -- because it swallows the
 -- buttons it reads, and the D-pad belongs to the game's own menus everywhere
--- else.  Off by default for the same reason: taking buttons off the client is
--- the surprising thing to do, so it has to be asked for.  It reads four of the
--- seven below and leaves left, right and Y to the client.
+-- else.  On by default, and turned off from the '/um config' panel: the
+-- buttons it takes are ones the client has nothing to do with while a warp
+-- menu is up.  It reads four of the seven below and leaves left, right and Y
+-- to the client.
 --
 -- The map reads all seven.  It takes them only while it is on screen, which is
 -- a place the player put it rather than one they walked into, so unlike the
@@ -3752,9 +3753,9 @@ local function draw_map(view_w, view_h)
                                      row_y + pitch * (#nums + #picks + i) });
                 if (imgui.Checkbox(chk[1] .. '##ubermap_' .. chk[3], chk[2])) then
                     cfg[chk[3]] = chk[2][1];
-                    -- Same as '/um widget': asking for the widget back is
-                    -- asking to see it, and a B press earlier in this visit is
-                    -- otherwise only cleared by walking off the NPC.
+                    -- Ticking it back on is asking to see it, and a B press
+                    -- earlier in this visit is otherwise only cleared by
+                    -- walking off the NPC.
                     if (chk[3] == 'widget') then
                         ui.fw_hide = false;
                     end
@@ -4044,19 +4045,6 @@ ashita.events.register('command', 'ubermap_command', function (e)
     e.blocked = true;
 
     local sub = args[2] ~= nil and args[2]:lower() or nil;
-
-    if (sub == 'widget') then
-        cfg.widget = not cfg.widget;
-        -- Asking for it back is asking to see it: a B press earlier in this
-        -- visit would otherwise leave it hidden with nothing on screen saying
-        -- why, since only walking off the NPC clears that.
-        ui.fw_hide = false;
-        settings.save();
-        notify(('favorites widget: %s'):fmt(cfg.widget
-            and 'on, shows at a Home Point, Survival Guide or Unity Concord'
-            or 'off'));
-        return;
-    end
 
     if (sub == 'guide') then
         cfg.guide = not cfg.guide;

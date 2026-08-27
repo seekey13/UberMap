@@ -12,8 +12,7 @@ Drop the `UberMap` folder into `Ashita/addons/`, then `/addon load ubermap`.
 | --- | --- |
 | `/ubermap`, `/um` | Toggle the map |
 | `/ubermap edit` | Toggle the point editor |
-| `/ubermap config` | Toggle the config panel: map font and size, plus text, outline, background and row hover colours |
-| `/ubermap widget` | Toggle the gamepad friendly favorites widget (off by default) |
+| `/ubermap config` | Toggle the config panel: map font and size, text, outline, background and row hover colours, plus the auto-open and gamepad widget checkboxes |
 | `/ubermap guide` | Toggle the EXP Guide scroll pickup (on by default) |
 | `/ubermap focus` | Toggle the search box taking the keyboard when the map opens (off by default) |
 
@@ -61,9 +60,11 @@ While **Multisend** is lit every command — warp rows, scroll and ring alike �
 
 **Favorites** are warp rows you saved, in your order. Right-click any row for *Add point to favorites list* — a row you cannot travel on right now works too, so a destination can be saved from anywhere. Each is named by its zone and row, e.g. `Windurst Woods - Home Point #2`. Clicking one warps exactly as its original row would. Stood at a Home Point, Survival Guide or Unity Concord the list narrows to the rows that NPC can send — the rest cannot be taken from there, so they are not listed — and stepping away brings the whole list back. A destination you have not registered still reads red. Drag a row up or down to reorder the list, including inside a narrowed one; right-click offers *Remove point from favorites list*.
 
+A character who has never saved one starts with three, so the widget has something to show on the first warp NPC you walk up to: **Rolanberry Fields - Unity Concord**, **Ru'Lude Gardens - Survival Guide** and **Lower Jeuno - Home Point #2 (M)**. They come off the list the same way any other favorite does.
+
 ## Config panel
 
-`/um config` opens a small panel in the map's top-right corner: a font pulldown, a **Size** box, four scale boxes and four colour pickers, one to a row. Everything on it changes the map as you drag, and writes to your settings once you let go of the mouse or leave the box you are typing in — one write per edit rather than one per frame of it.
+`/um config` opens a small panel in the map's top-right corner: a font pulldown, a **Size** box, four scale boxes, four colour pickers and two checkboxes, one to a row. Everything on it changes the map as you drag, and writes to your settings once you let go of the mouse or leave the box you are typing in — one write per edit rather than one per frame of it.
 
 | Row | Edits |
 | --- | --- |
@@ -77,6 +78,10 @@ While **Multisend** is lit every command — warp rows, scroll and ring alike �
 | Outline | The stamp behind that text that keeps it readable over the art. White, half alpha |
 | Background | A plate drawn under it. Fully transparent by default, i.e. off -- raise its alpha for a solid label instead of an outlined one |
 | Hover | Fill under the row the cursor is on: warp rows, favorites and the right-click menu. White, near-transparent |
+| Open Map when interacting with a HP/SG/UC | Whether walking up to a Home Point, Survival Guide or Unity Concord puts the map on screen by itself. On by default; off leaves `/um` and **Y** at the favorites widget as the ways in |
+| Favorites widget on gamepad | The controller window below. On by default; ticking it back on also undoes a **B** press that put it away for this visit |
+
+The two checkboxes save the moment they are clicked, rather than on the mouse coming up like the pickers and boxes.
 
 The four scale rows are whole percents, 25 to 400, typed or stepped (±5 by the arrows, ±25 by ctrl-click). 100 is what the map has always drawn at, which is what a settings file that has never been near them carries.
 
@@ -97,7 +102,7 @@ The guides stand in **Ru'Lude Gardens** and **Lower Jeuno**, and the zone is che
 ## Gamepad favorites widget
 <img width="414" height="118" alt="image" src="https://github.com/user-attachments/assets/eeb0dc76-6626-4547-a3e2-79f9441dd8ef" />
 
-`/um widget` turns on a small window listing the same favorites, built for a controller. It comes up on its own the moment you walk up to a Home Point, Survival Guide or Unity Concord — map open or not — and goes away the moment you walk off. Never wider than that, because it swallows the buttons it reads and the D-pad belongs to the game's menus everywhere else.
+A small window listing the same favorites, built for a controller. It comes up on its own the moment you walk up to a Home Point, Survival Guide or Unity Concord — map open or not — and goes away the moment you walk off. Never wider than that, because it swallows the buttons it reads and the D-pad belongs to the game's menus everywhere else.
 
 | Button | Effect |
 | --- | --- |
@@ -109,7 +114,7 @@ The guides stand in **Ru'Lude Gardens** and **Lower Jeuno**, and the zone is che
 
 The widget and the map's panel are one list drawn twice, so the mouse works the same in either: click a row to warp, drag it up or down to reorder, right-click for *Remove point from favorites list*. Turning the widget on hides the heart and its panel, so the list is on screen in one place, not two.
 
-The list is narrowed the same way the panel's is, so every row on it is one the NPC holding it up can send; a destination you have not registered still reads red, and A refuses it. With nothing saved for that kind of NPC the widget stays down. The window has no title bar and sizes itself to the list; like the map, hold shift to drag it somewhere else. Off by default, and saved per character with the rest of the settings.
+The list is narrowed the same way the panel's is, so every row on it is one the NPC holding it up can send; a destination you have not registered still reads red, and A refuses it. With nothing saved for that kind of NPC the widget stays down. The window has no title bar and sizes itself to the list; like the map, hold shift to drag it somewhere else. On by default -- untick **Favorites widget on gamepad** on the `/um config` panel to turn it off -- and saved per character with the rest of the settings.
 
 XInput only: an Xbox pad, or anything Windows presents as one. A DirectInput controller (DualShock, DualSense) still works by mouse.
 
