@@ -70,7 +70,7 @@ local function press(act, down)
         return false;
     end
     if (act == 'tab') then
-        if (not ui.is_open[1]) then
+        if (not ui.is_open[1] or not ui.gp_ready) then
             return false;
         end
         if (down) then
@@ -95,8 +95,9 @@ local function press(act, down)
                 ui.fw_key     = false;
                 ui.fw_hide    = true;
                 -- show(), minus the frame behind it.
-                ui.is_open[1] = true;
-                ui.opened     = ui.opened + 1;
+                ui.is_open[1]  = true;
+                ui.opened      = ui.opened + 1;
+                ui.search_blur = false;
             end
             return true;
         end
@@ -357,6 +358,32 @@ check(state({ DIK.tab })[DIK.tab] ~= nil,
 reset();
 ui.fw_on, favs_n = true, 3;
 check(not key(DIK.tab, true), 'Tab should be the client\'s at a widget with no map');
+-- A frame the map did not draw has no box to hand the caret to, so the key
+-- goes back to the client rather than latching a focus that would fire on
+-- whatever frame the box next comes back.
+reset();
+ui.is_open[1], ui.gp_ready = true, false;
+check(not key(DIK.tab, true), "Tab should go back on a frame the map did not draw");
+check(not ui.focus_next, "and should latch no focus for a later frame");
+-- A map put away with a blur still pending comes back with it cleared, so the
+-- first Tab in asks for the box rather than being spent on the stale blur.
+reset();
+ui.is_open[1], ui.kb_typing = true, true;
+key(DIK.tab, true);
+key(DIK.tab, false);
+check(ui.search_blur, "Tab in the box should ask for the blur");
+-- Put away with the caret still in the box: the draw clears kb_typing on the
+-- way out, but nothing clears the blur until the map is opened again.
+ui.is_open[1], ui.kb_typing = false, false;
+ui.fw_on, favs_n = true, 3;
+key(DIK.u, true);
+key(DIK.u, false);
+check(ui.is_open[1] and not ui.search_blur,
+      "reopening the map should clear the pending blur");
+key(DIK.tab, true);
+key(DIK.tab, false);
+check(ui.focus_next and not ui.search_blur,
+      "and the first Tab back in should ask for the box");
 
 -- The widget in front, before an F: the arrows are still the player's, since
 -- walking up to a warp NPC is done while moving.  U and Escape work anyway.

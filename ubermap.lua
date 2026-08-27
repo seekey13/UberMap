@@ -2541,7 +2541,11 @@ function nav.press(act, down)
     -- alone, since the box is part of the map: the widget below never sees it,
     -- and with the map shut it goes back to the client, which targets with it.
     if (act == 'tab') then
-        if (not ui.is_open[1]) then
+        -- A frame the map did not draw has no box to hand the caret to, the
+        -- same reason the queue below is not fed from one: a focus latched
+        -- there would sit until the box came back and then take the keyboard
+        -- out of nowhere.  Back to the client instead, the way the rest go.
+        if (not ui.is_open[1] or not ui.gp_ready) then
             return false;
         end
         if (down) then
@@ -2655,9 +2659,7 @@ function nav.press(act, down)
     if (not ui.is_open[1] or act == 'u') then
         return false;
     end
-    if (act == 'f') then
-        act = 'y';
-    end
+    if (act == 'f') then act = 'y'; end
 
     -- A frame that is not drawing the map has nothing to drain the queue -- no
     -- texture, or a window ImGui collapsed -- so a press queued there is lost.
@@ -3377,6 +3379,16 @@ local function draw_ctx_menu(origin_x, origin_y, view_w, view_h, mouse_x, mouse_
     end
 end
 
+--[[
+* The whole of the map window's contents, drawn back to front: the map image
+* and its markers, then the toolbar and search box over them, then the config
+* strip, the point editor and the warp panels stacked on top.
+*
+* Everything here is inside the ubermap_view child, so the search box, the
+* config numbers and the editor's two fields are all tab stops in one ImGui
+* focus list -- ImGui's own Tab walks between them from WNDPROC, which is a
+* separate path from the Tab nav.press reads off DirectInput.
+--]]
 local function draw_map(view_w, view_h)
     -- The minimum zoom covers the viewport, so the map never letterboxes.
     -- Re-applied every frame because growing the window raises the floor.
