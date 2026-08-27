@@ -2195,12 +2195,15 @@ function nav.act(act, view_w, view_h)
             -- or not, exactly as the mouse's second button opens it.  Hung off
             -- the row itself, out of the panel's own top-left, so it reads as
             -- belonging to what was pressed rather than to the last place the
-            -- cursor happened to be.  A list opened with the mouse lights no
-            -- row yet, and a press that has nothing to point at opens nothing.
+            -- cursor happened to be.  Under the row rather than over it, the
+            -- same as the mouse's: the row stays readable and the menu is the
+            -- only thing a press can land on.  A list opened with the mouse
+            -- lights no row yet, and a press with nothing to point at opens
+            -- nothing.
             local r = (ui.gp_row ~= nil) and rows[ui.gp_row] or nil;
             if (r ~= nil) then
                 ui.ctx = { x = ui.warp_px + POPUP_PAD * 2,
-                           y = ui.warp_py + POPUP_ROW * (ui.gp_row - 0.5),
+                           ry = ui.warp_py + POPUP_ROW * (ui.gp_row - 1),
                            fresh = true, key = ui.warp.label, row = r };
             end
             return;
@@ -2761,11 +2764,15 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
                                     { veto = ui.warp_hot });
 
         -- Right-click a listed favorite to take it back off the list, the
-        -- same menu that put it on.
+        -- same menu that put it on.  Hung under the row rather than at the
+        -- cursor: a menu lying over the row it was opened on puts its item and
+        -- that row under the one click, which reads as picking both.  Rows are
+        -- POPUP_ROW apart from the panel's top, so the hot row's bottom edge is
+        -- its own index times the pitch.
         if (imgui.IsMouseClicked(1) and hot_i ~= nil and not ui.warp_hot) then
             local f = fav_view()[hot_i];
-            ui.ctx = { x = mouse_x, y = mouse_y, fresh = true,
-                       key = f.key, row = f };
+            ui.ctx = { x = mouse_x, ry = py + POPUP_ROW * (hot_i - 1),
+                       fresh = true, key = f.key, row = f };
         end
     end
 end
@@ -2840,7 +2847,9 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
             -- from in front of the NPC that travels to it.
             -- hot_lock is the tooltip a red row under the cursor should show,
             -- saying why that row will not travel.
-            local hot_row, hot_any, hot_lock = nil, nil, nil;
+            -- hot_ry is where hot_any's row starts, so the right-click menu
+            -- can be hung under it rather than over it.
+            local hot_row, hot_any, hot_lock, hot_ry = nil, nil, nil, nil;
             for i, r in ipairs(rows) do
                 local ry = py + POPUP_ROW * (i - 1);
                 -- A row only travels from the kind of NPC the player is
@@ -2862,6 +2871,7 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                              and mouse_y >= ry and mouse_y < ry + POPUP_ROW;
                 if (over) then
                     hot_any  = r;
+                    hot_ry   = ry;
                     hot_lock = (not known) and LOCK_TIP[r.type] or nil;
                 end
                 -- The gamepad's landing, lit while the pad is what is
@@ -2939,9 +2949,11 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                 end
             end
             -- Right-click opens the favorites menu on the row under the
-            -- cursor, live or not.
+            -- cursor, live or not.  Under that row rather than at the cursor,
+            -- so the menu's item and the row it came from are never both under
+            -- the same click.
             if (imgui.IsMouseClicked(1) and hot_any ~= nil) then
-                ui.ctx = { x = mouse_x, y = mouse_y, fresh = true,
+                ui.ctx = { x = mouse_x, ry = hot_ry, fresh = true,
                            key = ui.warp.label, row = hot_any };
             end
         end
@@ -2967,10 +2979,19 @@ local function draw_ctx_menu(origin_x, origin_y, view_w, view_h, mouse_x, mouse_
         local tw, th = imgui.CalcTextSize(text);
         local w = tw + POPUP_PAD * 2;
         local h = POPUP_ROW;
-        -- Opened at the cursor, clamped so a right-click near an edge does
-        -- not put the item off the viewport.
+        -- Hung under the row it was opened on, at the cursor's own column,
+        -- and flipped above that row when there is no room below.  Never over
+        -- it: a menu lying across the row would put its item and that row
+        -- under the one click, which reads as picking both.  ui.ctx.ry is the
+        -- row's top, so the two placements are its own pitch either side.
         local px = mm.clamp_box(ui.ctx.x, w, origin_x, view_w);
-        local py = mm.clamp_box(ui.ctx.y, h, origin_y, view_h);
+        local py = ui.ctx.ry + POPUP_ROW;
+        if (py + h > origin_y + view_h) then
+            py = ui.ctx.ry - h;
+        end
+        -- Clamped last, so a row against either edge still puts the whole item
+        -- on screen.
+        py = mm.clamp_box(py, h, origin_y, view_h);
 
         cdl:AddRectFilled({ px, py }, { px + w, py + h }, COL_POPUP_BG,
                           0, ImDrawCornerFlags_All);
