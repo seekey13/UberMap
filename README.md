@@ -148,6 +148,8 @@ Esc at the widget without an **F** first puts the widget away, the way **B** doe
 
 Typing wins over all of it. The game's own chat line, the map's search box and the config panel's number boxes each take the arrows, Enter and Esc while a caret is in them — with `/um focus` on, that includes the frame the map opens in, so start typing straight away and press Esc or click the map when you want the keys back.
 
+A key the map takes is kept from the game outright, for as long as it is held, so an arrow walking the markers is not also turning the camera. Numpad Enter counts as Enter; the numpad arrows are left alone, since they are how a lot of people move.
+
 ## Filters set themselves
 
 Stand at a warp NPC and the map narrows to it: only that kind of row stays lit, since it is the only one you can travel on from there. Walk away and all three light again. Your own clicks are not overridden — a toggle you set by hand stands until you move to a different kind of NPC.

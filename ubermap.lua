@@ -672,6 +672,11 @@ local ui = T{
     -- into reach would take walking away with them.
     fw_key      = false,
     pad_held    = {},        -- buttons whose press was taken, by index
+    -- The same for the keyboard, by DirectInput scan code.  It is what keeps a
+    -- key held down out of the game for as long as it is held: the buffered
+    -- event says a key went down, but the camera and the movement are read off
+    -- the immediate state buffer every frame after that.
+    kb_held     = {},
     -- Gamepad map navigation.  The selection is the icon itself rather than a
     -- slot in a list, because the list it walks is built fresh out of whatever
     -- is on screen at each press; gp_from is the overview marker A zoomed in
@@ -2119,20 +2124,30 @@ end
 local nav = { };
 
 --[[
-* The keyboard's half of the same seven, keyed by virtual-key code: the arrows
-* are the D-pad, Enter is A and Escape is B, so one set of actions serves both
-* and nav.act needs to know nothing about which hand made the press.
+* The keyboard's half of the same seven: the arrows are the D-pad, Enter is A
+* and Escape is B, so one set of actions serves both and nav.act needs to know
+* nothing about which hand made the press.
 *
 * U and F are the widget's alone and have no pad twin -- U is the Y press that
 * swaps the widget for the map, F is what hands the arrows to the widget in the
-* first place.  They are here rather than as two constants of their own because
+* first place.  They are here rather than as constants of their own because
 * this chunk sits at Lua's limit of 200 locals; see nav's own note above.
+*
+* Keyed by DirectInput scan code rather than by virtual key, because that is
+* what the game reads.  The WNDPROC key event carries virtual keys and can be
+* blocked, but blocking it only keeps a key out of the client's *text* fields:
+* movement, the camera and the menus are all read straight off DirectInput
+* underneath it.  So these are matched in key_data and key_state instead, and
+* the arrows really do stop turning the camera.
 --]]
 nav.key = {
-    [0x26] = 'up',    [0x28] = 'down',
-    [0x25] = 'left',  [0x27] = 'right',
-    [0x0D] = 'a',     [0x1B] = 'b',
-    [0x55] = 'u',     [0x46] = 'f',
+    [0xC8] = 'up',    [0xD0] = 'down',
+    [0xCB] = 'left',  [0xCD] = 'right',
+    -- Both Enters, since a keyboard has two and only one of them is over by
+    -- the letters.
+    [0x1C] = 'a',     [0x9C] = 'a',
+    [0x01] = 'b',
+    [0x16] = 'u',     [0x21] = 'f',
 };
 
 --[[
@@ -2442,6 +2457,157 @@ local function fw_confirm()
         -- back arms it again, the same as a B press does.
         ui.fw_hide = true;
     end
+end
+
+--[[
+* Whether a key is the map's or the widget's right now, and -- on the press
+* edge -- what it does.  Both keyboard handlers come through here: key_data
+* acts on it and blocks the edge, key_state asks it with down false and wipes
+* the key out of the frame's state buffer.  One answer, so the two cannot come
+* apart and leave a key half taken.
+*
+* Hung off nav rather than standing as a local of its own for the reason the
+* rest of nav is, and written down here rather than up beside it because it
+* calls show and fw_confirm, which are locals declared below that point.
+*
+* Read in the same order the pad is: the widget is asked first and wins
+* outright, then the map while it is on screen.  Unlike the pad the keys have
+* to be handed back -- the arrows are how the player walks -- so the widget
+* takes them only after an F and the map only while it is up.
+--]]
+function nav.press(act, down)
+    -- Typing beats all of it.  The game's own chat line or a bazaar comment
+    -- has the keyboard first; the map's search box and its config numbers have
+    -- it next, and the arrows, Enter and Escape are those boxes' own editing
+    -- keys while a caret is in one.  ImGui is fed from WNDPROC, which none of
+    -- this touches, so a key acted on here would land twice.
+    if (bit.band(AshitaCore:GetChatManager():IsInputOpen(), 0x01) ~= 0
+        or ui.kb_typing or ui.cfg_typing) then
+        return false;
+    end
+
+    -- The addon's own Escape, held down through user32 to back out of an NPC's
+    -- menu, comes back round through DirectInput like any other.  Taking it
+    -- would be the map answering a press it made itself -- and wiping it out of
+    -- the state buffer would keep it from the very menu it was sent to close.
+    if (act == 'b' and ui.esc_frames > 0) then
+        return false;
+    end
+
+    -- The widget first, and outright: it is only ever up stood at a warp NPC,
+    -- and there a press is for it.
+    if (ui.fw_on) then
+        local n = #fav_view();
+        if (n == 0) then
+            return false;
+        end
+
+        -- The way up to the full map, and what the auto-open checkbox leaves
+        -- behind when it is turned off: the pad's Y, on a key that is free
+        -- whether or not the widget has been given the arrows.  The widget
+        -- goes with it rather than staying up over the map, or it would keep
+        -- taking the keys the map now wants.
+        if (act == 'u') then
+            if (down) then
+                ui.fw_key  = false;
+                ui.fw_hide = true;
+                show();
+            end
+            return true;
+        end
+
+        if (ui.fw_key) then
+            if (act ~= 'up' and act ~= 'down' and act ~= 'a' and act ~= 'b') then
+                -- Left and right stay the client's even here: the widget is a
+                -- single column, and taking them would leave no way to work
+                -- the NPC's menu behind it.
+                return false;
+            end
+            if (not down) then
+                return true;
+            end
+            -- Escape hands the keys back whatever the highlight is doing, so
+            -- there is always one press out of this mode.  The rest wait for
+            -- the row to be lit again, the same as the pad's do: a press that
+            -- acted on the way back in would step off -- or worse, send --
+            -- something nothing on screen was showing.
+            if (nav.wake() and act ~= 'b') then
+                return true;
+            end
+            if (act == 'up') then
+                -- Wraps at both ends, the way the game's own menus do.
+                ui.fw_sel = (ui.fw_sel - 2) % n + 1;
+            elseif (act == 'down') then
+                ui.fw_sel = ui.fw_sel % n + 1;
+            elseif (act == 'a') then
+                fw_confirm();
+            else
+                -- Out of focus mode and no further: the widget stays up, so
+                -- the F that got here is one press away again.
+                ui.fw_key = false;
+            end
+            return true;
+        end
+
+        -- The arrows are the player's until they are asked for, since walking
+        -- up to a warp NPC is something done while moving.
+        if (act == 'f') then
+            if (down) then
+                ui.fw_key = true;
+                ui.fw_sel = mm.clamp(ui.fw_sel, 1, n);
+                -- Lights the row on the way in, so the first arrow steps it
+                -- rather than being spent turning the highlight back on.
+                nav.wake();
+            end
+            return true;
+        end
+
+        -- Escape outside focus mode dismisses the widget, the way B does on
+        -- the pad: the NPC's own menu is behind it, and a second Escape is
+        -- what backs out of that.
+        if (act == 'b') then
+            if (down) then
+                ui.fw_hide = true;
+            end
+            return true;
+        end
+        return false;
+    end
+
+    -- The map, while it is on screen.  U and F are the widget's alone, so with
+    -- it off screen they go back to the client rather than falling through.
+    if (not ui.is_open[1] or act == 'u' or act == 'f') then
+        return false;
+    end
+
+    -- A frame that is not drawing the map has nothing to drain the queue -- no
+    -- texture, or a window ImGui collapsed -- so a press queued there is lost.
+    -- Escape still has to work out of one, or the map could not be shut.
+    if (ui.zoom == nil or not ui.gp_ready) then
+        if (act ~= 'b') then
+            return false;
+        end
+        if (down) then
+            ui.is_open[1] = false;
+        end
+        return true;
+    end
+
+    if (not down) then
+        return true;
+    end
+    -- Escape is the one exception to the wake: it is the way out of a map
+    -- covering most of the screen, so it acts on the first press however the
+    -- map was being driven.  See the xinput handler for the rest of it.
+    if (nav.wake() and act ~= 'b') then
+        return true;
+    end
+    -- Queued rather than acted on here: the zooms need the viewport size, and
+    -- only the draw knows that.
+    if (#ui.gp_q < 8) then
+        table.insert(ui.gp_q, act);
+    end
+    return true;
 end
 
 --[[
@@ -4051,7 +4217,7 @@ ashita.events.register('unload', 'ubermap_unload', function ()
 end);
 
 --[[
-* event: key
+* event: key_data
 * desc : The keyboard's half of the gamepad, read the same way and in the same
 *        order.  The widget is asked first and wins outright, exactly as it
 *        does on the pad: U swaps it for the full map, F hands it the arrows,
@@ -4060,131 +4226,60 @@ end);
 *        opens what is under one and Escape backs out, which at the top is what
 *        closes the map the way it closes the game's own windows.
 *
-*        Unlike the pad, the keys have to be given back: the arrows are the
-*        player's movement, so the widget takes them only after an F and the
-*        map only while it is on screen.  Everything else, and every key at all
-*        outside those, is the client's.
+*        This is DirectInput's buffered stream -- the edges, as the game reads
+*        them -- and not the WNDPROC key event.  Blocking that one only keeps a
+*        key out of the client's text fields; movement, the camera and the
+*        menus are all read from here and from the state buffer below, which is
+*        why an arrow taken there still turned the camera.
+*
+*        Both edges are taken, and which one was is remembered rather than
+*        re-tested: the press is what closes the map in two of these cases, and
+*        a release matched against the state after that would leak a key-up the
+*        client never got the key-down for.
 --]]
-ashita.events.register('key', 'ubermap_key', function (e)
-    -- The event is the WNDPROC message, whose lparam carries the transition
-    -- state: bit 31 set is the release.  Only the press is taken -- an
-    -- unmatched key-up is nothing to the client, where an unmatched key-down
-    -- would leave a key stuck down in the game's own menus.
-    if (bit.band(e.lparam, bit.lshift(0x8000, 0x10)) ~= 0) then
-        return;
+ashita.events.register('key_data', 'ubermap_key_data', function (e)
+    local act = nav.key[e.key];
+    if (act == nil) then
+        return false;
     end
 
-    -- Typing beats all of it.  The game's own chat line or a bazaar comment
-    -- has the keyboard first; the map's search box and its config numbers have
-    -- it next, and the arrows, Enter and Escape are those boxes' own editing
-    -- keys while a caret is in one.  ImGui is handed the key whether or not
-    -- the client is blocked from it, so a key acted on here would land twice.
-    if (bit.band(AshitaCore:GetChatManager():IsInputOpen(), 0x01) ~= 0
-        or ui.kb_typing or ui.cfg_typing) then
-        return;
-    end
-
-    local act = nav.key[e.wparam];
-
-    -- The widget first, and outright: it is only ever up stood at a warp NPC,
-    -- and there a press is for it.
-    if (ui.fw_on) then
-        local n = #fav_view();
-        if (n == 0) then
-            return;
-        end
-
-        -- The way up to the full map, and what the auto-open checkbox leaves
-        -- behind when it is turned off: the pad's Y, on a key that is free
-        -- whether or not the widget has been given the arrows.  The widget
-        -- goes with it rather than staying up over the map, or it would keep
-        -- taking the keys the map now wants.
-        if (act == 'u') then
-            e.blocked   = true;
-            ui.fw_key   = false;
-            ui.fw_hide  = true;
-            show();
-            return;
-        end
-
-        if (ui.fw_key) then
-            if (act ~= 'up' and act ~= 'down' and act ~= 'a' and act ~= 'b') then
-                return;
-            end
+    if (not e.down) then
+        if (ui.kb_held[e.key]) then
+            ui.kb_held[e.key] = nil;
             e.blocked = true;
-            -- Escape hands the keys back whatever the highlight is doing, so
-            -- there is always one press out of this mode.  The rest wait for
-            -- the row to be lit again, the same as the pad's do: a press that
-            -- acted on the way back in would step off -- or worse, send --
-            -- something nothing on screen was showing.
-            if (nav.wake() and act ~= 'b') then
-                return;
-            end
-            if (act == 'up') then
-                -- Wraps at both ends, the way the game's own menus do.
-                ui.fw_sel = (ui.fw_sel - 2) % n + 1;
-            elseif (act == 'down') then
-                ui.fw_sel = ui.fw_sel % n + 1;
-            elseif (act == 'a') then
-                fw_confirm();
-            else
-                -- Out of focus mode and no further: the widget stays up, so
-                -- the F that got here is one press away again.
-                ui.fw_key = false;
-            end
-            return;
+            return true;
         end
-
-        -- The arrows are the player's until they are asked for, since walking
-        -- up to a warp NPC is something done while moving.
-        if (act == 'f') then
-            e.blocked = true;
-            ui.fw_key = true;
-            ui.fw_sel = mm.clamp(ui.fw_sel, 1, n);
-            -- Lights the row on the way in, so the first arrow steps it rather
-            -- than being spent turning the highlight back on.
-            nav.wake();
-            return;
-        end
-
-        -- Escape outside focus mode dismisses the widget, the way B does on
-        -- the pad: the NPC's own menu is behind it, and a second Escape is
-        -- what backs out of that.
-        if (act == 'b') then
-            e.blocked  = true;
-            ui.fw_hide = true;
-            return;
-        end
-        return;
+        return false;
     end
 
-    -- The map, while it is on screen.  U and F are the widget's alone, so with
-    -- it off screen they go back to the client rather than falling through.
-    if (not ui.is_open[1] or act == nil or act == 'u' or act == 'f') then
-        return;
+    if (not nav.press(act, true)) then
+        return false;
     end
-
-    -- A frame that is not drawing the map has nothing to drain the queue -- no
-    -- texture, or a window ImGui collapsed -- so a press queued there is lost.
-    -- Escape still has to work out of one, or the map could not be shut.
-    if (ui.zoom == nil or not ui.gp_ready) then
-        if (act == 'b') then
-            ui.is_open[1] = false;
-            e.blocked     = true;
-        end
-        return;
-    end
-
-    -- Swallowed, or the client walks, or opens its own menu behind the map
-    -- that just went away.
+    ui.kb_held[e.key] = true;
     e.blocked = true;
-    -- Queued rather than acted on here: the zooms need the viewport size, and
-    -- only the draw knows that.  See the xinput handler for the wake.
-    if (nav.wake() and act ~= 'b') then
-        return;
-    end
-    if (#ui.gp_q < 8) then
-        table.insert(ui.gp_q, act);
+    return true;
+end);
+
+--[[
+* event: key_state
+* desc : DirectInput's immediate state buffer, read once a frame: what the game
+*        polls a held key from, so blocking the edge above is not enough on its
+*        own -- the camera turns for as long as an arrow is down, and it never
+*        looks at the buffered stream to learn that.
+*
+*        Two things are wiped out of it.  A key whose press was taken, for as
+*        long as it is held, which is the whole of the case above; and a key
+*        that is down and would be taken, which covers the frame the two
+*        buffers are read in the other order and the game would otherwise see
+*        one frame of it.
+--]]
+ashita.events.register('key_state', 'ubermap_key_state', function (e)
+    local keys = ffi.cast('uint8_t*', e.data_raw);
+    for dik, act in pairs(nav.key) do
+        if (keys[dik] ~= 0
+            and (ui.kb_held[dik] or nav.press(act, false))) then
+            keys[dik] = 0;
+        end
     end
 end);
 
