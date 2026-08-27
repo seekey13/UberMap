@@ -645,6 +645,7 @@ local ui = T{
     search      = { '', },   -- search box text, boxed the way ImGui wants it
     search_at   = '',        -- search text the view was last framed for
     focus_next  = false,     -- hand the search box the keyboard on the next frame
+    search_blur = false,     -- take it back off the search box on the next frame
     hot         = false,     -- cursor was over a widget, not the map
     config      = false,     -- the config panel is on screen
     cfg_dirty   = false,     -- a picker on the config strip has been moved
@@ -2154,10 +2155,13 @@ local nav = { };
 * and Escape is B, so one set of actions serves both and nav.act needs to know
 * nothing about which hand made the press.
 *
-* U and F are the widget's alone and have no pad twin -- U is the Y press that
-* swaps the widget for the map, F is what hands the arrows to the widget in the
-* first place.  They are here rather than as constants of their own because
-* this chunk sits at Lua's limit of 200 locals; see nav's own note above.
+* U is the widget's alone and has no pad twin: the Y press that swaps the
+* widget for the map.  F is read twice over -- at the widget it hands it the
+* arrows, and on the map it is the pad's Y, which opens the favorites menu on
+* the lit warp row.  Tab is the map's alone and has no pad twin either: it
+* moves the keyboard between the map and its own search box.  They are here
+* rather than as constants of their own because this chunk sits at Lua's limit
+* of 200 locals; see nav's own note above.
 *
 * Keyed by DirectInput scan code rather than by virtual key, because that is
 * what the game reads.  The WNDPROC key event carries virtual keys and can be
@@ -2174,6 +2178,7 @@ nav.key = {
     [0x1C] = 'a',     [0x9C] = 'a',
     [0x01] = 'b',
     [0x16] = 'u',     [0x21] = 'f',
+    [0x0F] = 'tab',
 };
 
 --[[
@@ -2450,7 +2455,8 @@ local function show()
     ui.is_open[1] = true;
     -- Asked for here rather than in the draw, so the box is handed the
     -- keyboard once on the way in instead of stealing it back every frame.
-    ui.focus_next = cfg.focus;
+    ui.focus_next  = cfg.focus;
+    ui.search_blur = false;
     -- Opening reads the world afresh on the next frame, whatever the toggles
     -- were left at when it was last up.
     ui.near_kind = false;
@@ -2517,13 +2523,41 @@ end
 * takes them only after an F and the map only while it is up.
 --]]
 function nav.press(act, down)
-    -- Typing beats all of it.  The game's own chat line or a bazaar comment
-    -- has the keyboard first; the map's search box and its config numbers have
-    -- it next, and the arrows, Enter and Escape are those boxes' own editing
-    -- keys while a caret is in one.  ImGui is fed from WNDPROC, which none of
-    -- this touches, so a key acted on here would land twice.
+    -- Typing beats nearly all of it.  The game's own chat line or a bazaar
+    -- comment has the keyboard first; the map's search box and its config
+    -- numbers have it next, and the arrows, Enter and Escape are those boxes'
+    -- own editing keys while a caret is in one.  ImGui is fed from WNDPROC,
+    -- which none of this touches, so a key acted on here would land twice.
+    -- Tab is the exception and is taken below, since a key that only ever gets
+    -- the keyboard into the box would be a door with no handle on the inside.
     if (bit.band(AshitaCore:GetChatManager():IsInputOpen(), 0x01) ~= 0
-        or ui.kb_typing or ui.cfg_typing) then
+        or ui.cfg_typing) then
+        return false;
+    end
+
+    -- Tab is the one key the search box does not keep for itself: it is how
+    -- the keyboard is handed to that box and how it is taken back again, so it
+    -- is read before the caret is asked about rather than after.  The map's
+    -- alone, since the box is part of the map: the widget below never sees it,
+    -- and with the map shut it goes back to the client, which targets with it.
+    if (act == 'tab') then
+        -- A frame the map did not draw has no box to hand the caret to, the
+        -- same reason the queue below is not fed from one: a focus latched
+        -- there would sit until the box came back and then take the keyboard
+        -- out of nowhere.  Back to the client instead, the way the rest go.
+        if (not ui.is_open[1] or not ui.gp_ready) then
+            return false;
+        end
+        if (down) then
+            -- One or the other and never both.  A blur still pending from a
+            -- map that was put away mid-search would otherwise swallow the
+            -- focus this press is asking for.
+            ui.focus_next, ui.search_blur = not ui.kb_typing, ui.kb_typing;
+        end
+        return true;
+    end
+
+    if (ui.kb_typing) then
         return false;
     end
 
@@ -2615,11 +2649,17 @@ function nav.press(act, down)
         return false;
     end
 
-    -- The map, while it is on screen.  U and F are the widget's alone, so with
-    -- it off screen they go back to the client rather than falling through.
-    if (not ui.is_open[1] or act == 'u' or act == 'f') then
+    -- The map, while it is on screen.  U is the widget's alone, so with the
+    -- widget off screen it goes back to the client rather than falling
+    -- through.  F is the map's own Y -- the favorites menu on the lit warp
+    -- row -- so past here it travels as one: nav.act knows nothing about which
+    -- hand made the press, and 'y' is the name that half of it already answers
+    -- to.  At the top of the map it steps nothing and is dropped, exactly as
+    -- the pad's Y is there.
+    if (not ui.is_open[1] or act == 'u') then
         return false;
     end
+    if (act == 'f') then act = 'y'; end
 
     -- A frame that is not drawing the map has nothing to drain the queue -- no
     -- texture, or a window ImGui collapsed -- so a press queued there is lost.
@@ -3339,6 +3379,16 @@ local function draw_ctx_menu(origin_x, origin_y, view_w, view_h, mouse_x, mouse_
     end
 end
 
+--[[
+* The whole of the map window's contents, drawn back to front: the map image
+* and its markers, then the toolbar and search box over them, then the config
+* strip, the point editor and the warp panels stacked on top.
+*
+* Everything here is inside the ubermap_view child, so the search box, the
+* config numbers and the editor's two fields are all tab stops in one ImGui
+* focus list -- ImGui's own Tab walks between them from WNDPROC, which is a
+* separate path from the Tab nav.press reads off DirectInput.
+--]]
 local function draw_map(view_w, view_h)
     -- The minimum zoom covers the viewport, so the map never letterboxes.
     -- Re-applied every frame because growing the window raises the floor.
@@ -3539,7 +3589,17 @@ local function draw_map(view_w, view_h)
             ui.focus_next = false;
             imgui.SetKeyboardFocusHere();
         end
-        imgui.InputTextWithHint('##ubermap_search', 'Search', ui.search, FIELD_MAX);
+        -- Tab out of the box.  ImGui hands the caret back on its own from any
+        -- item it stops being shown, so the box is drawn under a second id for
+        -- the one frame that asks for it: same text, same hint, same width, so
+        -- nothing on screen moves, and the frame after goes back to the first
+        -- id with the caret gone.  There is no call that drops it outright --
+        -- Ashita's ImGui exposes no ClearActiveID -- and handing the focus to a
+        -- neighbour instead would leave it sat on the toggle beside the box.
+        imgui.InputTextWithHint(ui.search_blur and '##ubermap_search_tab'
+                                or '##ubermap_search',
+                                'Search', ui.search, FIELD_MAX);
+        ui.search_blur = false;
         imgui.PopStyleVar();
         imgui.SetWindowFontScale(1.0);
         -- Only while the mouse is working the field, the way the editor's rows
