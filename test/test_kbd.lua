@@ -33,9 +33,11 @@ local KEY = {
     [0x1C] = 'a',     [0x9C] = 'a',
     [0x01] = 'b',
     [0x16] = 'u',     [0x21] = 'f',
+    [0x0F] = 'tab',
 };
 local DIK = { up = 0xC8, down = 0xD0, left = 0xCB, right = 0xCD,
-              enter = 0x1C, pad_enter = 0x9C, esc = 0x01, u = 0x16, f = 0x21 };
+              enter = 0x1C, pad_enter = 0x9C, esc = 0x01, u = 0x16, f = 0x21,
+              tab = 0x0F };
 local QUEUE_MAX = 8;
 
 local ui, favs_n;
@@ -45,7 +47,7 @@ local function reset()
     ui = { fw_on = false, fw_key = false, is_open = { false, }, zoom = 1.0,
            fw_sel = 1, fw_hide = false, opened = 0, sent = 0, chat = 0,
            kb_typing = false, cfg_typing = false, kb_held = { },
-           esc_frames = 0,
+           esc_frames = 0, focus_next = false, search_blur = false,
            gp_active = false, gp_ready = true, gp_q = { } };
     favs_n = 0;
 end
@@ -64,7 +66,19 @@ end
 
 -- nav.press, minus the two calls into the map that need a frame behind them.
 local function press(act, down)
-    if (ui.chat ~= 0 or ui.kb_typing or ui.cfg_typing) then
+    if (ui.chat ~= 0 or ui.cfg_typing) then
+        return false;
+    end
+    if (act == 'tab') then
+        if (not ui.is_open[1]) then
+            return false;
+        end
+        if (down) then
+            ui.focus_next, ui.search_blur = not ui.kb_typing, ui.kb_typing;
+        end
+        return true;
+    end
+    if (ui.kb_typing) then
         return false;
     end
     if (act == 'b' and ui.esc_frames > 0) then
@@ -301,6 +315,48 @@ for _, field in ipairs({ 'chat', 'kb_typing', 'cfg_typing' }) do
     check(#ui.gp_q == 0, ('nothing should queue while %s'):format(field));
     check(ui.is_open[1], ('Escape should not close the map while %s'):format(field));
 end
+
+-- Tab is the exception, and the only one: a key that could only ever get the
+-- keyboard into the search box would be a door with no handle on the inside.
+-- Out of the box on the way in, into it on the way back, and never both at
+-- once -- a pending blur that survived would swallow the focus the next press
+-- asks for.
+reset();
+ui.is_open[1], ui.gp_active = true, true;
+check(key(DIK.tab, true), 'Tab should be taken with the map open');
+check(state({ DIK.tab })[DIK.tab] == nil,
+      'Tab should be kept from the game while the map is open');
+key(DIK.tab, false);
+check(ui.focus_next and not ui.search_blur,
+      'Tab off the box should hand it the keyboard');
+check(#ui.gp_q == 0, 'Tab should queue no map action');
+-- The frame the box takes the caret, as the draw reports it.
+ui.focus_next, ui.kb_typing = false, true;
+check(key(DIK.tab, true), 'Tab should still be taken with the caret in the box');
+key(DIK.tab, false);
+check(ui.search_blur and not ui.focus_next,
+      'Tab in the box should take the keyboard back off it');
+-- and the caret is gone by the next frame, so the arrows are the map's again.
+ui.kb_typing, ui.search_blur = false, false;
+check(key(DIK.up, true), 'the arrows should be the map\'s again after a Tab out');
+check(ui.gp_q[1] == 'up', 'and should queue the move they always did');
+-- Chat still beats it, and so does a config number: neither is the map's box.
+reset();
+ui.is_open[1], ui.chat = true, 0x11;
+check(not key(DIK.tab, true), 'Tab should be the chat line\'s while it is open');
+reset();
+ui.is_open[1], ui.cfg_typing = true, true;
+check(not key(DIK.tab, true), 'Tab should be a config number\'s while it has the caret');
+-- Map shut, Tab is the client's: it is how the game cycles targets.
+reset();
+check(not key(DIK.tab, true), 'Tab should be the client\'s with the map shut');
+check(state({ DIK.tab })[DIK.tab] ~= nil,
+      'Tab should reach the game with the map shut');
+-- Nor does the widget hold on to it: the box Tab moves to is the map's, so a
+-- widget standing on its own leaves the key to the client like anything else.
+reset();
+ui.fw_on, favs_n = true, 3;
+check(not key(DIK.tab, true), 'Tab should be the client\'s at a widget with no map');
 
 -- The widget in front, before an F: the arrows are still the player's, since
 -- walking up to a warp NPC is done while moving.  U and Escape work anyway.
