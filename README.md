@@ -126,9 +126,27 @@ The map itself reads the pad whenever it is open — no toggle, because unlike t
 
 Three tiers, nested the way the game's own menus are, and the mouse walks the same ones: click a nation and **B** still backs out of it, click a zone point and the D-pad still walks the rows that come up. A list opened with the mouse lights no row until you press something, so the cursor's own hover is never argued with.
 
-Only one of the two is ever in charge, and it is whichever you last used — the pad being plugged in counts for nothing. Move the mouse over the map or the widget and the pad's hover goes out, since the cursor's own hover now says what a click would open. Press one of the map's own buttons and it comes back on the marker nearest the middle again — that first press only relights, it does not walk or open.
+Only one of the two is ever in charge, and it is whichever you last used — the pad being plugged in counts for nothing. Move the mouse over the map or the widget and the pad's hover goes out, since the cursor's own hover now says what a click would open. Press one of the map's own buttons and it comes back on the marker nearest the middle again — that first press only relights, it does not walk or open. Esc is the exception, since it is the way out of a map covering most of the screen: it acts on the first press however the map was being driven.
+
+While the pad or the keys are in charge the cursor's own hover and its tooltips stay out, so only one marker on screen ever looks pressable. Move the mouse over the map and they come straight back.
 
 The favorites widget wins while it is up. Walk to a Home Point with the map open and the widget takes the pad; dismiss it with **B** and the map answers again. The rows behave the same either way — a destination you have not registered reads red, a row saved off a different kind of NPC reads grey, and **A** refuses both.
+
+## Keyboard navigation
+
+The same three tiers off the keyboard, with the arrows standing in for the D-pad, **Enter** for **A** and **Esc** for **B**. Unlike the pad, the keys are handed back when they are not wanted: the arrows are how you walk, so nothing takes them until you are somewhere they mean something.
+
+| Key | Effect |
+| --- | --- |
+| Arrows | With the map open, move the hover the same way the D-pad does |
+| Enter | **A**: zoom into a nation, open a zone point's warp list, send the row |
+| Esc | **B**: back out one step, and at the top close the map |
+| U | At the widget, swap it for the full map — the **Y** press, on a key |
+| F | At the widget, hand it the arrows. Up and down walk the list, Enter warps, Esc hands them back |
+
+Esc at the widget without an **F** first puts the widget away, the way **B** does; press it again for the NPC's own menu behind it. The map takes the arrows only while it is on screen, and the widget only after an **F**, so walking is never swallowed.
+
+Typing wins over all of it. The game's own chat line, the map's search box and the config panel's number boxes each take the arrows, Enter and Esc while a caret is in them — with `/um focus` on, that includes the frame the map opens in, so start typing straight away and press Esc or click the map when you want the keys back.
 
 ## Filters set themselves
 
