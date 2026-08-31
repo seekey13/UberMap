@@ -2453,6 +2453,10 @@ end
 --]]
 local function show()
     ui.is_open[1] = true;
+    -- Raised over other addons' windows once on the way up, and never again:
+    -- opening behind fancychat left the map unclickable, but a map that rose
+    -- on every click would bury the favorites widget (see the flags at Begin).
+    ui.raise_next = true;
     -- Asked for here rather than in the draw, so the box is handed the
     -- keyboard once on the way in instead of stealing it back every frame.
     ui.focus_next  = cfg.focus;
@@ -4081,8 +4085,19 @@ ashita.events.register('d3d_present', 'ubermap_present', function ()
     -- screen it would otherwise bury the favorites widget, and every other
     -- addon's window with it, on the first click anywhere in it.
     local flags = bit.bor(ImGuiWindowFlags_NoTitleBar, ImGuiWindowFlags_NoScrollbar,
-                          ImGuiWindowFlags_NoScrollWithMouse,
-                          ImGuiWindowFlags_NoBringToFrontOnFocus);
+                          ImGuiWindowFlags_NoScrollWithMouse);
+    -- The one frame it opens, the map takes the front of the stack, or it
+    -- comes up buried under whatever addon window was focused last (fancychat
+    -- covers most of the screen and made it unclickable).  NoBringToFrontOnFocus
+    -- would veto the raise even with SetNextWindowFocus, so it is left off for
+    -- this frame only; every later frame it goes back on and clicks in the map
+    -- leave the stack alone, keeping the favorites widget on top.
+    if (ui.raise_next) then
+        ui.raise_next = false;
+        imgui.SetNextWindowFocus();
+    else
+        flags = bit.bor(flags, ImGuiWindowFlags_NoBringToFrontOnFocus);
+    end
     if (not imgui.GetIO().KeyShift) then
         flags = bit.bor(flags, ImGuiWindowFlags_NoMove);
     end
