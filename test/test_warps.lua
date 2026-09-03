@@ -3,17 +3,21 @@
 * how to draw, a label to print and a grid reference held apart from it in 'pos'
 * so the popup can column it, each zone offers at most one Unity Concord, and
 * a zone's Home Points are numbered 1..n with no gaps or repeats, so a bad merge
-* fails here instead of drawing a blank row in game.  Run with any Lua 5.1+:
+* fails here instead of drawing a blank row in game.  An Abyssea row carries the
+* zone Uberwarp names its destination by, so it always has a 'zone' override.  Run with any Lua 5.1+:
 *     lua test/test_warps.lua
 --]]
 
-local TYPES = { home = true, guide = true, unity = true };
-local UW    = { home = 'hp', guide = 'sg', unity = 'uc' };
+local TYPES = { home = true, guide = true, unity = true, abyssea = true };
+local UW    = { home = 'hp', guide = 'sg', unity = 'uc', abyssea = 'ab' };
+-- The order the popup lists the types in, which is the order the rows sit in.
+local RANK  = { home = 1, guide = 2, unity = 3, abyssea = 4 };
 
 local data = assert(loadfile('lib/warps.lua'))();
 assert(type(data) == 'table', 'warps.lua did not return a table');
 
-local zones, rows, byType, noGrid, cmds = 0, 0, { home = 0, guide = 0, unity = 0 }, {}, {};
+local byType = { home = 0, guide = 0, unity = 0, abyssea = 0 };
+local zones, rows, noGrid, cmds = 0, 0, {}, {};
 
 for zone, list in pairs(data) do
     assert(type(zone) == 'string' and zone ~= '', 'zone key must be a non-empty string');
@@ -42,12 +46,15 @@ for zone, list in pairs(data) do
                ('%s[%d]: bad command %q'):format(zone, i, cmd));
         cmds[#cmds + 1] = cmd;
 
-        -- Rows are grouped home, then guide, then unity.
-        local rank = (row.type == 'home' and 1) or (row.type == 'guide' and 2) or 3;
+        -- Rows are grouped home, then guide, then unity, then abyssea.
+        local rank = RANK[row.type];
         assert(rank >= seenOrder, ('%s[%d]: %s row out of order'):format(zone, i, row.type));
         seenOrder = rank;
 
         if row.type == 'unity' then unities = unities + 1; end
+        -- '/uw ab' takes the Vana'diel zone, never the city the NPC stands in.
+        assert(row.type ~= 'abyssea' or row.zone ~= nil,
+               ('%s[%d]: an Abyssea row needs its own zone'):format(zone, i));
         if row.type == 'home' then
             local n = tonumber(row.label:match('^Home Point #(%d+)'));
             assert(n, ('%s[%d]: %q is not a numbered Home Point'):format(zone, i, row.label));
@@ -72,8 +79,8 @@ for zone, list in pairs(data) do
     zones = zones + 1;
 end
 
-print(('warps OK: %d zones, %d rows (%d home, %d guide, %d unity)')
-      :format(zones, rows, byType.home, byType.guide, byType.unity));
+print(('warps OK: %d zones, %d rows (%d home, %d guide, %d unity, %d abyssea)')
+      :format(zones, rows, byType.home, byType.guide, byType.unity, byType.abyssea));
 for _, s in ipairs(noGrid) do print('  no grid reference -> ' .. s); end
 
 -- Two commands the popup would send, so a change to the format is visible here.

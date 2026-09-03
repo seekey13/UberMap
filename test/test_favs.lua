@@ -46,7 +46,7 @@ local function fav_pos(f)
     return nil;
 end
 
-local UW_TYPE = { home = 'hp', guide = 'sg', unity = 'uc' };
+local UW_TYPE = { home = 'hp', guide = 'sg', unity = 'uc', abyssea = 'ab' };
 
 -- ('%s'):fmt is Ashita's string extension, which plain Lua does not have.
 local function warp_cmd(label, row)

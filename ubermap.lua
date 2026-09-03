@@ -69,15 +69,21 @@ local TEX_W, TEX_H = 4096, 2048;
 
 -- The NPCs a warp starts from, as a name pattern and the warp type it begins.
 -- Home Point entities are named 'Home Point #1', 'Home Point #2' and so on,
--- and Survival Guides carry their own name; the Unity Concord is a person, so
--- those are named one by one.  A server that renames them is fixed here.
+-- and Survival Guides carry their own name; the Unity Concord and the Abyssea
+-- teleporters are people, so those are named one by one.  A server that renames
+-- them is fixed here.
 local WARP_NPC = T{
-    { '^Home Point',        'home'  },
-    { '^Survival Guide',    'guide' },
-    { '^Igsli$',            'unity' },  -- Bastok Markets (E-11)
-    { '^Urbiolaine$',       'unity' },  -- Southern San d'Oria (G-10)
-    { '^Teldro%-Kesdrodo$', 'unity' },  -- Windurst Woods (J-10)
-    { '^Yonolala$',         'unity' },  -- Windurst Woods (J-10)
+    { '^Home Point',        'home'    },
+    { '^Survival Guide',    'guide'   },
+    { '^Igsli$',            'unity'   },  -- Bastok Markets (E-11)
+    { '^Urbiolaine$',       'unity'   },  -- Southern San d'Oria (G-10)
+    { '^Teldro%-Kesdrodo$', 'unity'   },  -- Windurst Woods (J-10)
+    { '^Yonolala$',         'unity'   },  -- Windurst Woods (J-10)
+    { '^Joachim$',          'abyssea' },  -- Port Jeuno (H-8)
+    { '^Erich$',            'abyssea' },  -- Port Bastok (K-11)
+    { '^Fabricius$',        'abyssea' },  -- Port Windurst (L-6)
+    { '^Gilburt$',          'abyssea' },  -- Port San d'Oria (I-8)
+    { '^Fabien$',           'abyssea' },  -- Ru'Lude Gardens (H-10)
 };
 
 -- The NPC interaction packets, and the offset each carries the NPC's target
@@ -247,12 +253,12 @@ local SEARCH_H_MULT = 1.5;
 
 -- Layer toggles, drawn on the toolbar row.  Clicking one dims its icon;
 -- the state is kept per file name in cfg.toggle (nil = lit).
--- Maw.png is left out until maw warps are implemented.
-local TOGGLES      = T{ 'Crystal.png', 'Guide.png', 'Unity.png' };
+local TOGGLES      = T{ 'Crystal.png', 'Guide.png', 'Unity.png', 'Maw.png' };
 -- What each toggle is called on its tooltip, keyed the way cfg.toggle is.
 local TOGGLE_NAME  = T{ ['Crystal.png'] = 'Home Points',
                         ['Guide.png']   = 'Survival Guides',
-                        ['Unity.png']   = 'Unity Concords' };
+                        ['Unity.png']   = 'Unity Concords',
+                        ['Maw.png']     = 'Abyssea Warps' };
 local TOGGLE_GAP   = 6;   -- screen pixels between toggles
 
 -- What the Size box will take, in screen pixels, and what it means by "leave it
@@ -289,7 +295,8 @@ local COL_ICON_OFF = 0x40FFFFFF;  -- 25% opacity, i.e. 75% transparent
 
 -- Warp type -> the toggle that lists it, so dimming a toggle drops those rows
 -- from the popup.  A type no toggle names never shows.
-local WARP_ICON = T{ home = 'Crystal.png', guide = 'Guide.png', unity = 'Unity.png' };
+local WARP_ICON = T{ home = 'Crystal.png', guide = 'Guide.png', unity = 'Unity.png',
+                     abyssea = 'Maw.png' };
 
 -- The Instant Warp scroll, drawn on the toggles' line after them.  Not a layer:
 -- it warps out of the bag rather than from an NPC, so it filters nothing and is
@@ -371,12 +378,13 @@ local FAV_NONE     = 'No favorites for this warp';
 
 -- The favorites widget: the same saved list, drawn as a small window of its own
 -- and driven from the gamepad.  It comes up only where it can be used -- stood
--- at a Home Point, Survival Guide or Unity Concord -- because it swallows the
--- buttons it reads, and the D-pad belongs to the game's own menus everywhere
--- else.  On by default, and turned off from the '/um config' panel: the
--- buttons it takes are ones the client has nothing to do with while a warp
--- menu is up.  It reads five of the seven below -- up, down, A, B and Y, which
--- swaps it for the full map -- and leaves left and right to the client.
+-- at a Home Point, Survival Guide, Unity Concord or Abyssea teleporter --
+-- because it swallows the buttons it reads, and the D-pad belongs to the
+-- game's own menus everywhere else.  On by default, and turned off from the
+-- '/um config' panel: the buttons it takes are ones the client has nothing to
+-- do with while a warp menu is up.  It reads five of the seven below -- up,
+-- down, A, B and Y, which swaps it for the full map -- and leaves left and
+-- right to the client.
 --
 -- The map reads all seven.  It takes them only while it is on screen, which is
 -- a place the player put it rather than one they walked into, so unlike the
@@ -472,10 +480,10 @@ local default_settings = T{
     -- is noise by the time it arrives; the config panel's Hide Uberwarp Chat
     -- box turns it back on when a warp is misbehaving and the reason matters.
     quiet  = true,
-    -- Whether walking up to a Home Point, Survival Guide or Unity Concord puts
-    -- the map on screen by itself.  On by default: that is what the map has
-    -- always done, and the reason it exists.  Off leaves '/um' and Y at the
-    -- favorites widget as the ways in.
+    -- Whether walking up to a warp NPC -- Home Point, Survival Guide, Unity
+    -- Concord or Abyssea teleporter -- puts the map on screen by itself.  On
+    -- by default: that is what the map has always done, and the reason it
+    -- exists.  Off leaves '/um' and Y at the favorites widget as the ways in.
     autoopen = true,
 };
 -- Loaded from a copy of the defaults, because the library hands its own default
@@ -1562,7 +1570,7 @@ end
 * 'zone' of their own.  Home Points take their number straight off the label,
 * the way the command wants it -- '/uw hp Aht Urhgan Whitegate3'.
 --]]
-local UW_TYPE = T{ home = 'hp', guide = 'sg', unity = 'uc' };
+local UW_TYPE = T{ home = 'hp', guide = 'sg', unity = 'uc', abyssea = 'ab' };
 
 --[[
 * The destination half of that line, which is also the name Uberwarp files its
@@ -2909,8 +2917,8 @@ end
 
 --[[
 * The gamepad favorites widget.  It rides with the NPC, not the map: up the
-* moment a Home Point, Survival Guide or Unity Concord is in reach, gone the
-* moment it is not, whether or not the map is open.
+* moment a Home Point, Survival Guide, Unity Concord or Abyssea teleporter is
+* in reach, gone the moment it is not, whether or not the map is open.
 *
 * That is also the only time the xinput handler takes a button -- one
 * condition, written here and read there, so the two cannot come apart and
@@ -3715,7 +3723,7 @@ local function draw_map(view_w, view_h)
             -- writes.  The box is built from cfg on the frame it is drawn
             -- rather than kept, so a toggle made from '/um' shows here without
             -- anything having to be told about it.
-            local checks = { { 'HP/SG/UC Opens Map',
+            local checks = { { 'Warp NPC Opens Map',
                                { cfg.autoopen }, 'autoopen' },
                              { 'Favorites Widget',
                                { cfg.widget }, 'widget' },
