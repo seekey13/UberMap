@@ -14,11 +14,12 @@
 * marker covering two zones, or a name the map spells differently - carries a
 * 'zone' of its own for the command to use.
 *
-* The Abyssea rows are the five city NPCs' menu, so they hang off the city they
-* stand in and their 'pos' is that NPC's own grid reference.  Uberwarp names
-* each destination after the Vana'diel zone its Cavernous Maw sits in rather
-* than after the Abyssea area itself, so that is what their 'zone' carries:
-* '/uw ab Konschtat Highlands' opens Abyssea - Konschtat.
+* An Abyssea row hangs off the Vana'diel zone whose Cavernous Maw leads there,
+* at that maw's grid reference.  Uberwarp names the destination after that same
+* zone rather than after the Abyssea area, so the key is already the alias and
+* the row needs no 'zone' of its own: '/uw ab Konschtat Highlands' opens
+* Abyssea - Konschtat.  The command is taken at one of the five city
+* teleporters, which is where WARP_NPC in ubermap.lua lights these rows.
 --]]
 
 -- Windurst Waters is one zone in game, but points.lua draws its north and south
@@ -231,8 +232,9 @@ return {
         { type = 'guide', label = 'Survival Guide', pos = '(G-5)' },
     },
     ["Konschtat Highlands"] = {
-        { type = 'guide', label = 'Survival Guide', pos = '(G-3)' },
-        { type = 'unity', label = 'Unity Concord',  pos = '(G-7)' },
+        { type = 'guide',   label = 'Survival Guide',      pos = '(G-3)' },
+        { type = 'unity',   label = 'Unity Concord',       pos = '(G-7)' },
+        { type = 'abyssea', label = 'Abyssea Maw', pos = '(I-12)' },
     },
     ["Korroloka Tunnel"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(C-9)' },
@@ -241,8 +243,9 @@ return {
         { type = 'guide', label = 'Survival Guide', pos = '(H-9)' },
     },
     ["La Theine Plateau"] = {
-        { type = 'guide', label = 'Survival Guide', pos = '(M-8)' },
-        { type = 'unity', label = 'Unity Concord',  pos = '(H-8)' },
+        { type = 'guide',   label = 'Survival Guide',      pos = '(M-8)' },
+        { type = 'unity',   label = 'Unity Concord',       pos = '(H-8)' },
+        { type = 'abyssea', label = 'Abyssea Maw', pos = '(E-4)' },
     },
     ["Labyrinth of Onzozo"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(G-11)' },
@@ -338,36 +341,24 @@ return {
         { type = 'guide', label = 'Survival Guide', pos = '(J-10)' },
     },
     ["Port Bastok"] = {
-        { type = 'home',    label = 'Home Point #1 (E)',   pos = '(J-7)' },
-        { type = 'home',    label = 'Home Point #2 (M)',   pos = '(J-13)' },
-        { type = 'home',    label = 'Home Point #3',       pos = '(E-6)' },
-        { type = 'abyssea', label = 'Abyssea - Konschtat', pos = '(K-11)', zone = 'Konschtat Highlands' },
-        { type = 'abyssea', label = 'Abyssea - La Theine', pos = '(K-11)', zone = 'La Theine Plateau'   },
-        { type = 'abyssea', label = 'Abyssea - Tahrongi',  pos = '(K-11)', zone = 'Tahrongi Canyon'     },
+        { type = 'home', label = 'Home Point #1 (E)', pos = '(J-7)' },
+        { type = 'home', label = 'Home Point #2 (M)', pos = '(J-13)' },
+        { type = 'home', label = 'Home Point #3',     pos = '(E-6)' },
     },
     ["Port Jeuno"] = {
-        { type = 'home',    label = 'Home Point #1 (E)',   pos = '(J-8)' },
-        { type = 'home',    label = 'Home Point #2 (M)',   pos = '(F-8)' },
-        { type = 'abyssea', label = 'Abyssea - Konschtat', pos = '(H-8)', zone = 'Konschtat Highlands' },
-        { type = 'abyssea', label = 'Abyssea - La Theine', pos = '(H-8)', zone = 'La Theine Plateau'   },
-        { type = 'abyssea', label = 'Abyssea - Tahrongi',  pos = '(H-8)', zone = 'Tahrongi Canyon'     },
+        { type = 'home', label = 'Home Point #1 (E)', pos = '(J-8)' },
+        { type = 'home', label = 'Home Point #2 (M)', pos = '(F-8)' },
     },
     ["Port San d'Oria"] = {
-        { type = 'home',    label = 'Home Point #1',       pos = '(G-9)' },
-        { type = 'home',    label = 'Home Point #2 (M)',   pos = '(J-9)' },
-        { type = 'home',    label = 'Home Point #3 (A)',   pos = '(H-10)' },
-        { type = 'abyssea', label = 'Abyssea - Konschtat', pos = '(I-8)', zone = 'Konschtat Highlands' },
-        { type = 'abyssea', label = 'Abyssea - La Theine', pos = '(I-8)', zone = 'La Theine Plateau'   },
-        { type = 'abyssea', label = 'Abyssea - Tahrongi',  pos = '(I-8)', zone = 'Tahrongi Canyon'     },
+        { type = 'home', label = 'Home Point #1',     pos = '(G-9)' },
+        { type = 'home', label = 'Home Point #2 (M)', pos = '(J-9)' },
+        { type = 'home', label = 'Home Point #3 (A)', pos = '(H-10)' },
     },
     ["Port Windurst"] = {
-        { type = 'home',    label = 'Home Point #1',       pos = '(C-7)' },
-        { type = 'home',    label = 'Home Point #2 (E)',   pos = '(B-4)' },
-        { type = 'home',    label = 'Home Point #3 (M)',   pos = '(L-4)' },
-        { type = 'guide',   label = 'Survival Guide',      pos = '(B-5)' },
-        { type = 'abyssea', label = 'Abyssea - Konschtat', pos = '(L-6)', zone = 'Konschtat Highlands' },
-        { type = 'abyssea', label = 'Abyssea - La Theine', pos = '(L-6)', zone = 'La Theine Plateau'   },
-        { type = 'abyssea', label = 'Abyssea - Tahrongi',  pos = '(L-6)', zone = 'Tahrongi Canyon'     },
+        { type = 'home',  label = 'Home Point #1',     pos = '(C-7)' },
+        { type = 'home',  label = 'Home Point #2 (E)', pos = '(B-4)' },
+        { type = 'home',  label = 'Home Point #3 (M)', pos = '(L-4)' },
+        { type = 'guide', label = 'Survival Guide',    pos = '(B-5)' },
     },
     ["Pso'Xja"] = {
         { type = 'home', label = 'Home Point #1' },
@@ -417,13 +408,10 @@ return {
         { type = 'guide', label = 'Survival Guide', pos = '(H-12)' },
     },
     ["Ru'Lude Gardens"] = {
-        { type = 'home',    label = 'Home Point #1',       pos = '(H-8)' },
-        { type = 'home',    label = 'Home Point #2 (M)',   pos = '(I-9)' },
-        { type = 'home',    label = 'Home Point #3 (A)',   pos = '(F-9)' },
-        { type = 'guide',   label = 'Survival Guide',      pos = '(I-10)' },
-        { type = 'abyssea', label = 'Abyssea - Konschtat', pos = '(H-10)', zone = 'Konschtat Highlands' },
-        { type = 'abyssea', label = 'Abyssea - La Theine', pos = '(H-10)', zone = 'La Theine Plateau'   },
-        { type = 'abyssea', label = 'Abyssea - Tahrongi',  pos = '(H-10)', zone = 'Tahrongi Canyon'     },
+        { type = 'home',  label = 'Home Point #1',     pos = '(H-8)' },
+        { type = 'home',  label = 'Home Point #2 (M)', pos = '(I-9)' },
+        { type = 'home',  label = 'Home Point #3 (A)', pos = '(F-9)' },
+        { type = 'guide', label = 'Survival Guide',    pos = '(I-10)' },
     },
     ["Sacrarium"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(E-7)' },
@@ -455,8 +443,9 @@ return {
         { type = 'guide', label = 'Survival Guide', pos = '(K-10)' },
     },
     ["Tahrongi Canyon"] = {
-        { type = 'guide', label = 'Survival Guide', pos = '(G-4)' },
-        { type = 'unity', label = 'Unity Concord',  pos = '(J-8)' },
+        { type = 'guide',   label = 'Survival Guide',     pos = '(G-4)' },
+        { type = 'unity',   label = 'Unity Concord',      pos = '(J-8)' },
+        { type = 'abyssea', label = 'Abyssea Maw', pos = '(H-12)' },
     },
     ["Tavnazian Safehold"] = {
         { type = 'home',  label = 'Home Point #1',  pos = '(I-6)' },

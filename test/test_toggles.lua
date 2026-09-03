@@ -77,11 +77,11 @@ local function only(kind)
     return n;
 end
 
--- Abyssea warps only: the five cities whose teleporter offers them, and only
--- those -- which is also what catches a zone key that names no marker.
+-- Abyssea warps only: the three zones holding a Cavernous Maw, and only those
+-- -- which is also what catches a zone key that names no marker.
 toggle['Crystal.png'], toggle['Guide.png'], toggle['Unity.png'] = true, true, true;
 assert(warps_filtered(), 'a dimmed warp toggle must read as filtered');
-assert(only('abyssea') == 5, 'five cities must offer the Abyssea warp');
+assert(only('abyssea') == 3, 'three zones must carry a Cavernous Maw');
 toggle['Crystal.png'], toggle['Guide.png'], toggle['Unity.png'] = nil, nil, nil;
 
 -- Home Points only: every marker left lit has one, and every zone with one is

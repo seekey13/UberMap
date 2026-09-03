@@ -28,7 +28,7 @@ The **Past**/**Present** switch at the head of the toolbar swaps between the two
 
 Left-click a zone point — for a panel of that zone's destinations. Clicking a row sends a Uberwarp command and closes the panel:
 
-**Abyssea** rows hang off the five cities whose teleporter offers them — Joachim in Port Jeuno (H-8), Erich in Port Bastok (K-11), Fabricius in Port Windurst (L-6), Gilburt in Port San d'Oria (I-8) and Fabien in Ru'Lude Gardens (H-10). Each lists Abyssea - Konschtat, - La Theine and - Tahrongi, and sends `/uw ab <zone>` naming the Vana'diel zone Uberwarp files the destination under rather than the Abyssea area, e.g. `/uw ab Konschtat Highlands`.
+**Abyssea** rows sit on the zone whose Cavernous Maw leads there, at the maw itself — **Konschtat Highlands** (I-12), **La Theine Plateau** (E-4) and **Tahrongi Canyon** (H-12). Each sends `/uw ab <zone>`, naming the Vana'diel zone Uberwarp files the destination under rather than the Abyssea area, e.g. `/uw ab Konschtat Highlands`. The command is taken at a teleporter, so a row goes live when you stand at Joachim in Port Jeuno (H-8), Erich in Port Bastok (K-11), Fabricius in Port Windurst (L-6), Gilburt in Port San d'Oria (I-8) or Fabien in Ru'Lude Gardens (H-10).
 
 ### Row states
 

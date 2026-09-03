@@ -3,8 +3,7 @@
 * how to draw, a label to print and a grid reference held apart from it in 'pos'
 * so the popup can column it, each zone offers at most one Unity Concord, and
 * a zone's Home Points are numbered 1..n with no gaps or repeats, so a bad merge
-* fails here instead of drawing a blank row in game.  An Abyssea row carries the
-* zone Uberwarp names its destination by, so it always has a 'zone' override.  Run with any Lua 5.1+:
+* fails here instead of drawing a blank row in game.  Run with any Lua 5.1+:
 *     lua test/test_warps.lua
 --]]
 
@@ -52,9 +51,6 @@ for zone, list in pairs(data) do
         seenOrder = rank;
 
         if row.type == 'unity' then unities = unities + 1; end
-        -- '/uw ab' takes the Vana'diel zone, never the city the NPC stands in.
-        assert(row.type ~= 'abyssea' or row.zone ~= nil,
-               ('%s[%d]: an Abyssea row needs its own zone'):format(zone, i));
         if row.type == 'home' then
             local n = tonumber(row.label:match('^Home Point #(%d+)'));
             assert(n, ('%s[%d]: %q is not a numbered Home Point'):format(zone, i, row.label));
