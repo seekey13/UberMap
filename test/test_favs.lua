@@ -240,7 +240,7 @@ do
         if (cfg.seeded ~= true) then
             cfg.seeded = true;
             if (#cfg.favs == 0) then
-                for i = 1, 3 do
+                for i = 1, 6 do
                     table.insert(cfg.favs, { key = 'seed' .. i });
                 end
             end
@@ -254,7 +254,7 @@ do
     end
 
     local fresh = load({});
-    check(#fresh.favs == 3, 'a new character should start with three favorites');
+    check(#fresh.favs == 6, 'a new character should start with six favorites');
 
     -- Emptied on purpose and loaded again: the marker is already in the file,
     -- so nothing is put back.  This is the case the old defaults got wrong.

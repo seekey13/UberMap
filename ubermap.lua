@@ -558,21 +558,29 @@ end
 local function fill_defaults()
     cfg.toggle = cfg.toggle or T{};
     cfg.favs   = cfg.favs   or T{};
-    -- Three rows to start with, so the widget has something to show at the
-    -- first warp NPC a new character walks up to.  Seeded here rather than
-    -- from default_settings, which merge would push back into a list they had
-    -- been deleted from on every load; done once and remembered, so deleting
-    -- them sticks.  Saved on the spot, because the merge's own save has
-    -- already been and gone by the time this runs and nothing else here is
-    -- guaranteed to write the file again.
+    -- Six rows to start with, one per kind of warp NPC, so the widget has
+    -- something to show at the first one a new character walks up to.  Seeded
+    -- here rather than from default_settings, which merge would push back into
+    -- a list they had been deleted from on every load; done once and
+    -- remembered, so deleting them sticks.  Saved on the spot, because the
+    -- merge's own save has already been and gone by the time this runs and
+    -- nothing else here is guaranteed to write the file again.
     if (cfg.seeded ~= true) then
         cfg.seeded = true;
         if (#cfg.favs == 0) then
             -- Plain tables, the shape fav_toggle writes: a saved row is what
             -- these have to look like once they are on the list.
-            table.insert(cfg.favs, { key = 'Rolanberry Fields', type = 'unity', label = 'Unity Concord' });
-            table.insert(cfg.favs, { key = "Ru'Lude Gardens",   type = 'guide', label = 'Survival Guide' });
-            table.insert(cfg.favs, { key = 'Lower Jeuno',       type = 'home',  label = 'Home Point #2 (M)' });
+            local seeds = {
+                { key = 'Rolanberry Fields',   type = 'unity',   label = 'Unity Concord' },
+                { key = "Ru'Lude Gardens",     type = 'guide',   label = 'Survival Guide' },
+                { key = 'Lower Jeuno',         type = 'home',    label = 'Home Point #2 (M)' },
+                { key = 'Konschtat Highlands', type = 'abyssea', label = 'Abyssea - Konschtat' },
+                { key = 'La Theine Plateau',   type = 'abyssea', label = 'Abyssea - La Theine' },
+                { key = 'Tahrongi Canyon',     type = 'abyssea', label = 'Abyssea - Tahrongi' },
+            };
+            for _, f in ipairs(seeds) do
+                table.insert(cfg.favs, f);
+            end
         end
         settings.save();
     end
