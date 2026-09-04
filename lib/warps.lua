@@ -3,13 +3,14 @@
 *
 * The key matches a point's 'label' in points.lua.  Each row is one place the
 * player can warp to, in the order the popup lists them: Home Points, then
-* Survival Guides, then the Unity Concord, then the Abyssea warps.  'type'
-* picks the icon - 'home' is Crystal.png, 'guide' is Guide.png, 'unity' is
-* Unity.png, 'abyssea' is Abyssea.png.  'pos' is the grid reference, kept out of
+* Survival Guides, then the Unity Concord, then the Abyssea warps, then the
+* Abyssea confluxes.  'type' picks the icon - 'home' is Crystal.png, 'guide' is
+* Guide.png, 'unity' is Unity.png, 'abyssea' is Abyssea.png, 'conflux' is
+* Conflux.png.  'pos' is the grid reference, kept out of
 * the label so the popup draws it in a column of its own and every row's lines
 * up; a row with none simply leaves it out.
 *
-* Clicking a row sends '/uw <hp|sg|uc|ab> <zone><number>', with the zone taken
+* Clicking a row sends '/uw <hp|sg|uc|aw|ab> <zone><number>', with the zone taken
 * from the key.  A row whose key is not the game's own name for the zone - a
 * marker covering two zones, or a name the map spells differently - carries a
 * 'zone' of its own for the command to use.
@@ -17,9 +18,18 @@
 * An Abyssea row hangs off the Vana'diel zone whose Cavernous Maw leads there,
 * at that maw's grid reference.  Uberwarp names the destination after that same
 * zone rather than after the Abyssea area, so the key is already the alias and
-* the row needs no 'zone' of its own: '/uw ab Konschtat Highlands' opens
+* the row needs no 'zone' of its own: '/uw aw Konschtat Highlands' opens
 * Abyssea - Konschtat.  The command is taken at one of the five city
 * teleporters, which is where WARP_NPC in ubermap.lua lights these rows.
+*
+* A conflux row hangs off that same Vana'diel zone, but its grid reference is a
+* place inside the Abyssea area rather than on the map the marker sits on: the
+* eight Veridical Conflux NPCs all carry the same name, and one only travels to
+* the others in the zone it stands in.  So the row carries 'zid', the game's own
+* id for that Abyssea zone, and goes live only while the player is inside it -
+* being stood at a conflux is not enough on its own.  Uberwarp files these
+* under the conflux number alone, which is what the command carries:
+* '/uw ab 3' walks to Conflux #3 of wherever the player already is.
 --]]
 
 -- Windurst Waters is one zone in game, but points.lua draws its north and south
@@ -235,6 +245,15 @@ return {
         { type = 'guide',   label = 'Survival Guide',      pos = '(G-3)' },
         { type = 'unity',   label = 'Unity Concord',       pos = '(G-7)' },
         { type = 'abyssea', label = 'Abyssea Maw', pos = '(I-12)' },
+        -- Inside Abyssea - Konschtat, zone 15.
+        { type = 'conflux', label = 'Conflux #1', pos = '(I-13)', zid = 15 },
+        { type = 'conflux', label = 'Conflux #2', pos = '(G-10)', zid = 15 },
+        { type = 'conflux', label = 'Conflux #3', pos = '(D-7)',  zid = 15 },
+        { type = 'conflux', label = 'Conflux #4', pos = '(H-8)',  zid = 15 },
+        { type = 'conflux', label = 'Conflux #5', pos = '(G-7)',  zid = 15 },
+        { type = 'conflux', label = 'Conflux #6', pos = '(F-5)',  zid = 15 },
+        { type = 'conflux', label = 'Conflux #7', pos = '(K-8)',  zid = 15 },
+        { type = 'conflux', label = 'Conflux #8', pos = '(J-4)',  zid = 15 },
     },
     ["Korroloka Tunnel"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(C-9)' },
@@ -246,6 +265,15 @@ return {
         { type = 'guide',   label = 'Survival Guide',      pos = '(M-8)' },
         { type = 'unity',   label = 'Unity Concord',       pos = '(H-8)' },
         { type = 'abyssea', label = 'Abyssea Maw', pos = '(E-4)' },
+        -- Inside Abyssea - La Theine, zone 132.
+        { type = 'conflux', label = 'Conflux #1', pos = '(E-3)',  zid = 132 },
+        { type = 'conflux', label = 'Conflux #2', pos = '(D-7)',  zid = 132 },
+        { type = 'conflux', label = 'Conflux #3', pos = '(G-8)',  zid = 132 },
+        { type = 'conflux', label = 'Conflux #4', pos = '(H-7)',  zid = 132 },
+        { type = 'conflux', label = 'Conflux #5', pos = '(I-10)', zid = 132 },
+        { type = 'conflux', label = 'Conflux #6', pos = '(L-11)', zid = 132 },
+        { type = 'conflux', label = 'Conflux #7', pos = '(K-6)',  zid = 132 },
+        { type = 'conflux', label = 'Conflux #8', pos = '(I-9)',  zid = 132 },
     },
     ["Labyrinth of Onzozo"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(G-11)' },
@@ -446,6 +474,15 @@ return {
         { type = 'guide',   label = 'Survival Guide',     pos = '(G-4)' },
         { type = 'unity',   label = 'Unity Concord',      pos = '(J-8)' },
         { type = 'abyssea', label = 'Abyssea Maw', pos = '(H-12)' },
+        -- Inside Abyssea - Tahrongi, zone 45.
+        { type = 'conflux', label = 'Conflux #1', pos = '(H-12)', zid = 45 },
+        { type = 'conflux', label = 'Conflux #2', pos = '(H-9)',  zid = 45 },
+        { type = 'conflux', label = 'Conflux #3', pos = '(F-9)',  zid = 45 },
+        { type = 'conflux', label = 'Conflux #4', pos = '(G-7)',  zid = 45 },
+        { type = 'conflux', label = 'Conflux #5', pos = '(H-4)',  zid = 45 },
+        { type = 'conflux', label = 'Conflux #6', pos = '(H-6)',  zid = 45 },
+        { type = 'conflux', label = 'Conflux #7', pos = '(I-7)',  zid = 45 },
+        { type = 'conflux', label = 'Conflux #8', pos = '(J-5)',  zid = 45 },
     },
     ["Tavnazian Safehold"] = {
         { type = 'home',  label = 'Home Point #1',  pos = '(I-6)' },

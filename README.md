@@ -28,7 +28,22 @@ The **Past**/**Present** switch at the head of the toolbar swaps between the two
 
 Left-click a zone point — for a panel of that zone's destinations. Clicking a row sends a Uberwarp command and closes the panel:
 
-**Abyssea** rows sit on the zone whose Cavernous Maw leads there, at the maw itself — **Konschtat Highlands** (I-12), **La Theine Plateau** (E-4) and **Tahrongi Canyon** (H-12). Each sends `/uw ab <zone>`, naming the Vana'diel zone Uberwarp files the destination under rather than the Abyssea area, e.g. `/uw ab Konschtat Highlands`. The command is taken at a teleporter, so a row goes live when you stand at Joachim in Port Jeuno (H-8), Erich in Port Bastok (K-11), Fabricius in Port Windurst (L-6), Gilburt in Port San d'Oria (I-8) or Fabien in Ru'Lude Gardens (H-10).
+**Abyssea** rows sit on the zone whose Cavernous Maw leads there, at the maw itself — **Konschtat Highlands** (I-12), **La Theine Plateau** (E-4) and **Tahrongi Canyon** (H-12). Each sends `/uw aw <zone>`, naming the Vana'diel zone Uberwarp files the destination under rather than the Abyssea area, e.g. `/uw aw Konschtat Highlands`. The command is taken at a teleporter, so a row goes live when you stand at Joachim in Port Jeuno (H-8), Erich in Port Bastok (K-11), Fabricius in Port Windurst (L-6), Gilburt in Port San d'Oria (I-8) or Fabien in Ru'Lude Gardens (H-10).
+
+**Conflux** rows sit on those same three zones, eight to a set, and send `/uw ab <number>` — the number alone, because a Veridical Conflux only ever travels to the other seven standing in the same Abyssea area. Their grid references are places inside that area rather than on the map you clicked, so they read as a directory of where the eight are:
+
+| | Abyssea - Konschtat | Abyssea - La Theine | Abyssea - Tahrongi |
+| --- | --- | --- | --- |
+| Conflux #1 | I-13 | E-3 | H-12 |
+| Conflux #2 | G-10 | D-7 | H-9 |
+| Conflux #3 | D-7 | G-8 | F-9 |
+| Conflux #4 | H-8 | H-7 | G-7 |
+| Conflux #5 | G-7 | I-10 | H-4 |
+| Conflux #6 | F-5 | L-11 | H-6 |
+| Conflux #7 | K-8 | K-6 | I-7 |
+| Conflux #8 | J-4 | I-9 | J-5 |
+
+A conflux row goes live only when you are stood at a **Veridical Conflux** *and* inside that row's own Abyssea area — being at a conflux is not enough, since all eight of every area carry the same name. From anywhere else they stay listed and grey. Uberwarp unlocks a destination flux for you on the way if you have not been to it, so no conflux row ever reads red — it costs cruor instead.
 
 ### Row states
 
@@ -36,7 +51,7 @@ Left-click a zone point — for a panel of that zone's destinations. Clicking a 
 | --- | --- |
 | Normal | Travels now |
 | **Green** | Already on your favorites list. Map's warp panel only — the favorites list is nothing but favorites |
-| Grey | Wrong kind of NPC for where you stand; the icon says what to walk up to |
+| Grey | Wrong kind of NPC for where you stand, or a conflux in another Abyssea area; the icon says what to walk up to |
 | **Red** | Never registered; takes no click from anywhere, hover says why. Outranks the green, so a saved row you cannot reach still reads red |
 
 ## Toolbar
@@ -44,7 +59,7 @@ Left-click a zone point — for a panel of that zone's destinations. Clicking a 
 | Icon | Where | Does |
 | --- | --- | --- |
 | **Search** | After the past/present switch | Type to fade back every marker whose name does not match, and frame what is left: the view zooms to fit the matching zones on every keystroke. Spelling is forgiven once nothing on the map is spelled the way you typed it, so `juno` and `windhurst` still land where they were meant to -- but `norg` finds Norg rather than every Nor- zone near it.  Clearing search pulls the view back out to the whole map. |
-| **Crystal**, **Guide**, **Unity**, **Maw** | Right of search | Dim one to drop that kind of row. A zone with nothing left opens no panel |
+| **Crystal**, **Guide**, **Unity**, **Maw**, **Conflux** | Right of search | Dim one to drop that kind of row. A zone with nothing left opens no panel |
 | **Warp** | After them | `/item "Instant Warp" <me>` and closes the map. Lit only while the scroll (4181) is carried |
 | **Warp Ring** | After that | Two steps, see below |
 | **Multisend** | Bottom right | Prefixes every command the map sends with `/mss ` |
@@ -54,7 +69,7 @@ Left-click a zone point — for a panel of that zone's destinations. Clicking a 
 
 While **Multisend** is lit every command — warp rows, scroll and ring alike — goes out through [Multisend](https://github.com/ThornyFFXI/Multisend) and repeats on every logged-in character. Off and dimmed until clicked.
 
-**Favorites** are warp rows you saved, in your order. Right-click any row for *Add point to favorites list* — a row you cannot travel on right now works too, so a destination can be saved from anywhere. Each is named by its zone and row, e.g. `Windurst Woods - Home Point #2`. Clicking one warps exactly as its original row would. Stood at a Home Point, Survival Guide, Unity Concord or Abyssea teleporter the list narrows to the rows that NPC can send — the rest cannot be taken from there, so they are not listed — and stepping away brings the whole list back. A destination you have not registered still reads red. Drag a row up or down to reorder the list, including inside a narrowed one; right-click offers *Remove point from favorites list*.
+**Favorites** are warp rows you saved, in your order. Right-click any row for *Add point to favorites list* — a row you cannot travel on right now works too, so a destination can be saved from anywhere. Each is named by its zone and row, e.g. `Windurst Woods - Home Point #2`. Clicking one warps exactly as its original row would. Stood at a Home Point, Survival Guide, Unity Concord, Abyssea teleporter or Veridical Conflux the list narrows to the rows that NPC can send — the rest cannot be taken from there, so they are not listed — and stepping away brings the whole list back. A saved conflux is narrowed on its Abyssea area as well, so standing in Abyssea - Tahrongi lists that area's Conflux #3 and not Konschtat's. A destination you have not registered still reads red. Drag a row up or down to reorder the list, including inside a narrowed one; right-click offers *Remove point from favorites list*.
 
 A character who has never saved one starts with six, one per kind of warp NPC, so the widget has something to show on the first one you walk up to: **Rolanberry Fields - Unity Concord**, **Ru'Lude Gardens - Survival Guide**, **Lower Jeuno - Home Point #2 (M)**, **Konschtat Highlands - Abyssea - Konschtat**, **La Theine Plateau - Abyssea - La Theine** and **Tahrongi Canyon - Abyssea - Tahrongi**. They come off the list the same way any other favorite does, and stay off — they are written once, on the first load, not filled back in on every one.
 
@@ -162,9 +177,9 @@ A key the map takes is kept from the game outright, for as long as it is held, s
 
 Stand at a warp NPC and the map narrows to it: only that kind of row stays lit, since it is the only one you can travel on from there. Walk away and they all light again. Your own clicks are not overridden — a toggle you set by hand stands until you move to a different kind of NPC.
 
-A dimmed filter reaches the map itself: a zone marker with no row left fades back the way an unfocused group does and stops taking the cursor. Dim **Guide**, **Unity** and **Maw** and only Home Point zones stay lit.
+A dimmed filter reaches the map itself: a zone marker with no row left fades back the way an unfocused group does and stops taking the cursor. Dim **Guide**, **Unity**, **Maw** and **Conflux** and only Home Point zones stay lit.
 
-The Multisend gate, your favorites, the four toggles and everything on the config panel are saved per character in `config/addons/UberMap/<name>_<server id>/settings.lua` the moment you change one.
+The Multisend gate, your favorites, the five toggles and everything on the config panel are saved per character in `config/addons/UberMap/<name>_<server id>/settings.lua` the moment you change one.
 
 ## Credits
 

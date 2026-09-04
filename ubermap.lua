@@ -84,6 +84,12 @@ local WARP_NPC = T{
     { '^Fabricius$',        'abyssea' },  -- Port Windurst (L-6)
     { '^Gilburt$',          'abyssea' },  -- Port San d'Oria (I-8)
     { '^Fabien$',           'abyssea' },  -- Ru'Lude Gardens (H-10)
+    -- The eight confluxes of an Abyssea area are all named 'Veridical Conflux',
+    -- numbered or not depending on the server, so one prefix covers the lot.
+    -- Which of the eight is being stood at does not matter: a conflux travels
+    -- to any other in its own zone, so the zone is the whole of the question,
+    -- and the row's own 'zid' is what answers it.
+    { '^Veridical Conflux', 'conflux' },
 };
 
 -- The NPC interaction packets, and the offset each carries the NPC's target
@@ -253,12 +259,14 @@ local SEARCH_H_MULT = 1.5;
 
 -- Layer toggles, drawn on the toolbar row.  Clicking one dims its icon;
 -- the state is kept per file name in cfg.toggle (nil = lit).
-local TOGGLES      = T{ 'Crystal.png', 'Guide.png', 'Unity.png', 'Abyssea.png' };
+local TOGGLES      = T{ 'Crystal.png', 'Guide.png', 'Unity.png', 'Abyssea.png',
+                        'Conflux.png' };
 -- What each toggle is called on its tooltip, keyed the way cfg.toggle is.
 local TOGGLE_NAME  = T{ ['Crystal.png'] = 'Home Points',
                         ['Guide.png']   = 'Survival Guides',
                         ['Unity.png']   = 'Unity Concords',
-                        ['Abyssea.png']     = 'Abyssea Warps' };
+                        ['Abyssea.png']     = 'Abyssea Warps',
+                        ['Conflux.png'] = 'Abyssea Confluxes' };
 local TOGGLE_GAP   = 6;   -- screen pixels between toggles
 
 -- What the Size box will take, in screen pixels, and what it means by "leave it
@@ -296,7 +304,7 @@ local COL_ICON_OFF = 0x40FFFFFF;  -- 25% opacity, i.e. 75% transparent
 -- Warp type -> the toggle that lists it, so dimming a toggle drops those rows
 -- from the popup.  A type no toggle names never shows.
 local WARP_ICON = T{ home = 'Crystal.png', guide = 'Guide.png', unity = 'Unity.png',
-                     abyssea = 'Abyssea.png' };
+                     abyssea = 'Abyssea.png', conflux = 'Conflux.png' };
 
 -- The Instant Warp scroll, drawn on the toggles' line after them.  Not a layer:
 -- it warps out of the bag rather than from an NPC, so it filters nothing and is
@@ -671,6 +679,11 @@ local ui = T{
     drag_y      = 0,
     press       = nil,       -- marker the left button went down on
     near_kind   = false,     -- warp type last seen in reach; false until checked
+    -- The zone the player was last polled in, as the game's own id.  Read for
+    -- the conflux rows, which all carry the same NPC name and travel only
+    -- inside one Abyssea area, so being stood at one says nothing about which
+    -- eight are in reach; 0 is no zone, which no row's 'zid' is.
+    near_zid    = 0,
     -- The EXP Guide errand's whole state, shaped and stepped by lib/guide.lua.
     -- Kept out here rather than inside that file so the map can read
     -- errand.has_warp for the Instant Warp icon it draws.
@@ -1163,6 +1176,11 @@ local function poll_near(now)
         return;
     end
     ui.near_at = now;
+    -- Read whether or not an NPC is in reach: the zone answers a different
+    -- question from near_kind -- which of the eight confluxes a row means --
+    -- and a walk through a zone line changes it with nothing else moving.
+    local party = AshitaCore:GetMemoryManager():GetParty();
+    ui.near_zid = (party ~= nil) and party:GetMemberZone(0) or 0;
     ui.ring_bag = ring_bag();
     ui.ring     = ring_step(ui.ring_bag ~= nil, ring_worn(),
                             now - ui.ring_at < RING_EQUIP_WAIT);
@@ -1577,8 +1595,15 @@ end
 * the marker's label, except where a marker is not one zone: those rows carry a
 * 'zone' of their own.  Home Points take their number straight off the label,
 * the way the command wants it -- '/uw hp Aht Urhgan Whitegate3'.
+*
+* 'aw' and 'ab' are two different systems and read the wrong way round: 'aw' is
+* the city teleporter that puts the player into an Abyssea area, which is what
+* the map's 'abyssea' rows are, and 'ab' is the conflux-to-conflux hop inside
+* one, which is what its 'conflux' rows are.  Uberwarp's own help is the
+* authority on which is which.
 --]]
-local UW_TYPE = T{ home = 'hp', guide = 'sg', unity = 'uc', abyssea = 'ab' };
+local UW_TYPE = T{ home = 'hp', guide = 'sg', unity = 'uc', abyssea = 'aw',
+                   conflux = 'ab' };
 
 --[[
 * The destination half of that line, which is also the name Uberwarp files its
@@ -1586,6 +1611,11 @@ local UW_TYPE = T{ home = 'hp', guide = 'sg', unity = 'uc', abyssea = 'ab' };
 * string the command for it would carry.
 --]]
 local function warp_alias(label, row)
+    -- A conflux is filed under its number alone, since the zone it travels
+    -- inside is the one the player is already standing in: '/uw ab 3'.
+    if (row.type == 'conflux') then
+        return row.label:match('#(%d+)') or '';
+    end
     -- The Campaign zones are named '[S]' throughout, the way Uberwarp spells
     -- them; a favorite saved under the old '(S)' was renamed on the way in.
     local zone = row.zone or label;
@@ -1639,7 +1669,12 @@ local function fav_toggle(key, row)
         table.remove(cfg.favs, i);
     else
         table.insert(cfg.favs, { key = key, type = row.type,
-                                 label = row.label, zone = row.zone });
+                                 label = row.label, zone = row.zone,
+                                 -- Saved with the entry rather than looked back
+                                 -- up: it is what says which zone's Conflux #3
+                                 -- this is, and a row that lost it would send
+                                 -- the player to whichever one they stood in.
+                                 zid = row.zid });
     end
     settings.save();
 end
@@ -1662,6 +1697,12 @@ end
 * NPC in reach -- near_kind nil, or false before the first poll -- there is
 * nothing to narrow against, so the whole list is shown.
 *
+* A conflux row is narrowed on its zone as well: every Abyssea area has its own
+* Conflux #3, so one saved off another area is a row that would travel, to
+* somewhere the player did not ask for.  Dropped rather than drawn dim, unlike
+* the map's own panel, because the widget is a list of what a press does here
+* and a row that names a place it cannot reach only takes up a line of it.
+*
 * Hands back the rows and, when narrowed, the slot each one sits in in
 * cfg.favs, so a drag inside the narrowed list reorders the saved list: the
 * row is pulled out of its own slot and put back in the one the row it was
@@ -1674,7 +1715,7 @@ local function fav_view()
     end
     local view, raw = T{ }, T{ };
     for i, f in ipairs(cfg.favs) do
-        if (f.type == kind) then
+        if (f.type == kind and (f.zid == nil or f.zid == ui.near_zid)) then
             view[#view + 1] = f;
             raw[#raw + 1]   = i;
         end
@@ -2333,6 +2374,7 @@ function nav.act(act, view_w, view_h)
             -- live but does nothing reads as a broken list.
             local r = rows[ui.gp_row];
             if (r ~= nil and r.type == ui.near_kind
+                and (r.zid == nil or r.zid == ui.near_zid)
                 and warp_known(ui.warp.label, r)) then
                 local cmd = warp_cmd(ui.warp.label, r);
                 if (cmd ~= nil) then
@@ -3217,7 +3259,13 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                 -- ui.near_kind is false before the first poll and nil while
                 -- nothing is in reach; neither is a type, so both read as
                 -- out of reach.
-                local live = r.type == ui.near_kind;
+                -- A row carrying a 'zid' -- a conflux -- also wants the player
+                -- inside that zone, since the eight of them share one NPC name
+                -- and every Abyssea area has its own set.  Still listed from
+                -- Vana'diel, dim, so the panel says where they are before the
+                -- trip in; the widget drops them instead.
+                local live = r.type == ui.near_kind
+                             and (r.zid == nil or r.zid == ui.near_zid);
                 -- A destination the player has never stood at is refused at
                 -- the NPC whether or not they are in front of one, so it is
                 -- drawn red and takes no press either.

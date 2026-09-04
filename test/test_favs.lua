@@ -27,7 +27,8 @@ local function fav_toggle(key, row)
         table.remove(favs, i);
     else
         table.insert(favs, { key = key, type = row.type,
-                             label = row.label, zone = row.zone });
+                             label = row.label, zone = row.zone,
+                             zid = row.zid });
     end
 end
 
@@ -46,13 +47,17 @@ local function fav_pos(f)
     return nil;
 end
 
-local UW_TYPE = { home = 'hp', guide = 'sg', unity = 'uc', abyssea = 'ab' };
+local UW_TYPE = { home = 'hp', guide = 'sg', unity = 'uc', abyssea = 'aw',
+                  conflux = 'ab' };
 
 -- ('%s'):fmt is Ashita's string extension, which plain Lua does not have.
 local function warp_cmd(label, row)
     local kind = UW_TYPE[row.type];
     if (kind == nil) then
         return nil;
+    end
+    if (row.type == 'conflux') then
+        return string.format('/uw %s %s', kind, row.label:match('#(%d+)') or '');
     end
     local zone = (row.zone or label):gsub('%(S%)$', '[S]');
     local n = (row.type == 'home') and row.label:match('^Home Point #(%d+)') or nil;
@@ -155,11 +160,13 @@ check(warp_cmd(A_ZONE, favs[fav_index(A_ZONE, A)]) == warp_cmd(A_ZONE, A),
       'a favorite should send exactly what its row sends');
 
 -- Settings round trip: the library writes tables out key by key and reads them
--- back as plain data, so an entry has to hold only strings.  A row field it
--- cannot serialize would be lost on the next login.
+-- back as plain data, so an entry has to hold only scalars -- strings, or the
+-- numbers it writes back with '%.17g', which is how a conflux row's zone id
+-- travels.  A row field it cannot serialize would be lost on the next login.
 for _, f in ipairs(favs) do
     for k, v in pairs(f) do
-        check(type(k) == 'string' and type(v) == 'string',
+        check(type(k) == 'string'
+              and (type(v) == 'string' or type(v) == 'number'),
               ('favorite field %s is a %s, which will not survive settings')
               :format(tostring(k), type(v)));
     end
@@ -168,14 +175,16 @@ end
 -- The list as the panel and the widget draw it: narrowed to the type of warp
 -- NPC in reach, whole when there is none, since a Survival Guide cannot send a
 -- Home Point row and a row that cannot be pressed should not be listed.
+-- A conflux row is narrowed on its zone as well, since every Abyssea area has
+-- its own Conflux #3 and only the one the player stands in is reachable.
 -- Mirrors fav_view in ubermap.lua.
-local function fav_view(near_kind)
+local function fav_view(near_kind, near_zid)
     if (not near_kind) then
         return favs, nil;
     end
     local view, raw = {}, {};
     for i, f in ipairs(favs) do
-        if (f.type == near_kind) then
+        if (f.type == near_kind and (f.zid == nil or f.zid == near_zid)) then
             view[#view + 1] = f;
             raw[#raw + 1]   = i;
         end
@@ -212,6 +221,37 @@ check(after[1].label == h2 and after[2].label == h1,
 check(fav_index(B_ZONE, B) ~= nil and favs[fav_index(B_ZONE, B)].label == guide,
       'the row the narrowed list hides should still be listed');
 check(#favs == 3, 'narrowing should not add or drop anything, got ' .. #favs);
+
+-- Two confluxes with the same label off two different Abyssea areas: standing
+-- at one area's conflux lists that area's row and not the other's, and the
+-- command each sends is the number alone, so the zone id is the only thing
+-- telling them apart.
+do
+    local K, T2 = pick('Konschtat Highlands', 'conflux'),
+                  pick('Tahrongi Canyon', 'conflux');
+    check(K.label == T2.label,
+          'the two conflux rows should share a label, or this check proves nothing');
+    check(K.zid ~= T2.zid, 'the two conflux rows should name different zones');
+    fav_toggle('Konschtat Highlands', K);
+    fav_toggle('Tahrongi Canyon', T2);
+
+    local at_k = fav_view('conflux', K.zid);
+    check(#at_k == 1 and at_k[1].key == 'Konschtat Highlands',
+          'a conflux should list only its own zone\'s row, got ' .. #at_k);
+    check(#fav_view('conflux', 999) == 0,
+          'an Abyssea area with nothing saved for it should list nothing');
+    check(#fav_view(nil) == #favs,
+          'away from every NPC the whole list should still be shown');
+    check(warp_cmd('Konschtat Highlands', at_k[1]) == '/uw ab 1',
+          'a saved conflux should send the number alone, got '
+          .. tostring(warp_cmd('Konschtat Highlands', at_k[1])));
+    check(warp_cmd('Konschtat Highlands', at_k[1]) == warp_cmd('Konschtat Highlands', K),
+          'a saved conflux should send exactly what its row sends');
+
+    fav_toggle('Konschtat Highlands', K);
+    fav_toggle('Tahrongi Canyon', T2);
+    check(#favs == 3, 'the two conflux rows should come back off again');
+end
 
 -- The three starter favorites, and the one thing that must stay true of them:
 -- deleting one keeps it deleted.  settings.load merges the addon's defaults
