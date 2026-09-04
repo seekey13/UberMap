@@ -566,11 +566,11 @@ end
 local function fill_defaults()
     cfg.toggle = cfg.toggle or T{};
     cfg.favs   = cfg.favs   or T{};
-    -- Six rows to start with, one per kind of warp NPC, so the widget has
-    -- something to show at the first one a new character walks up to.  Seeded
-    -- here rather than from default_settings, which merge would push back into
-    -- a list they had been deleted from on every load; done once and
-    -- remembered, so deleting them sticks.  Saved on the spot, because the
+    -- A row per kind of warp NPC to start with, then every conflux, so the
+    -- widget has something to show at the first one a new character walks up
+    -- to.  Seeded here rather than from default_settings, which merge would
+    -- push back into a list they had been deleted from on every load; done once
+    -- and remembered, so deleting them sticks.  Saved on the spot, because the
     -- merge's own save has already been and gone by the time this runs and
     -- nothing else here is guaranteed to write the file again.
     if (cfg.seeded ~= true) then
@@ -586,6 +586,28 @@ local function fill_defaults()
                 { key = 'La Theine Plateau',   type = 'abyssea', label = 'Abyssea - La Theine' },
                 { key = 'Tahrongi Canyon',     type = 'abyssea', label = 'Abyssea - Tahrongi' },
             };
+            -- All eight confluxes of all three areas, in the order the popups
+            -- list them.  Written out here rather than read off WARPS: this
+            -- runs once at the top of the file, before load_warps has been near
+            -- lib/warps.lua, so there would be nothing to read.
+            --
+            -- The two halves of a pair name different zones on purpose.  The
+            -- string is the Vana'diel marker the rows hang off, which is where
+            -- the Cavernous Maw stands; the number is the Abyssea area on the
+            -- far side of it, which is where the confluxes stand and so what
+            -- GetMemberZone reads while one is in reach.  Konschtat Highlands
+            -- is zone 108 and Abyssea - Konschtat is 15: it is the second of
+            -- those that belongs here.  test_favs.lua checks the pairs against
+            -- the real rows.
+            for _, z in ipairs({ { 'Konschtat Highlands', 15  },  -- Abyssea - Konschtat
+                                 { 'La Theine Plateau',   132 },  -- Abyssea - La Theine
+                                 { 'Tahrongi Canyon',     45  } }) do  -- Abyssea - Tahrongi
+                for n = 1, 8 do
+                    seeds[#seeds + 1] = { key = z[1], type = 'conflux',
+                                          label = ('Conflux #%d'):fmt(n),
+                                          zid = z[2] };
+                end
+            end
             for _, f in ipairs(seeds) do
                 table.insert(cfg.favs, f);
             end

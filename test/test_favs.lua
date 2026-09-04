@@ -253,7 +253,7 @@ do
     check(#favs == 3, 'the two conflux rows should come back off again');
 end
 
--- The three starter favorites, and the one thing that must stay true of them:
+-- The starter favorites, and the one thing that must stay true of them:
 -- deleting one keeps it deleted.  settings.load merges the addon's defaults
 -- into the saved file and recurses into tables, so a starter row left sitting
 -- in default_settings is refilled by index on every load -- and the library
@@ -276,12 +276,38 @@ do
         return self;
     end
 
+    -- The real seed list, so the conflux rows it writes can be checked against
+    -- lib/warps.lua below: ubermap.lua spells the zone ids out here rather than
+    -- reading them off WARPS, since fill_defaults runs before load_warps has
+    -- opened the file, and a pair typed wrong there is a favorite that never
+    -- goes live anywhere.
+    -- Marker, then the Abyssea area behind its maw -- not the marker's own
+    -- zone, which is 108, 102 and 117 and is never what a conflux is stood in.
+    local FLUX_ZONE = { { 'Konschtat Highlands', 15  },  -- Abyssea - Konschtat
+                        { 'La Theine Plateau',   132 },  -- Abyssea - La Theine
+                        { 'Tahrongi Canyon',     45  } };  -- Abyssea - Tahrongi
+
     local function seed(cfg)
         if (cfg.seeded ~= true) then
             cfg.seeded = true;
             if (#cfg.favs == 0) then
-                for i = 1, 6 do
-                    table.insert(cfg.favs, { key = 'seed' .. i });
+                local seeds = {
+                    { key = 'Rolanberry Fields',   type = 'unity',   label = 'Unity Concord' },
+                    { key = "Ru'Lude Gardens",     type = 'guide',   label = 'Survival Guide' },
+                    { key = 'Lower Jeuno',         type = 'home',    label = 'Home Point #2 (M)' },
+                    { key = 'Konschtat Highlands', type = 'abyssea', label = 'Abyssea - Konschtat' },
+                    { key = 'La Theine Plateau',   type = 'abyssea', label = 'Abyssea - La Theine' },
+                    { key = 'Tahrongi Canyon',     type = 'abyssea', label = 'Abyssea - Tahrongi' },
+                };
+                for _, z in ipairs(FLUX_ZONE) do
+                    for n = 1, 8 do
+                        seeds[#seeds + 1] = { key = z[1], type = 'conflux',
+                                              label = string.format('Conflux #%d', n),
+                                              zid = z[2] };
+                    end
+                end
+                for _, f in ipairs(seeds) do
+                    table.insert(cfg.favs, f);
                 end
             end
         end
@@ -294,7 +320,41 @@ do
     end
 
     local fresh = load({});
-    check(#fresh.favs == 6, 'a new character should start with six favorites');
+    check(#fresh.favs == 30,
+          'a new character should start with six warps and 24 confluxes, got '
+          .. #fresh.favs);
+
+    -- Every seeded conflux is a row that really exists, under the zone id the
+    -- data gives it: a seed that agreed with nothing in lib/warps.lua would be
+    -- a favorite drawn with no grid reference that fav_view never lists.
+    local seeded_flux = 0;
+    for _, f in ipairs(fresh.favs) do
+        if (f.type == 'conflux') then
+            local row;
+            for _, r in ipairs(WARPS[f.key] or {}) do
+                if (r.type == 'conflux' and r.label == f.label) then row = r; end
+            end
+            check(row ~= nil,
+                  ('a seeded conflux should be a real row: %s - %s'):format(f.key, f.label));
+            check(row ~= nil and row.zid == f.zid,
+                  ('a seeded conflux should carry its row\'s zone id: %s - %s'):format(
+                      f.key, f.label));
+            seeded_flux = seeded_flux + 1;
+        end
+    end
+    check(seeded_flux == 24, 'all 24 confluxes should be seeded, got ' .. seeded_flux);
+
+    -- And the pairs the seed spells out are the ones the data holds, so a zone
+    -- id typed wrong in ubermap.lua fails here rather than in game.
+    for _, z in ipairs(FLUX_ZONE) do
+        local row;
+        for _, r in ipairs(assert(WARPS[z[1]], z[1] .. ' is not in lib/warps.lua')) do
+            if (r.type == 'conflux') then row = r; end
+        end
+        check(row ~= nil and row.zid == z[2],
+              ('%s should be zone %d, data says %s'):format(
+                  z[1], z[2], tostring(row and row.zid)));
+    end
 
     -- Emptied on purpose and loaded again: the marker is already in the file,
     -- so nothing is put back.  This is the case the old defaults got wrong.
@@ -309,7 +369,7 @@ do
     check(#emptied.favs == 0,
           'an emptied list should stay empty however often it is loaded');
 
-    -- A list with rows of its own is not topped back up to three either.
+    -- A list with rows of its own is not topped back up either.
     local kept = { favs = { { key = 'mine' } }, seeded = true };
     check(#load(kept).favs == 1 and kept.favs[1].key == 'mine',
           'a saved list should come back exactly as it was saved');
