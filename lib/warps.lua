@@ -244,7 +244,7 @@ return {
     ["Konschtat Highlands"] = {
         { type = 'guide',   label = 'Survival Guide',      pos = '(G-3)' },
         { type = 'unity',   label = 'Unity Concord',       pos = '(G-7)' },
-        { type = 'abyssea', label = 'Abyssea Maw', pos = '(I-12)' },
+        { type = 'abyssea', label = 'Abyssea - Konschtat', pos = '(I-12)' },
         -- Inside Abyssea - Konschtat, zone 15 -- not Konschtat Highlands, 108.
         { type = 'conflux', label = 'Conflux #1', pos = '(I-13)', zid = 15 },
         { type = 'conflux', label = 'Conflux #2', pos = '(G-10)', zid = 15 },
@@ -264,7 +264,7 @@ return {
     ["La Theine Plateau"] = {
         { type = 'guide',   label = 'Survival Guide',      pos = '(M-8)' },
         { type = 'unity',   label = 'Unity Concord',       pos = '(H-8)' },
-        { type = 'abyssea', label = 'Abyssea Maw', pos = '(E-4)' },
+        { type = 'abyssea', label = 'Abyssea - La Theine', pos = '(E-4)' },
         -- Inside Abyssea - La Theine, zone 132 -- not La Theine Plateau, 102.
         { type = 'conflux', label = 'Conflux #1', pos = '(E-3)',  zid = 132 },
         { type = 'conflux', label = 'Conflux #2', pos = '(D-7)',  zid = 132 },
@@ -473,7 +473,7 @@ return {
     ["Tahrongi Canyon"] = {
         { type = 'guide',   label = 'Survival Guide',     pos = '(G-4)' },
         { type = 'unity',   label = 'Unity Concord',      pos = '(J-8)' },
-        { type = 'abyssea', label = 'Abyssea Maw', pos = '(H-12)' },
+        { type = 'abyssea', label = 'Abyssea - Tahrongi', pos = '(H-12)' },
         -- Inside Abyssea - Tahrongi, zone 45 -- not Tahrongi Canyon, 117.
         { type = 'conflux', label = 'Conflux #1', pos = '(H-12)', zid = 45 },
         { type = 'conflux', label = 'Conflux #2', pos = '(H-9)',  zid = 45 },

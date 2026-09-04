@@ -324,22 +324,24 @@ do
           'a new character should start with six warps and 24 confluxes, got '
           .. #fresh.favs);
 
-    -- Every seeded conflux is a row that really exists, under the zone id the
-    -- data gives it: a seed that agreed with nothing in lib/warps.lua would be
-    -- a favorite drawn with no grid reference that fav_view never lists.
+    -- Every seeded conflux and Abyssea maw is a row that really exists, under
+    -- the zone id the data gives it: a seed that agreed with nothing in
+    -- lib/warps.lua would be a favorite with no grid reference, a map row that
+    -- never draws green, and a right-click that duplicates instead of removing.
+    -- The maws are checked too because they are the pair that drifted apart.
     local seeded_flux = 0;
     for _, f in ipairs(fresh.favs) do
-        if (f.type == 'conflux') then
+        if (f.type == 'conflux' or f.type == 'abyssea') then
             local row;
             for _, r in ipairs(WARPS[f.key] or {}) do
-                if (r.type == 'conflux' and r.label == f.label) then row = r; end
+                if (r.type == f.type and r.label == f.label) then row = r; end
             end
             check(row ~= nil,
-                  ('a seeded conflux should be a real row: %s - %s'):format(f.key, f.label));
+                  ('a seeded %s should be a real row: %s - %s'):format(f.type, f.key, f.label));
             check(row ~= nil and row.zid == f.zid,
-                  ('a seeded conflux should carry its row\'s zone id: %s - %s'):format(
-                      f.key, f.label));
-            seeded_flux = seeded_flux + 1;
+                  ('a seeded %s should carry its row\'s zone id: %s - %s'):format(
+                      f.type, f.key, f.label));
+            if (f.type == 'conflux') then seeded_flux = seeded_flux + 1; end
         end
     end
     check(seeded_flux == 24, 'all 24 confluxes should be seeded, got ' .. seeded_flux);

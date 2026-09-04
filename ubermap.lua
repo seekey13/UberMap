@@ -1637,7 +1637,7 @@ local function warp_alias(label, row)
     -- A conflux is filed under its number alone, since the zone it travels
     -- inside is the one the player is already standing in: '/uw ab 3'.
     if (row.type == 'conflux') then
-        return row.label:match('#(%d+)') or '';
+        return row.label:match('#(%d+)');
     end
     -- The Campaign zones are named '[S]' throughout, the way Uberwarp spells
     -- them; a favorite saved under the old '(S)' was renamed on the way in.
@@ -1653,7 +1653,15 @@ local function warp_cmd(label, row)
     if (kind == nil) then
         return nil;
     end
-    return ('/uw %s %s'):fmt(kind, warp_alias(label, row));
+    -- Rows out of lib/warps.lua are checked by test_warps, but a favorite is
+    -- read back off the settings file, which is hand-editable: a conflux label
+    -- with no number left in it would build a bare '/uw ab ' that reads as a
+    -- command and is not one.  No destination, no command.
+    local dest = warp_alias(label, row);
+    if (dest == nil) then
+        return nil;
+    end
+    return ('/uw %s %s'):fmt(kind, dest);
 end
 
 --[[

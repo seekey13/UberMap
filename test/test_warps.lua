@@ -108,13 +108,14 @@ for zone, list in pairs(data) do
         assert(homes[n], ('%s: Home Point numbering has a gap at #%d'):format(zone, n));
     end
 
-    -- A zone lists all eight confluxes or none: the set is what an Abyssea
-    -- area has, and a short one is a merge that dropped rows rather than a
-    -- place with fewer of them.
+    -- A zone lists a whole Abyssea area's confluxes or none: a short set is a
+    -- merge that dropped rows rather than a place with fewer of them.  The
+    -- three areas listed here hold eight each; Attohwa, Misareaux and Vunkerl
+    -- hold nine, so the count is not what should discover them.
     count = 0;
     for _ in pairs(fluxes) do count = count + 1; end
-    assert(count == 0 or count == 8,
-           ('%s: %d conflux rows, expected 0 or 8'):format(zone, count));
+    assert(count == 0 or count == 8 or count == 9,
+           ('%s: %d conflux rows, expected 0, 8 or 9'):format(zone, count));
     for n = 1, count do
         assert(fluxes[n], ('%s: Conflux numbering has a gap at #%d'):format(zone, n));
     end
