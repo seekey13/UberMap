@@ -79,11 +79,12 @@ local WARP_NPC = T{
     { '^Urbiolaine$',       'unity'   },  -- Southern San d'Oria (G-10)
     { '^Teldro%-Kesdrodo$', 'unity'   },  -- Windurst Woods (J-10)
     { '^Yonolala$',         'unity'   },  -- Windurst Woods (J-10)
-    { '^Joachim$',          'abyssea' },  -- Port Jeuno (H-8)
-    { '^Erich$',            'abyssea' },  -- Port Bastok (K-11)
-    { '^Fabricius$',        'abyssea' },  -- Port Windurst (L-6)
-    { '^Gilburt$',          'abyssea' },  -- Port San d'Oria (I-8)
-    { '^Fabien$',           'abyssea' },  -- Ru'Lude Gardens (H-10)
+    { '^Ivan$',             'abyssea' },  -- Port San d'Oria
+    { '^Ernst$',            'abyssea' },  -- Port Bastok
+    { '^Willis$',           'abyssea' },  -- Port Windurst
+    { '^Kierron$',          'abyssea' },  -- Heavens Tower
+    { '^Vincent$',          'abyssea' },  -- Ru'Lude Gardens
+    { '^Horst$',            'abyssea' },  -- Port Jeuno
     -- The eight confluxes of an Abyssea area are all named 'Veridical Conflux',
     -- numbered or not depending on the server, so one prefix covers the lot.
     -- Which of the eight is being stood at does not matter: a conflux travels
@@ -265,7 +266,7 @@ local TOGGLES      = T{ 'Crystal.png', 'Guide.png', 'Unity.png', 'Abyssea.png',
 local TOGGLE_NAME  = T{ ['Crystal.png'] = 'Home Points',
                         ['Guide.png']   = 'Survival Guides',
                         ['Unity.png']   = 'Unity Concords',
-                        ['Abyssea.png']     = 'Abyssea Warps',
+                        ['Abyssea.png'] = 'Abyssea Warps',
                         ['Conflux.png'] = 'Abyssea Confluxes' };
 local TOGGLE_GAP   = 6;   -- screen pixels between toggles
 

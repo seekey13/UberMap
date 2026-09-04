@@ -28,7 +28,7 @@ The **Past**/**Present** switch at the head of the toolbar swaps between the two
 
 Left-click a zone point — for a panel of that zone's destinations. Clicking a row sends a Uberwarp command and closes the panel:
 
-**Abyssea** rows sit on the zone whose Cavernous Maw leads there, at the maw itself — **Konschtat Highlands** (I-12), **La Theine Plateau** (E-4) and **Tahrongi Canyon** (H-12). Each sends `/uw aw <zone>`, naming the Vana'diel zone Uberwarp files the destination under rather than the Abyssea area, e.g. `/uw aw Konschtat Highlands`. The command is taken at a teleporter, so a row goes live when you stand at Joachim in Port Jeuno (H-8), Erich in Port Bastok (K-11), Fabricius in Port Windurst (L-6), Gilburt in Port San d'Oria (I-8) or Fabien in Ru'Lude Gardens (H-10).
+**Abyssea** rows sit on the zone whose Cavernous Maw leads there, at the maw itself — **Konschtat Highlands** (I-12), **La Theine Plateau** (E-4) and **Tahrongi Canyon** (H-12). Each sends `/uw aw <zone>`, naming the Vana'diel zone Uberwarp files the destination under rather than the Abyssea area, e.g. `/uw aw Konschtat Highlands`. The command is taken at a teleporter, so a row goes live when you stand at Ivan in Port San d'Oria, Ernst in Port Bastok, Willis in Port Windurst, Kierron in Heavens Tower, Vincent in Ru'Lude Gardens or Horst in Port Jeuno.
 
 **Conflux** rows sit on those same three zones, eight to a set, and send `/uw ab <number>` — the number alone, because a Veridical Conflux only ever travels to the other seven standing in the same Abyssea area. Their grid references are places inside that area rather than on the map you clicked, so they read as a directory of where the eight are:
 
@@ -59,7 +59,7 @@ A conflux row goes live only when you are stood at a **Veridical Conflux** *and*
 | Icon | Where | Does |
 | --- | --- | --- |
 | **Search** | After the past/present switch | Type to fade back every marker whose name does not match, and frame what is left: the view zooms to fit the matching zones on every keystroke. Spelling is forgiven once nothing on the map is spelled the way you typed it, so `juno` and `windhurst` still land where they were meant to -- but `norg` finds Norg rather than every Nor- zone near it.  Clearing search pulls the view back out to the whole map. |
-| **Crystal**, **Guide**, **Unity**, **Maw**, **Conflux** | Right of search | Dim one to drop that kind of row. A zone with nothing left opens no panel |
+| **Crystal**, **Guide**, **Unity**, **Abyssea**, **Conflux** | Right of search | Dim one to drop that kind of row. A zone with nothing left opens no panel |
 | **Warp** | After them | `/item "Instant Warp" <me>` and closes the map. Lit only while the scroll (4181) is carried |
 | **Warp Ring** | After that | Two steps, see below |
 | **Multisend** | Bottom right | Prefixes every command the map sends with `/mss ` |
@@ -177,7 +177,7 @@ A key the map takes is kept from the game outright, for as long as it is held, s
 
 Stand at a warp NPC and the map narrows to it: only that kind of row stays lit, since it is the only one you can travel on from there. Walk away and they all light again. Your own clicks are not overridden — a toggle you set by hand stands until you move to a different kind of NPC.
 
-A dimmed filter reaches the map itself: a zone marker with no row left fades back the way an unfocused group does and stops taking the cursor. Dim **Guide**, **Unity**, **Maw** and **Conflux** and only Home Point zones stay lit.
+A dimmed filter reaches the map itself: a zone marker with no row left fades back the way an unfocused group does and stops taking the cursor. Dim **Guide**, **Unity**, **Abyssea** and **Conflux** and only Home Point zones stay lit.
 
 The Multisend gate, your favorites, the five toggles and everything on the config panel are saved per character in `config/addons/UberMap/<name>_<server id>/settings.lua` the moment you change one.
 
