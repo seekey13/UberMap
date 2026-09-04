@@ -27,7 +27,8 @@ local function fav_toggle(key, row)
         table.remove(favs, i);
     else
         table.insert(favs, { key = key, type = row.type,
-                             label = row.label, zone = row.zone });
+                             label = row.label, zone = row.zone,
+                             zid = row.zid });
     end
 end
 
@@ -46,13 +47,17 @@ local function fav_pos(f)
     return nil;
 end
 
-local UW_TYPE = { home = 'hp', guide = 'sg', unity = 'uc' };
+local UW_TYPE = { home = 'hp', guide = 'sg', unity = 'uc', abyssea = 'aw',
+                  conflux = 'ab' };
 
 -- ('%s'):fmt is Ashita's string extension, which plain Lua does not have.
 local function warp_cmd(label, row)
     local kind = UW_TYPE[row.type];
     if (kind == nil) then
         return nil;
+    end
+    if (row.type == 'conflux') then
+        return string.format('/uw %s %s', kind, row.label:match('#(%d+)') or '');
     end
     local zone = (row.zone or label):gsub('%(S%)$', '[S]');
     local n = (row.type == 'home') and row.label:match('^Home Point #(%d+)') or nil;
@@ -155,11 +160,13 @@ check(warp_cmd(A_ZONE, favs[fav_index(A_ZONE, A)]) == warp_cmd(A_ZONE, A),
       'a favorite should send exactly what its row sends');
 
 -- Settings round trip: the library writes tables out key by key and reads them
--- back as plain data, so an entry has to hold only strings.  A row field it
--- cannot serialize would be lost on the next login.
+-- back as plain data, so an entry has to hold only scalars -- strings, or the
+-- numbers it writes back with '%.17g', which is how a conflux row's zone id
+-- travels.  A row field it cannot serialize would be lost on the next login.
 for _, f in ipairs(favs) do
     for k, v in pairs(f) do
-        check(type(k) == 'string' and type(v) == 'string',
+        check(type(k) == 'string'
+              and (type(v) == 'string' or type(v) == 'number'),
               ('favorite field %s is a %s, which will not survive settings')
               :format(tostring(k), type(v)));
     end
@@ -168,14 +175,16 @@ end
 -- The list as the panel and the widget draw it: narrowed to the type of warp
 -- NPC in reach, whole when there is none, since a Survival Guide cannot send a
 -- Home Point row and a row that cannot be pressed should not be listed.
+-- A conflux row is narrowed on its zone as well, since every Abyssea area has
+-- its own Conflux #3 and only the one the player stands in is reachable.
 -- Mirrors fav_view in ubermap.lua.
-local function fav_view(near_kind)
+local function fav_view(near_kind, near_zid)
     if (not near_kind) then
         return favs, nil;
     end
     local view, raw = {}, {};
     for i, f in ipairs(favs) do
-        if (f.type == near_kind) then
+        if (f.type == near_kind and (f.zid == nil or f.zid == near_zid)) then
             view[#view + 1] = f;
             raw[#raw + 1]   = i;
         end
@@ -213,7 +222,38 @@ check(fav_index(B_ZONE, B) ~= nil and favs[fav_index(B_ZONE, B)].label == guide,
       'the row the narrowed list hides should still be listed');
 check(#favs == 3, 'narrowing should not add or drop anything, got ' .. #favs);
 
--- The three starter favorites, and the one thing that must stay true of them:
+-- Two confluxes with the same label off two different Abyssea areas: standing
+-- at one area's conflux lists that area's row and not the other's, and the
+-- command each sends is the number alone, so the zone id is the only thing
+-- telling them apart.
+do
+    local K, T2 = pick('Konschtat Highlands', 'conflux'),
+                  pick('Tahrongi Canyon', 'conflux');
+    check(K.label == T2.label,
+          'the two conflux rows should share a label, or this check proves nothing');
+    check(K.zid ~= T2.zid, 'the two conflux rows should name different zones');
+    fav_toggle('Konschtat Highlands', K);
+    fav_toggle('Tahrongi Canyon', T2);
+
+    local at_k = fav_view('conflux', K.zid);
+    check(#at_k == 1 and at_k[1].key == 'Konschtat Highlands',
+          'a conflux should list only its own zone\'s row, got ' .. #at_k);
+    check(#fav_view('conflux', 999) == 0,
+          'an Abyssea area with nothing saved for it should list nothing');
+    check(#fav_view(nil) == #favs,
+          'away from every NPC the whole list should still be shown');
+    check(warp_cmd('Konschtat Highlands', at_k[1]) == '/uw ab 1',
+          'a saved conflux should send the number alone, got '
+          .. tostring(warp_cmd('Konschtat Highlands', at_k[1])));
+    check(warp_cmd('Konschtat Highlands', at_k[1]) == warp_cmd('Konschtat Highlands', K),
+          'a saved conflux should send exactly what its row sends');
+
+    fav_toggle('Konschtat Highlands', K);
+    fav_toggle('Tahrongi Canyon', T2);
+    check(#favs == 3, 'the two conflux rows should come back off again');
+end
+
+-- The starter favorites, and the one thing that must stay true of them:
 -- deleting one keeps it deleted.  settings.load merges the addon's defaults
 -- into the saved file and recurses into tables, so a starter row left sitting
 -- in default_settings is refilled by index on every load -- and the library
@@ -236,12 +276,38 @@ do
         return self;
     end
 
+    -- The real seed list, so the conflux rows it writes can be checked against
+    -- lib/warps.lua below: ubermap.lua spells the zone ids out here rather than
+    -- reading them off WARPS, since fill_defaults runs before load_warps has
+    -- opened the file, and a pair typed wrong there is a favorite that never
+    -- goes live anywhere.
+    -- Marker, then the Abyssea area behind its maw -- not the marker's own
+    -- zone, which is 108, 102 and 117 and is never what a conflux is stood in.
+    local FLUX_ZONE = { { 'Konschtat Highlands', 15  },  -- Abyssea - Konschtat
+                        { 'La Theine Plateau',   132 },  -- Abyssea - La Theine
+                        { 'Tahrongi Canyon',     45  } };  -- Abyssea - Tahrongi
+
     local function seed(cfg)
         if (cfg.seeded ~= true) then
             cfg.seeded = true;
             if (#cfg.favs == 0) then
-                for i = 1, 3 do
-                    table.insert(cfg.favs, { key = 'seed' .. i });
+                local seeds = {
+                    { key = 'Rolanberry Fields',   type = 'unity',   label = 'Unity Concord' },
+                    { key = "Ru'Lude Gardens",     type = 'guide',   label = 'Survival Guide' },
+                    { key = 'Lower Jeuno',         type = 'home',    label = 'Home Point #2 (M)' },
+                    { key = 'Konschtat Highlands', type = 'abyssea', label = 'Abyssea - Konschtat' },
+                    { key = 'La Theine Plateau',   type = 'abyssea', label = 'Abyssea - La Theine' },
+                    { key = 'Tahrongi Canyon',     type = 'abyssea', label = 'Abyssea - Tahrongi' },
+                };
+                for _, z in ipairs(FLUX_ZONE) do
+                    for n = 1, 8 do
+                        seeds[#seeds + 1] = { key = z[1], type = 'conflux',
+                                              label = string.format('Conflux #%d', n),
+                                              zid = z[2] };
+                    end
+                end
+                for _, f in ipairs(seeds) do
+                    table.insert(cfg.favs, f);
                 end
             end
         end
@@ -254,7 +320,43 @@ do
     end
 
     local fresh = load({});
-    check(#fresh.favs == 3, 'a new character should start with three favorites');
+    check(#fresh.favs == 30,
+          'a new character should start with six warps and 24 confluxes, got '
+          .. #fresh.favs);
+
+    -- Every seeded conflux and Abyssea maw is a row that really exists, under
+    -- the zone id the data gives it: a seed that agreed with nothing in
+    -- lib/warps.lua would be a favorite with no grid reference, a map row that
+    -- never draws green, and a right-click that duplicates instead of removing.
+    -- The maws are checked too because they are the pair that drifted apart.
+    local seeded_flux = 0;
+    for _, f in ipairs(fresh.favs) do
+        if (f.type == 'conflux' or f.type == 'abyssea') then
+            local row;
+            for _, r in ipairs(WARPS[f.key] or {}) do
+                if (r.type == f.type and r.label == f.label) then row = r; end
+            end
+            check(row ~= nil,
+                  ('a seeded %s should be a real row: %s - %s'):format(f.type, f.key, f.label));
+            check(row ~= nil and row.zid == f.zid,
+                  ('a seeded %s should carry its row\'s zone id: %s - %s'):format(
+                      f.type, f.key, f.label));
+            if (f.type == 'conflux') then seeded_flux = seeded_flux + 1; end
+        end
+    end
+    check(seeded_flux == 24, 'all 24 confluxes should be seeded, got ' .. seeded_flux);
+
+    -- And the pairs the seed spells out are the ones the data holds, so a zone
+    -- id typed wrong in ubermap.lua fails here rather than in game.
+    for _, z in ipairs(FLUX_ZONE) do
+        local row;
+        for _, r in ipairs(assert(WARPS[z[1]], z[1] .. ' is not in lib/warps.lua')) do
+            if (r.type == 'conflux') then row = r; end
+        end
+        check(row ~= nil and row.zid == z[2],
+              ('%s should be zone %d, data says %s'):format(
+                  z[1], z[2], tostring(row and row.zid)));
+    end
 
     -- Emptied on purpose and loaded again: the marker is already in the file,
     -- so nothing is put back.  This is the case the old defaults got wrong.
@@ -269,7 +371,7 @@ do
     check(#emptied.favs == 0,
           'an emptied list should stay empty however often it is loaded');
 
-    -- A list with rows of its own is not topped back up to three either.
+    -- A list with rows of its own is not topped back up either.
     local kept = { favs = { { key = 'mine' } }, seeded = true };
     check(#load(kept).favs == 1 and kept.favs[1].key == 'mine',
           'a saved list should come back exactly as it was saved');

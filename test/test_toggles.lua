@@ -7,7 +7,8 @@
 *     lua test/test_toggles.lua
 --]]
 
-local WARP_ICON = { home = 'Crystal.png', guide = 'Guide.png', unity = 'Unity.png' };
+local WARP_ICON = { home = 'Crystal.png', guide = 'Guide.png', unity = 'Unity.png',
+                    abyssea = 'Abyssea.png', conflux = 'Conflux.png' };
 
 local WARPS  = assert(loadfile('lib/warps.lua'))();
 local POINTS = assert(loadfile('lib/points.lua'))();
@@ -59,27 +60,45 @@ local total = #POINTS.points;
 assert(not warps_filtered(), 'no toggle dimmed must not read as filtered');
 assert(lit() == total, 'an unfiltered map must leave every marker lit');
 
--- Maw.png names no type, so dimming it filters nothing.
-toggle['Maw.png'] = true;
-assert(not warps_filtered(), 'Maw.png must not filter the map');
-assert(lit() == total, 'dimming Maw.png must leave every marker lit');
-toggle['Maw.png'] = nil;
+-- Counts the markers whose zone carries a row of one type, checking as it goes
+-- that those are exactly the ones the filter leaves lit.
+local function only(kind)
+    local n = 0;
+    for _, ic in ipairs(POINTS.points) do
+        local has = false;
+        for _, w in ipairs(WARPS[ic.label] or {}) do
+            has = has or w.type == kind;
+        end
+        assert(point_lit(ic.label) == has,
+               ('%s: lit %s with a %s row %s'):format(
+                   ic.label, tostring(point_lit(ic.label)), kind, tostring(has)));
+        n = n + (has and 1 or 0);
+    end
+    return n;
+end
+
+-- Abyssea warps only: the three zones holding a Cavernous Maw, and only those
+-- -- which is also what catches a zone key that names no marker.
+toggle['Crystal.png'], toggle['Guide.png'], toggle['Unity.png'] = true, true, true;
+toggle['Conflux.png'] = true;
+assert(warps_filtered(), 'a dimmed warp toggle must read as filtered');
+assert(only('abyssea') == 3, 'three zones must carry a Cavernous Maw');
+toggle['Crystal.png'], toggle['Guide.png'], toggle['Unity.png'] = nil, nil, nil;
+toggle['Conflux.png'] = nil;
+
+-- Confluxes only: the same three markers, since the eight of a set hang off the
+-- Vana'diel zone whose maw leads to the Abyssea area they stand in.
+toggle['Crystal.png'], toggle['Guide.png'], toggle['Unity.png'] = true, true, true;
+toggle['Abyssea.png'] = true;
+assert(only('conflux') == 3, 'three zones must carry a set of confluxes');
+toggle['Crystal.png'], toggle['Guide.png'], toggle['Unity.png'] = nil, nil, nil;
+toggle['Abyssea.png'] = nil;
 
 -- Home Points only: every marker left lit has one, and every zone with one is
 -- left lit.
-toggle['Guide.png'], toggle['Unity.png'] = true, true;
-assert(warps_filtered(), 'a dimmed warp toggle must read as filtered');
-local homes = 0;
-for _, ic in ipairs(POINTS.points) do
-    local has = false;
-    for _, w in ipairs(WARPS[ic.label] or {}) do
-        has = has or w.type == 'home';
-    end
-    assert(point_lit(ic.label) == has,
-           ('%s: lit %s with a Home Point %s'):format(
-               ic.label, tostring(point_lit(ic.label)), tostring(has)));
-    homes = homes + (has and 1 or 0);
-end
+toggle['Guide.png'], toggle['Unity.png'], toggle['Abyssea.png'] = true, true, true;
+toggle['Conflux.png'] = true;
+local homes = only('home');
 assert(homes > 0 and homes < total, 'the Home Point filter must cut something');
 print(('Home Points only: %d of %d markers lit'):format(homes, total));
 
@@ -88,7 +107,9 @@ toggle['Crystal.png'] = true;
 assert(lit() == 0, 'dimming every toggle must fade back every zone marker');
 
 -- ...and lighting them all again puts the map back.
-toggle['Crystal.png'], toggle['Guide.png'], toggle['Unity.png'] = nil, nil, nil;
+toggle['Crystal.png'], toggle['Guide.png'] = nil, nil;
+toggle['Unity.png'],   toggle['Abyssea.png']   = nil, nil;
+toggle['Conflux.png'] = nil;
 assert(lit() == total, 'relighting every toggle must restore the map');
 
 print(('ok: %d zone markers, %d warp zones'):format(total, (function()
@@ -154,7 +175,8 @@ end
 
 -- Home Points only: a group marker is lit exactly when one of its zones has a
 -- Home Point, or when no zone carries it at all.
-toggle['Guide.png'], toggle['Unity.png'] = true, true;
+toggle['Guide.png'], toggle['Unity.png'], toggle['Abyssea.png'] = true, true, true;
+toggle['Conflux.png'] = true;
 local dimmed = 0;
 for _, ic in ipairs(overview) do
     local has, any = false, false;
@@ -185,6 +207,8 @@ for _, ic in ipairs(overview) do
     assert(group_warps_lit(ic.label) == (not any),
            ('%s: dimming every toggle must fade back a group with zones'):format(ic.label));
 end
-toggle['Crystal.png'], toggle['Guide.png'], toggle['Unity.png'] = nil, nil, nil;
+toggle['Crystal.png'], toggle['Guide.png'] = nil, nil;
+toggle['Unity.png'],   toggle['Abyssea.png']   = nil, nil;
+toggle['Conflux.png'] = nil;
 
 print(('ok: %d group markers on the %s map'):format(#overview, time));

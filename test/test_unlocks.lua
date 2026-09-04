@@ -191,7 +191,8 @@ else
     local checked = 0;
     for zone, list in pairs(warps) do
         for _, row in ipairs(list) do
-            -- Unity Concords are not in this data and are never gated.
+            -- Unity Concords and Abyssea warps carry no region here, so they
+            -- are never gated.
             if (listed[row.type] ~= nil) then
                 -- warp_alias in ubermap.lua, spelled the same way.
                 local n = (row.type == 'home')

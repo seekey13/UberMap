@@ -16,7 +16,7 @@
 
 addon.name    = 'UberMap';
 addon.author  = 'Seekey';
-addon.version = '1.2';
+addon.version = '1.3';
 addon.desc    = 'Displays the server map, automatically on Home Point interaction.';
 
 require('common');
@@ -69,15 +69,28 @@ local TEX_W, TEX_H = 4096, 2048;
 
 -- The NPCs a warp starts from, as a name pattern and the warp type it begins.
 -- Home Point entities are named 'Home Point #1', 'Home Point #2' and so on,
--- and Survival Guides carry their own name; the Unity Concord is a person, so
--- those are named one by one.  A server that renames them is fixed here.
+-- and Survival Guides carry their own name; the Unity Concord and the Abyssea
+-- teleporters are people, so those are named one by one.  A server that renames
+-- them is fixed here.
 local WARP_NPC = T{
-    { '^Home Point',        'home'  },
-    { '^Survival Guide',    'guide' },
-    { '^Igsli$',            'unity' },  -- Bastok Markets (E-11)
-    { '^Urbiolaine$',       'unity' },  -- Southern San d'Oria (G-10)
-    { '^Teldro%-Kesdrodo$', 'unity' },  -- Windurst Woods (J-10)
-    { '^Yonolala$',         'unity' },  -- Windurst Woods (J-10)
+    { '^Home Point',        'home'    },
+    { '^Survival Guide',    'guide'   },
+    { '^Igsli$',            'unity'   },  -- Bastok Markets (E-11)
+    { '^Urbiolaine$',       'unity'   },  -- Southern San d'Oria (G-10)
+    { '^Teldro%-Kesdrodo$', 'unity'   },  -- Windurst Woods (J-10)
+    { '^Yonolala$',         'unity'   },  -- Windurst Woods (J-10)
+    { '^Ivan$',             'abyssea' },  -- Port San d'Oria
+    { '^Ernst$',            'abyssea' },  -- Port Bastok
+    { '^Willis$',           'abyssea' },  -- Port Windurst
+    { '^Kierron$',          'abyssea' },  -- Heavens Tower
+    { '^Vincent$',          'abyssea' },  -- Ru'Lude Gardens
+    { '^Horst$',            'abyssea' },  -- Port Jeuno
+    -- The eight confluxes of an Abyssea area are all named 'Veridical Conflux',
+    -- numbered or not depending on the server, so one prefix covers the lot.
+    -- Which of the eight is being stood at does not matter: a conflux travels
+    -- to any other in its own zone, so the zone is the whole of the question,
+    -- and the row's own 'zid' is what answers it.
+    { '^Veridical Conflux', 'conflux' },
 };
 
 -- The NPC interaction packets, and the offset each carries the NPC's target
@@ -247,12 +260,14 @@ local SEARCH_H_MULT = 1.5;
 
 -- Layer toggles, drawn on the toolbar row.  Clicking one dims its icon;
 -- the state is kept per file name in cfg.toggle (nil = lit).
--- Maw.png is left out until maw warps are implemented.
-local TOGGLES      = T{ 'Crystal.png', 'Guide.png', 'Unity.png' };
+local TOGGLES      = T{ 'Crystal.png', 'Guide.png', 'Unity.png', 'Abyssea.png',
+                        'Conflux.png' };
 -- What each toggle is called on its tooltip, keyed the way cfg.toggle is.
 local TOGGLE_NAME  = T{ ['Crystal.png'] = 'Home Points',
                         ['Guide.png']   = 'Survival Guides',
-                        ['Unity.png']   = 'Unity Concords' };
+                        ['Unity.png']   = 'Unity Concords',
+                        ['Abyssea.png'] = 'Abyssea Warps',
+                        ['Conflux.png'] = 'Abyssea Confluxes' };
 local TOGGLE_GAP   = 6;   -- screen pixels between toggles
 
 -- What the Size box will take, in screen pixels, and what it means by "leave it
@@ -289,7 +304,8 @@ local COL_ICON_OFF = 0x40FFFFFF;  -- 25% opacity, i.e. 75% transparent
 
 -- Warp type -> the toggle that lists it, so dimming a toggle drops those rows
 -- from the popup.  A type no toggle names never shows.
-local WARP_ICON = T{ home = 'Crystal.png', guide = 'Guide.png', unity = 'Unity.png' };
+local WARP_ICON = T{ home = 'Crystal.png', guide = 'Guide.png', unity = 'Unity.png',
+                     abyssea = 'Abyssea.png', conflux = 'Conflux.png' };
 
 -- The Instant Warp scroll, drawn on the toggles' line after them.  Not a layer:
 -- it warps out of the bag rather than from an NPC, so it filters nothing and is
@@ -371,12 +387,13 @@ local FAV_NONE     = 'No favorites for this warp';
 
 -- The favorites widget: the same saved list, drawn as a small window of its own
 -- and driven from the gamepad.  It comes up only where it can be used -- stood
--- at a Home Point, Survival Guide or Unity Concord -- because it swallows the
--- buttons it reads, and the D-pad belongs to the game's own menus everywhere
--- else.  On by default, and turned off from the '/um config' panel: the
--- buttons it takes are ones the client has nothing to do with while a warp
--- menu is up.  It reads five of the seven below -- up, down, A, B and Y, which
--- swaps it for the full map -- and leaves left and right to the client.
+-- at a Home Point, Survival Guide, Unity Concord or Abyssea teleporter --
+-- because it swallows the buttons it reads, and the D-pad belongs to the
+-- game's own menus everywhere else.  On by default, and turned off from the
+-- '/um config' panel: the buttons it takes are ones the client has nothing to
+-- do with while a warp menu is up.  It reads five of the seven below -- up,
+-- down, A, B and Y, which swaps it for the full map -- and leaves left and
+-- right to the client.
 --
 -- The map reads all seven.  It takes them only while it is on screen, which is
 -- a place the player put it rather than one they walked into, so unlike the
@@ -472,10 +489,10 @@ local default_settings = T{
     -- is noise by the time it arrives; the config panel's Hide Uberwarp Chat
     -- box turns it back on when a warp is misbehaving and the reason matters.
     quiet  = true,
-    -- Whether walking up to a Home Point, Survival Guide or Unity Concord puts
-    -- the map on screen by itself.  On by default: that is what the map has
-    -- always done, and the reason it exists.  Off leaves '/um' and Y at the
-    -- favorites widget as the ways in.
+    -- Whether walking up to a warp NPC -- Home Point, Survival Guide, Unity
+    -- Concord or Abyssea teleporter -- puts the map on screen by itself.  On
+    -- by default: that is what the map has always done, and the reason it
+    -- exists.  Off leaves '/um' and Y at the favorites widget as the ways in.
     autoopen = true,
 };
 -- Loaded from a copy of the defaults, because the library hands its own default
@@ -550,21 +567,51 @@ end
 local function fill_defaults()
     cfg.toggle = cfg.toggle or T{};
     cfg.favs   = cfg.favs   or T{};
-    -- Three rows to start with, so the widget has something to show at the
-    -- first warp NPC a new character walks up to.  Seeded here rather than
-    -- from default_settings, which merge would push back into a list they had
-    -- been deleted from on every load; done once and remembered, so deleting
-    -- them sticks.  Saved on the spot, because the merge's own save has
-    -- already been and gone by the time this runs and nothing else here is
-    -- guaranteed to write the file again.
+    -- A row per kind of warp NPC to start with, then every conflux, so the
+    -- widget has something to show at the first one a new character walks up
+    -- to.  Seeded here rather than from default_settings, which merge would
+    -- push back into a list they had been deleted from on every load; done once
+    -- and remembered, so deleting them sticks.  Saved on the spot, because the
+    -- merge's own save has already been and gone by the time this runs and
+    -- nothing else here is guaranteed to write the file again.
     if (cfg.seeded ~= true) then
         cfg.seeded = true;
         if (#cfg.favs == 0) then
             -- Plain tables, the shape fav_toggle writes: a saved row is what
             -- these have to look like once they are on the list.
-            table.insert(cfg.favs, { key = 'Rolanberry Fields', type = 'unity', label = 'Unity Concord' });
-            table.insert(cfg.favs, { key = "Ru'Lude Gardens",   type = 'guide', label = 'Survival Guide' });
-            table.insert(cfg.favs, { key = 'Lower Jeuno',       type = 'home',  label = 'Home Point #2 (M)' });
+            local seeds = {
+                { key = 'Rolanberry Fields',   type = 'unity',   label = 'Unity Concord' },
+                { key = "Ru'Lude Gardens",     type = 'guide',   label = 'Survival Guide' },
+                { key = 'Lower Jeuno',         type = 'home',    label = 'Home Point #2 (M)' },
+                { key = 'Konschtat Highlands', type = 'abyssea', label = 'Abyssea - Konschtat' },
+                { key = 'La Theine Plateau',   type = 'abyssea', label = 'Abyssea - La Theine' },
+                { key = 'Tahrongi Canyon',     type = 'abyssea', label = 'Abyssea - Tahrongi' },
+            };
+            -- All eight confluxes of all three areas, in the order the popups
+            -- list them.  Written out here rather than read off WARPS: this
+            -- runs once at the top of the file, before load_warps has been near
+            -- lib/warps.lua, so there would be nothing to read.
+            --
+            -- The two halves of a pair name different zones on purpose.  The
+            -- string is the Vana'diel marker the rows hang off, which is where
+            -- the Cavernous Maw stands; the number is the Abyssea area on the
+            -- far side of it, which is where the confluxes stand and so what
+            -- GetMemberZone reads while one is in reach.  Konschtat Highlands
+            -- is zone 108 and Abyssea - Konschtat is 15: it is the second of
+            -- those that belongs here.  test_favs.lua checks the pairs against
+            -- the real rows.
+            for _, z in ipairs({ { 'Konschtat Highlands', 15  },  -- Abyssea - Konschtat
+                                 { 'La Theine Plateau',   132 },  -- Abyssea - La Theine
+                                 { 'Tahrongi Canyon',     45  } }) do  -- Abyssea - Tahrongi
+                for n = 1, 8 do
+                    seeds[#seeds + 1] = { key = z[1], type = 'conflux',
+                                          label = ('Conflux #%d'):fmt(n),
+                                          zid = z[2] };
+                end
+            end
+            for _, f in ipairs(seeds) do
+                table.insert(cfg.favs, f);
+            end
         end
         settings.save();
     end
@@ -655,6 +702,11 @@ local ui = T{
     drag_y      = 0,
     press       = nil,       -- marker the left button went down on
     near_kind   = false,     -- warp type last seen in reach; false until checked
+    -- The zone the player was last polled in, as the game's own id.  Read for
+    -- the conflux rows, which all carry the same NPC name and travel only
+    -- inside one Abyssea area, so being stood at one says nothing about which
+    -- eight are in reach; 0 is no zone, which no row's 'zid' is.
+    near_zid    = 0,
     -- The EXP Guide errand's whole state, shaped and stepped by lib/guide.lua.
     -- Kept out here rather than inside that file so the map can read
     -- errand.has_warp for the Instant Warp icon it draws.
@@ -1147,6 +1199,11 @@ local function poll_near(now)
         return;
     end
     ui.near_at = now;
+    -- Read whether or not an NPC is in reach: the zone answers a different
+    -- question from near_kind -- which of the eight confluxes a row means --
+    -- and a walk through a zone line changes it with nothing else moving.
+    local party = AshitaCore:GetMemoryManager():GetParty();
+    ui.near_zid = (party ~= nil) and party:GetMemberZone(0) or 0;
     ui.ring_bag = ring_bag();
     ui.ring     = ring_step(ui.ring_bag ~= nil, ring_worn(),
                             now - ui.ring_at < RING_EQUIP_WAIT);
@@ -1561,8 +1618,15 @@ end
 * the marker's label, except where a marker is not one zone: those rows carry a
 * 'zone' of their own.  Home Points take their number straight off the label,
 * the way the command wants it -- '/uw hp Aht Urhgan Whitegate3'.
+*
+* 'aw' and 'ab' are two different systems and read the wrong way round: 'aw' is
+* the city teleporter that puts the player into an Abyssea area, which is what
+* the map's 'abyssea' rows are, and 'ab' is the conflux-to-conflux hop inside
+* one, which is what its 'conflux' rows are.  Uberwarp's own help is the
+* authority on which is which.
 --]]
-local UW_TYPE = T{ home = 'hp', guide = 'sg', unity = 'uc' };
+local UW_TYPE = T{ home = 'hp', guide = 'sg', unity = 'uc', abyssea = 'aw',
+                   conflux = 'ab' };
 
 --[[
 * The destination half of that line, which is also the name Uberwarp files its
@@ -1570,6 +1634,11 @@ local UW_TYPE = T{ home = 'hp', guide = 'sg', unity = 'uc' };
 * string the command for it would carry.
 --]]
 local function warp_alias(label, row)
+    -- A conflux is filed under its number alone, since the zone it travels
+    -- inside is the one the player is already standing in: '/uw ab 3'.
+    if (row.type == 'conflux') then
+        return row.label:match('#(%d+)');
+    end
     -- The Campaign zones are named '[S]' throughout, the way Uberwarp spells
     -- them; a favorite saved under the old '(S)' was renamed on the way in.
     local zone = row.zone or label;
@@ -1584,7 +1653,15 @@ local function warp_cmd(label, row)
     if (kind == nil) then
         return nil;
     end
-    return ('/uw %s %s'):fmt(kind, warp_alias(label, row));
+    -- Rows out of lib/warps.lua are checked by test_warps, but a favorite is
+    -- read back off the settings file, which is hand-editable: a conflux label
+    -- with no number left in it would build a bare '/uw ab ' that reads as a
+    -- command and is not one.  No destination, no command.
+    local dest = warp_alias(label, row);
+    if (dest == nil) then
+        return nil;
+    end
+    return ('/uw %s %s'):fmt(kind, dest);
 end
 
 --[[
@@ -1623,7 +1700,12 @@ local function fav_toggle(key, row)
         table.remove(cfg.favs, i);
     else
         table.insert(cfg.favs, { key = key, type = row.type,
-                                 label = row.label, zone = row.zone });
+                                 label = row.label, zone = row.zone,
+                                 -- Saved with the entry rather than looked back
+                                 -- up: it is what says which zone's Conflux #3
+                                 -- this is, and a row that lost it would send
+                                 -- the player to whichever one they stood in.
+                                 zid = row.zid });
     end
     settings.save();
 end
@@ -1646,6 +1728,12 @@ end
 * NPC in reach -- near_kind nil, or false before the first poll -- there is
 * nothing to narrow against, so the whole list is shown.
 *
+* A conflux row is narrowed on its zone as well: every Abyssea area has its own
+* Conflux #3, so one saved off another area is a row that would travel, to
+* somewhere the player did not ask for.  Dropped rather than drawn dim, unlike
+* the map's own panel, because the widget is a list of what a press does here
+* and a row that names a place it cannot reach only takes up a line of it.
+*
 * Hands back the rows and, when narrowed, the slot each one sits in in
 * cfg.favs, so a drag inside the narrowed list reorders the saved list: the
 * row is pulled out of its own slot and put back in the one the row it was
@@ -1658,7 +1746,7 @@ local function fav_view()
     end
     local view, raw = T{ }, T{ };
     for i, f in ipairs(cfg.favs) do
-        if (f.type == kind) then
+        if (f.type == kind and (f.zid == nil or f.zid == ui.near_zid)) then
             view[#view + 1] = f;
             raw[#raw + 1]   = i;
         end
@@ -2317,6 +2405,7 @@ function nav.act(act, view_w, view_h)
             -- live but does nothing reads as a broken list.
             local r = rows[ui.gp_row];
             if (r ~= nil and r.type == ui.near_kind
+                and (r.zid == nil or r.zid == ui.near_zid)
                 and warp_known(ui.warp.label, r)) then
                 local cmd = warp_cmd(ui.warp.label, r);
                 if (cmd ~= nil) then
@@ -2909,8 +2998,8 @@ end
 
 --[[
 * The gamepad favorites widget.  It rides with the NPC, not the map: up the
-* moment a Home Point, Survival Guide or Unity Concord is in reach, gone the
-* moment it is not, whether or not the map is open.
+* moment a Home Point, Survival Guide, Unity Concord or Abyssea teleporter is
+* in reach, gone the moment it is not, whether or not the map is open.
 *
 * That is also the only time the xinput handler takes a button -- one
 * condition, written here and read there, so the two cannot come apart and
@@ -3201,7 +3290,13 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                 -- ui.near_kind is false before the first poll and nil while
                 -- nothing is in reach; neither is a type, so both read as
                 -- out of reach.
-                local live = r.type == ui.near_kind;
+                -- A row carrying a 'zid' -- a conflux -- also wants the player
+                -- inside that zone, since the eight of them share one NPC name
+                -- and every Abyssea area has its own set.  Still listed from
+                -- Vana'diel, dim, so the panel says where they are before the
+                -- trip in; the widget drops them instead.
+                local live = r.type == ui.near_kind
+                             and (r.zid == nil or r.zid == ui.near_zid);
                 -- A destination the player has never stood at is refused at
                 -- the NPC whether or not they are in front of one, so it is
                 -- drawn red and takes no press either.
@@ -3715,7 +3810,7 @@ local function draw_map(view_w, view_h)
             -- writes.  The box is built from cfg on the frame it is drawn
             -- rather than kept, so a toggle made from '/um' shows here without
             -- anything having to be told about it.
-            local checks = { { 'HP/SG/UC Opens Map',
+            local checks = { { 'Warp NPC Opens Map',
                                { cfg.autoopen }, 'autoopen' },
                              { 'Favorites Widget',
                                { cfg.widget }, 'widget' },
