@@ -5,7 +5,7 @@
 * player can warp to, in the order the popup lists them: Home Points, then
 * Survival Guides, then the Unity Concord, then the Abyssea warps.  'type'
 * picks the icon - 'home' is Crystal.png, 'guide' is Guide.png, 'unity' is
-* Unity.png, 'abyssea' is Maw.png.  'pos' is the grid reference, kept out of
+* Unity.png, 'abyssea' is Abyssea.png.  'pos' is the grid reference, kept out of
 * the label so the popup draws it in a column of its own and every row's lines
 * up; a row with none simply leaves it out.
 *
