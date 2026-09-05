@@ -43,7 +43,7 @@ Left-click a zone point — for a panel of that zone's destinations. Clicking a 
 | Conflux #7 | K-8 | K-6 | I-7 |
 | Conflux #8 | J-4 | I-9 | J-5 |
 
-A conflux row goes live only when you are stood at a **Veridical Conflux** *and* inside that row's own Abyssea area — being at a conflux is not enough, since all eight of every area carry the same name. From anywhere else they stay listed and grey. Uberwarp unlocks a destination flux for you on the way if you have not been to it, so no conflux row ever reads red — it costs cruor instead.
+A conflux row goes live only when you are stood at a **Veridical Conflux** *and* inside that row's own Abyssea area — being at a conflux is not enough, since all eight of every area carry the same name. From anywhere else they stay listed and grey.
 
 ### Row states
 
