@@ -2481,13 +2481,23 @@ end
 * -- the pad reports a state change an edge at a time, so a direction held
 * while a face button is tapped arrives as two -- and the later of the pair is
 * dropped where it arrives rather than queued.  Whichever the pad reported
-* first is the one kept, which is what makes the drop safe --
-* every press that changes what is on screen changes it for the press behind
-* it.  A B that shut the map would otherwise be followed by a D-pad press
-* seating a selection on a window that is gone, and a Y behind the A that
-* opened the warp list would hang its menu off the last panel's corner, since
-* ui.warp_px/py are written by draw_warp_popup and by nothing else.  Both are
-* the same frame's second press, and both are gone.
+* first is the one kept, and keeping the first rather than the last is what
+* makes the drop safe -- every press that changes what is on screen changes it
+* for the press behind it.  Keeping the last would act on a screen the player
+* never saw: a D-pad press behind the B that shut the map would seat a
+* selection on a window that is gone, and a Y behind the A that opened the
+* warp list would hang its menu off the last panel's corner, since
+* ui.warp_px/py are written by draw_warp_popup and by nothing else.  Dropping
+* the later of the pair puts both out of reach rather than guarding against
+* them: the press that would have run second never runs at all.
+*
+* B is the one press that takes the slot off another.  It is the way out of a
+* map covering most of the screen and is swallowed from the client either way,
+* so a back-out landing behind a D-pad press inside one frame has to act
+* rather than go quiet -- see nav.press, which exempts it from the wake for
+* the same reason.  It is safe where a general last-wins is not: the press it
+* displaces never ran, so the B still acts on the screen that was there when
+* it was pressed.
 *
 * Then, for a pad only, the selection is seated if no press seated one: what
 * keeps the highlight off the map of somebody using the mouse is gp_active,
@@ -2769,8 +2779,11 @@ function nav.press(act, down)
     end
     -- Held for the draw rather than acted on here: the zooms need the viewport
     -- size, and only the draw knows that.  The frame's first press wins; see
-    -- nav.pump for why the second is the one to lose.
-    if (ui.gp_act == nil) then
+    -- nav.pump for why the second is the one to lose.  Escape is the exception
+    -- twice over: exempt from the wake above, and here it takes the slot off a
+    -- press that has not run yet, or the one way out of the map could be eaten
+    -- by a D-pad press sharing its frame and still be swallowed from the game.
+    if (ui.gp_act == nil or act == 'b') then
         ui.gp_act = act;
     end
     return true;
@@ -4400,8 +4413,10 @@ ashita.events.register('xinput_button', 'ubermap_xinput', function (e)
     -- dropped here.  The first wins: see nav.pump for why the later press of
     -- a pair is the one that can go without moving a menu somewhere it does
     -- not belong.  It also means a map nothing is drawing -- the window
-    -- collapsed, say -- holds one stale press rather than a hundred.
-    if (ui.gp_act == nil) then
+    -- collapsed, say -- holds one stale press rather than a hundred.  B is the
+    -- exception, taking the slot off a press that has not run yet: it is the
+    -- back-out, and it is blocked from the game whether it acts or not.
+    if (ui.gp_act == nil or act == 'b') then
         ui.gp_act = act;
     end
 end);

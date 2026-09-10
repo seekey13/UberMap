@@ -82,7 +82,7 @@ local function button(index, state)
     if (wake()) then
         return true;
     end
-    if (ui.gp_act == nil) then
+    if (ui.gp_act == nil or act == 'b') then
         ui.gp_act = act;
     end
     return true;
@@ -101,21 +101,46 @@ check(ui.gp_act == nil, 'a shut map should hold nothing');
 -- Map open and the widget down: all seven are taken.  One slot holds them,
 -- so the six that land behind the first inside the same frame are dropped
 -- here -- the frame that acts on the first is what changes the map under
--- them.
+-- them.  The B among them is the one exception, and takes the slot.
 reset();
 ui.is_open[1] = true;
 for _, i in ipairs(ALL) do
     check(button(i, 1), ('button %d should be taken with the map open'):format(i));
 end
-check(ui.gp_act == 'up',
-      ('the slot should hold the first press, holds %s'):format(tostring(ui.gp_act)));
+check(ui.gp_act == 'b',
+      ('the B should have taken the slot, holds %s'):format(tostring(ui.gp_act)));
 
 -- The release of a press that was taken is taken too, and only once: a second
--- one is a release the client never gave us a press for.
+-- one is a release the client never gave us a press for.  The seven above are
+-- still held, which is what this reads.
 for _, i in ipairs(ALL) do
     check(button(i, 0), ('button %d release should be taken'):format(i));
     check(not button(i, 0), ('button %d should only release once'):format(i));
 end
+
+-- The same run without a B in it: the first press is the one that keeps the
+-- slot, and the five behind it are gone.
+reset();
+ui.is_open[1] = true;
+for _, i in ipairs({ 0, 1, 2, 3, 12, 15 }) do
+    check(button(i, 1), ('button %d should be taken with the map open'):format(i));
+end
+check(ui.gp_act == 'up',
+      ('the slot should hold the first press, holds %s'):format(tostring(ui.gp_act)));
+
+-- B is swallowed from the game whether it acts or not, so a back-out landing
+-- behind a press that has not run yet has to take the slot rather than go
+-- quiet: dropping it is a map with no way out of it for the frame.  Nothing
+-- else takes the slot off anything.
+reset();
+ui.is_open[1] = true;
+check(button(0, 1), 'the D-pad press should be taken');
+check(button(13, 1), 'the B behind it should be taken');
+check(ui.gp_act == 'b',
+      ('B should take the slot off the press ahead of it, holds %s'):format(tostring(ui.gp_act)));
+check(button(15, 1), 'the Y behind the B should be taken');
+check(ui.gp_act == 'b',
+      ('only B should take the slot, holds %s'):format(tostring(ui.gp_act)));
 
 -- The widget in front: it reads five of the seven and the map gets none of
 -- them, so walking up to a warp NPC still puts the widget first whatever is

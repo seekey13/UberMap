@@ -161,7 +161,7 @@ local function press(act, down)
     if (wake() and act ~= 'b') then
         return true;
     end
-    if (ui.gp_act == nil) then
+    if (ui.gp_act == nil or act == 'b') then
         ui.gp_act = act;
     end
     return true;
@@ -219,15 +219,44 @@ check(ui.gp_act == nil, 'a shut map should hold nothing');
 
 -- Map open, keys already driving: all six are taken.  One slot holds them, so
 -- the five that land behind the first inside the same frame are dropped here
--- -- the frame that acts on the first is what changes the map under them.
+-- -- the frame that acts on the first is what changes the map under them.  The
+-- Escape among them is the one exception, and takes the slot.
 reset();
 ui.is_open[1], ui.gp_active = true, true;
 for _, dik in ipairs(NAV) do
     check(key(dik, true), ('key 0x%02X should be taken with the map open'):format(dik));
     check(key(dik, false), ('key 0x%02X release should follow its press'):format(dik));
 end
+check(ui.gp_act == 'b',
+      ('the Escape should have taken the slot, holds %s'):format(tostring(ui.gp_act)));
+
+-- The same run without the Escape: the first press is the one that keeps the
+-- slot, and the four behind it are gone.
+reset();
+ui.is_open[1], ui.gp_active = true, true;
+for _, dik in ipairs({ DIK.up, DIK.down, DIK.left, DIK.right, DIK.enter }) do
+    check(key(dik, true), ('key 0x%02X should be taken with the map open'):format(dik));
+    check(key(dik, false), ('key 0x%02X release should follow its press'):format(dik));
+end
 check(ui.gp_act == 'up',
       ('the slot should hold the first press, holds %s'):format(tostring(ui.gp_act)));
+
+-- Escape is swallowed from the game whether it acts or not, so a back-out
+-- landing behind a press that has not run yet has to take the slot rather than
+-- go quiet: dropping it is a map with no way out of it for the frame.  Nothing
+-- else takes the slot off anything.
+reset();
+ui.is_open[1], ui.gp_active = true, true;
+check(key(DIK.up, true), 'the arrow should be taken');
+key(DIK.up, false);
+check(key(DIK.esc, true), 'the Escape behind it should be taken');
+check(ui.gp_act == 'b',
+      ('Escape should take the slot off the press ahead of it, holds %s'):format(tostring(ui.gp_act)));
+key(DIK.esc, false);
+check(key(DIK.f, true), 'the F behind the Escape should be taken');
+check(ui.gp_act == 'b',
+      ('only Escape should take the slot, holds %s'):format(tostring(ui.gp_act)));
+key(DIK.f, false);
 
 -- Which action each key stands for, a frame apiece: one slot, so a mapping
 -- asked for behind another press would be reading the one that was dropped.
