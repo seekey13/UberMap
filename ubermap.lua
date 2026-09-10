@@ -787,8 +787,8 @@ local ui = T{
     -- of the frame, the same way cfg_typing is.
     kb_typing   = false,
     gp_row      = nil,       -- the warp list row lit, 1-based, nil for none
-    gp_q        = {},        -- actions waiting for a frame to act on them
-    gp_ready    = false,     -- the map drew last frame, so the queue is drained
+    gp_act      = nil,       -- the press waiting for a frame to act on it
+    gp_ready    = false,     -- the map drew last frame, so a press is acted on
     -- The favorite being dragged, as { i, live, moved } of the row that was
     -- pressed: i follows the cursor as the list reorders under it, live is
     -- whether it can travel, and moved tells a reorder from a plain click.
@@ -2475,40 +2475,28 @@ function nav.act(act, view_w, view_h)
 end
 
 --[[
-* Drains the presses that arrived since the last frame.  A queue rather than
-* one pending action, so two presses inside a frame both land instead of the
-* second eating the first.  Then, for a pad only, the selection is seated if
-* the presses left none: what keeps the highlight off the map of somebody
-* using the mouse is gp_active, not the absence of a press.
+* Acts on the press waiting since the last frame, if there is one.  One slot
+* rather than a queue: two presses inside a single 16 ms frame is a rate no
+* thumb reaches, and the second is dropped where it arrives rather than
+* queued.  The first is the one kept, which is what makes the drop safe --
+* every press that changes what is on screen changes it for the press behind
+* it.  A B that shut the map would otherwise be followed by a D-pad press
+* seating a selection on a window that is gone, and a Y behind the A that
+* opened the warp list would hang its menu off the last panel's corner, since
+* ui.warp_px/py are written by draw_warp_popup and by nothing else.  Both are
+* the same frame's second press, and both are gone.
+*
+* Then, for a pad only, the selection is seated if no press seated one: what
+* keeps the highlight off the map of somebody using the mouse is gp_active,
+* not the absence of a press.
 --]]
 function nav.pump(view_w, view_h)
-    if (#ui.gp_q > 0) then
-        -- Taken off the queue up front: what is not acted on below is dropped
-        -- on purpose, and only the one case that puts presses back does.
-        local q = ui.gp_q;
-        ui.gp_q = { };
-        for i, act in ipairs(q) do
-            -- A press can close the map underneath the rest of them -- sending
-            -- a warp does -- and what is left was aimed at a map that is no
-            -- longer there.  Acting on it would seat a selection, or open a
-            -- warp list, behind a window that is shut.
-            if (not ui.is_open[1]) then
-                break;
-            end
-            local had_warp = ui.warp;
-            nav.act(act, view_w, view_h);
-            -- A press that opened the warp list ends the drain, and the rest
-            -- wait for the frame that draws it: ui.warp_px/py are written by
-            -- draw_warp_popup and by nothing else, so a Y queued behind the A
-            -- that opened the list would hang its menu off the last panel's
-            -- corner -- or off 0, 0 if no panel has been drawn at all.
-            if (had_warp == nil and ui.warp ~= nil) then
-                for j = i + 1, #q do
-                    table.insert(ui.gp_q, q[j]);
-                end
-                break;
-            end
-        end
+    -- Cleared up front, so a press the frame below drops cannot come back on
+    -- the frame after the one it was aimed at.
+    local act = ui.gp_act;
+    ui.gp_act = nil;
+    if (act ~= nil) then
+        nav.act(act, view_w, view_h);
     end
     -- A pad that is driving has no cursor to say where a press would land, so
     -- its marker is lit before it is pressed: on opening, and again on the
@@ -2566,11 +2554,11 @@ local function show()
     ui.ctx_hot   = false;
     -- The gamepad starts where the view does, which the first frame works out,
     -- and a press left over from the last time the map was up is not this
-    -- one's: nothing is queued between the map closing and it opening again.
+    -- one's: nothing is taken between the map closing and it opening again.
     ui.gp_icon   = nil;
     ui.gp_from   = nil;
     ui.gp_row    = nil;
-    ui.gp_q      = {};
+    ui.gp_act    = nil;
     ask_for_masks();
 end
 
@@ -2754,8 +2742,8 @@ function nav.press(act, down)
     end
     if (act == 'f') then act = 'y'; end
 
-    -- A frame that is not drawing the map has nothing to drain the queue -- no
-    -- texture, or a window ImGui collapsed -- so a press queued there is lost.
+    -- A frame that is not drawing the map has nothing to act on the press --
+    -- no texture, or a window ImGui collapsed -- so one held there is lost.
     -- Escape still has to work out of one, or the map could not be shut.
     if (ui.zoom == nil or not ui.gp_ready) then
         if (act ~= 'b') then
@@ -2776,10 +2764,11 @@ function nav.press(act, down)
     if (nav.wake() and act ~= 'b') then
         return true;
     end
-    -- Queued rather than acted on here: the zooms need the viewport size, and
-    -- only the draw knows that.
-    if (#ui.gp_q < 8) then
-        table.insert(ui.gp_q, act);
+    -- Held for the draw rather than acted on here: the zooms need the viewport
+    -- size, and only the draw knows that.  The frame's first press wins; see
+    -- nav.pump for why the second is the one to lose.
+    if (ui.gp_act == nil) then
+        ui.gp_act = act;
     end
     return true;
 end
@@ -4140,12 +4129,12 @@ ashita.events.register('d3d_present', 'ubermap_present', function ()
     draw_fav_widget();
 
     -- The map's presses are only worth swallowing on the frames it is drawn:
-    -- nav.pump is what drains them, and every early return below -- put away
+    -- nav.pump is what acts on them, and every early return below -- put away
     -- by the step just taken, no texture, and further down a window ImGui
-    -- collapsed or sized to nothing -- leaves nothing to do the draining.
-    -- Blocked presses with no drain is a D-pad dead in the game's own menus as
-    -- well as on the map, with nothing on screen to say why.  Put out here and
-    -- set again where the drain actually happens.
+    -- collapsed or sized to nothing -- leaves nothing to do the acting.
+    -- Blocked presses nothing acts on is a D-pad dead in the game's own menus
+    -- as well as on the map, with nothing on screen to say why.  Put out here
+    -- and set again where the press is actually acted on.
     ui.gp_ready = false;
 
     if (not ui.is_open[1]) then
@@ -4391,8 +4380,8 @@ ashita.events.register('xinput_button', 'ubermap_xinput', function (e)
     end
 
     -- The map, while it is on screen, has had a frame size the view, and is
-    -- being drawn -- a frame that returns out early has nothing to drain what
-    -- is queued.  Queued rather than acted on here: the zooms need the
+    -- being drawn -- a frame that returns out early has nothing to act on the
+    -- press.  Held for the draw rather than acted on here: the zooms need the
     -- viewport size, and only the draw knows that.
     if (not ui.is_open[1] or ui.zoom == nil or not ui.gp_ready) then
         return;
@@ -4404,12 +4393,13 @@ ashita.events.register('xinput_button', 'ubermap_xinput', function (e)
     if (nav.wake()) then
         return;
     end
-    -- How many presses may wait for a frame that is not coming.  A queue
-    -- nothing is draining is a map that is not being drawn -- the window
-    -- collapsed, say -- and a hundred presses landing at once when it comes
-    -- back is worse than losing them.
-    if (#ui.gp_q < 8) then
-        table.insert(ui.gp_q, act);
+    -- One press waits for the next frame, and the rest of that frame's are
+    -- dropped here.  The first wins: see nav.pump for why the later press of
+    -- a pair is the one that can go without moving a menu somewhere it does
+    -- not belong.  It also means a map nothing is drawing -- the window
+    -- collapsed, say -- holds one stale press rather than a hundred.
+    if (ui.gp_act == nil) then
+        ui.gp_act = act;
     end
 end);
 
