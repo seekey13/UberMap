@@ -28,7 +28,7 @@ local function reset()
     -- a map the mouse has just taken.
     ui = { fw_on = false, is_open = { false, }, zoom = 1.0, fw_sel = 1,
            fw_hide = false, opened = 0,
-           gp_active = true, gp_act = nil, pad_held = { } };
+           gp_active = true, gp_ready = true, gp_act = nil, pad_held = { } };
     favs_n = 0;
 end
 
@@ -75,7 +75,7 @@ local function button(index, state)
         end
         return true;
     end
-    if (not ui.is_open[1] or ui.zoom == nil) then
+    if (not ui.is_open[1] or ui.zoom == nil or not ui.gp_ready) then
         return false;
     end
     ui.pad_held[index] = true;
@@ -160,6 +160,17 @@ for _ = 1, 19 do
 end
 check(ui.gp_act == 'up',
       ('twenty presses should leave the first, left %s'):format(tostring(ui.gp_act)));
+
+-- A map that is open but not being drawn has nothing to act on the press, so
+-- it is left to the client rather than swallowed: a blocked D-pad nothing acts
+-- on is one dead in the game's own menus, with nothing on screen to say why.
+reset();
+ui.is_open[1], ui.gp_ready = true, false;
+for _, i in ipairs(ALL) do
+    check(not button(i, 1),
+          ('button %d should be the client\'s with the map undrawn'):format(i));
+end
+check(ui.gp_act == nil, 'an undrawn map should hold nothing');
 
 -- The mouse took the map off the pad.  The press that takes it back is still
 -- the map's -- the client must not see it -- but it is spent lighting the

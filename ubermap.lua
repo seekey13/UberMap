@@ -2476,9 +2476,12 @@ end
 
 --[[
 * Acts on the press waiting since the last frame, if there is one.  One slot
-* rather than a queue: two presses inside a single 16 ms frame is a rate no
-* thumb reaches, and the second is dropped where it arrives rather than
-* queued.  The first is the one kept, which is what makes the drop safe --
+* rather than a queue: two presses inside a single 16 ms frame is not a
+* sequence anybody means as one.  Two buttons under two fingers do land there
+* -- the pad reports a state change an edge at a time, so a direction held
+* while a face button is tapped arrives as two -- and the later of the pair is
+* dropped where it arrives rather than queued.  Whichever the pad reported
+* first is the one kept, which is what makes the drop safe --
 * every press that changes what is on screen changes it for the press behind
 * it.  A B that shut the map would otherwise be followed by a D-pad press
 * seating a selection on a window that is gone, and a Y behind the A that

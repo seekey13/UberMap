@@ -38,7 +38,6 @@ local KEY = {
 local DIK = { up = 0xC8, down = 0xD0, left = 0xCB, right = 0xCD,
               enter = 0x1C, pad_enter = 0x9C, esc = 0x01, u = 0x16, f = 0x21,
               tab = 0x0F };
-local QUEUE_MAX = 8;
 
 local ui, favs_n;
 local function reset()
@@ -48,7 +47,7 @@ local function reset()
            fw_sel = 1, fw_hide = false, opened = 0, sent = 0, chat = 0,
            kb_typing = false, cfg_typing = false, kb_held = { },
            esc_frames = 0, focus_next = false, search_blur = false,
-           gp_active = false, gp_ready = true, gp_q = { } };
+           gp_active = false, gp_ready = true, gp_act = nil };
     favs_n = 0;
 end
 
@@ -162,8 +161,8 @@ local function press(act, down)
     if (wake() and act ~= 'b') then
         return true;
     end
-    if (#ui.gp_q < QUEUE_MAX) then
-        table.insert(ui.gp_q, act);
+    if (ui.gp_act == nil) then
+        ui.gp_act = act;
     end
     return true;
 end
@@ -205,7 +204,7 @@ end
 
 local NAV = { DIK.up, DIK.down, DIK.left, DIK.right, DIK.enter, DIK.esc };
 
--- Map shut and no widget: every key is the client's, and nothing is queued.
+-- Map shut and no widget: every key is the client's, and nothing is held.
 -- The arrows above all: they are how the player walks, and the state buffer
 -- has to come back untouched or the character stops moving.
 reset();
@@ -216,31 +215,44 @@ for _, dik in ipairs(NAV) do
 end
 check(not key(DIK.u, true), 'U should be the client\'s with no widget up');
 check(not key(DIK.f, true), 'F should be the client\'s with no widget up');
-check(#ui.gp_q == 0, 'a shut map should queue nothing');
+check(ui.gp_act == nil, 'a shut map should hold nothing');
 
--- Map open, keys already driving: the six are taken, in the order pressed, and
--- either Enter is A.
+-- Map open, keys already driving: all six are taken.  One slot holds them, so
+-- the five that land behind the first inside the same frame are dropped here
+-- -- the frame that acts on the first is what changes the map under them.
 reset();
 ui.is_open[1], ui.gp_active = true, true;
 for _, dik in ipairs(NAV) do
     check(key(dik, true), ('key 0x%02X should be taken with the map open'):format(dik));
     check(key(dik, false), ('key 0x%02X release should follow its press'):format(dik));
 end
-check(#ui.gp_q == 6, ('six presses should queue six actions, queued %d'):format(#ui.gp_q));
-check(ui.gp_q[1] == 'up' and ui.gp_q[4] == 'right' and ui.gp_q[5] == 'a'
-      and ui.gp_q[6] == 'b',
-      'the queue should hold the actions in the order they were pressed');
-check(key(DIK.pad_enter, true), 'the numpad Enter should be taken too');
-check(ui.gp_q[7] == 'a', 'the numpad Enter should queue the same action');
-key(DIK.pad_enter, false);
+check(ui.gp_act == 'up',
+      ('the slot should hold the first press, holds %s'):format(tostring(ui.gp_act)));
+
+-- Which action each key stands for, a frame apiece: one slot, so a mapping
+-- asked for behind another press would be reading the one that was dropped.
+-- Either Enter is A, Escape is B, and F is the map's own Y.
+for _, case in ipairs({ { DIK.enter, 'a' }, { DIK.pad_enter, 'a' },
+                        { DIK.esc, 'b' }, { DIK.f, 'y' } }) do
+    reset();
+    ui.is_open[1], ui.gp_active = true, true;
+    check(key(case[1], true),
+          ('key 0x%02X should be taken with the map open'):format(case[1]));
+    check(ui.gp_act == case[2],
+          ('key 0x%02X should hold %s, holds %s'):format(case[1], case[2],
+                                                         tostring(ui.gp_act)));
+    key(case[1], false);
+end
+
 -- U is the widget's alone; the map behind it never sees it.  F is the map's
--- own Y, so with the widget gone it queues the favorites menu instead of
+-- own Y, so with the widget gone it holds the favorites menu instead of
 -- going back to the client.
+reset();
+ui.is_open[1], ui.gp_active = true, true;
 check(not key(DIK.u, true), 'U should be the client\'s with the widget off screen');
 check(state({ DIK.u })[DIK.u] ~= nil,
       'U should survive the state buffer with the widget off screen');
 check(key(DIK.f, true), 'F should be taken by the map with the widget off screen');
-check(ui.gp_q[8] == 'y', 'F should queue the same action the pad\'s Y does');
 check(state({ DIK.f })[DIK.f] == nil, 'F should be kept from the game while held');
 key(DIK.f, false);
 
@@ -273,14 +285,14 @@ reset();
 ui.is_open[1], ui.gp_active = true, true;
 check(state({ DIK.up })[DIK.up] == nil,
       'a key the map would take should be wiped before its edge is read');
-check(#ui.gp_q == 0, 'the state buffer should act on nothing');
+check(ui.gp_act == nil, 'the state buffer should act on nothing');
 
 -- Escape closes the map, and goes on being wiped until it comes back up: the
 -- client must not see the tail of a press that shut the map.
 reset();
 ui.is_open[1], ui.gp_active = true, true;
 key(DIK.esc, true);
-check(ui.gp_q[1] == 'b', 'Escape should queue the back-out');
+check(ui.gp_act == 'b', 'Escape should hold the back-out');
 ui.is_open[1] = false;  -- what nav.act does with it a frame later
 check(state({ DIK.esc })[DIK.esc] == nil,
       'Escape should stay wiped while it is still held');
@@ -313,7 +325,7 @@ for _, field in ipairs({ 'chat', 'kb_typing', 'cfg_typing' }) do
         check(state({ dik })[dik] ~= nil,
               ('key 0x%02X should reach the game while %s'):format(dik, field));
     end
-    check(#ui.gp_q == 0, ('nothing should queue while %s'):format(field));
+    check(ui.gp_act == nil, ('nothing should be held while %s'):format(field));
     check(ui.is_open[1], ('Escape should not close the map while %s'):format(field));
 end
 
@@ -330,7 +342,7 @@ check(state({ DIK.tab })[DIK.tab] == nil,
 key(DIK.tab, false);
 check(ui.focus_next and not ui.search_blur,
       'Tab off the box should hand it the keyboard');
-check(#ui.gp_q == 0, 'Tab should queue no map action');
+check(ui.gp_act == nil, 'Tab should hold no map action');
 -- The frame the box takes the caret, as the draw reports it.
 ui.focus_next, ui.kb_typing = false, true;
 check(key(DIK.tab, true), 'Tab should still be taken with the caret in the box');
@@ -340,7 +352,7 @@ check(ui.search_blur and not ui.focus_next,
 -- and the caret is gone by the next frame, so the arrows are the map's again.
 ui.kb_typing, ui.search_blur = false, false;
 check(key(DIK.up, true), 'the arrows should be the map\'s again after a Tab out');
-check(ui.gp_q[1] == 'up', 'and should queue the move they always did');
+check(ui.gp_act == 'up', 'and should hold the move they always did');
 -- Chat still beats it, and so does a config number: neither is the map's box.
 reset();
 ui.is_open[1], ui.chat = true, 0x11;
@@ -394,7 +406,7 @@ for _, dik in ipairs({ DIK.up, DIK.down, DIK.left, DIK.right, DIK.enter }) do
     check(state({ dik })[dik] ~= nil,
           ('key 0x%02X should still walk the player before an F'):format(dik));
 end
-check(#ui.gp_q == 0, 'the map should queue nothing while the widget is up');
+check(ui.gp_act == nil, 'the map should hold nothing while the widget is up');
 check(ui.fw_sel == 1, ('the row should not have walked, is %d'):format(ui.fw_sel));
 
 -- Escape outside focus mode dismisses the widget rather than closing the map
@@ -454,7 +466,7 @@ for _, focused in ipairs({ false, true }) do
     check(ui.fw_hide, 'U should put the widget away');
     check(not ui.fw_key, 'U should hand the arrows back');
     check(ui.opened == 1, ('U should open the map once, opened %d'):format(ui.opened));
-    check(#ui.gp_q == 0, 'U should queue nothing for the map it just opened');
+    check(ui.gp_act == nil, 'U should hold nothing for the map it just opened');
     check(ui.fw_sel == 1, ('U should not step the row, is %d'):format(ui.fw_sel));
     -- The widget is off screen the moment it is drawn again, so the hold is
     -- the only thing left keeping U from the game.
@@ -469,19 +481,19 @@ end
 reset();
 ui.is_open[1] = true;
 check(key(DIK.down, true), 'the waking press should still be taken');
-check(#ui.gp_q == 0, 'the waking press should queue nothing');
+check(ui.gp_act == nil, 'the waking press should hold nothing');
 check(ui.gp_active, 'the waking press should mark the keys as driving');
 key(DIK.down, false);
 check(key(DIK.down, true), 'the press after the wake should be taken');
-check(#ui.gp_q == 1,
-      ('the press after the wake should queue, queued %d'):format(#ui.gp_q));
+check(ui.gp_act == 'down',
+      ('the press after the wake should be held, held %s'):format(tostring(ui.gp_act)));
 
 -- Escape is the exception: it is the one way out of a map covering most of the
 -- screen, so it acts on the first press however the map was being driven.
 reset();
 ui.is_open[1] = true;
 check(key(DIK.esc, true), 'Escape off the mouse should be taken');
-check(#ui.gp_q == 1 and ui.gp_q[1] == 'b',
+check(ui.gp_act == 'b',
       'Escape should act on the waking press rather than be spent on it');
 
 -- The same at the widget, whose row the mouse puts out the same way.
@@ -496,27 +508,30 @@ check(ui.fw_sel == 2,
       ('the press after the wake should step the row, is %d'):format(ui.fw_sel));
 
 -- A map that is open but not being drawn -- no texture, or a window ImGui
--- collapsed -- has nothing to drain the queue, so a press there is lost.
+-- collapsed -- has nothing to act on the press, so one there is lost.
 -- Escape still has to work out of one, or the map could not be shut.
 reset();
 ui.is_open[1], ui.gp_ready, ui.gp_active = true, false, true;
 check(not key(DIK.down, true), 'an undrawn map should leave the arrows to the client');
 check(state({ DIK.down })[DIK.down] ~= nil,
       'an undrawn map should let the arrows walk the player');
-check(#ui.gp_q == 0, 'an undrawn map should queue nothing');
+check(ui.gp_act == nil, 'an undrawn map should hold nothing');
 check(key(DIK.esc, true), 'Escape should still be taken by an undrawn map');
 check(not ui.is_open[1], 'Escape should close a map that is not being drawn');
 
--- A queue nothing is draining is worse than losing presses: a hundred landing
--- at once when the map comes back is not what any of them meant.
+-- A map nothing is acting for is worse than losing presses: twenty waiting for
+-- the frame that comes back is not what any of them meant.  One slot, and the
+-- first press is the one it keeps.
 reset();
 ui.is_open[1], ui.gp_active = true, true;
-for _ = 1, 20 do
-    key(DIK.up, true);
-    key(DIK.up, false);
+key(DIK.up, true);
+key(DIK.up, false);
+for _ = 1, 19 do
+    key(DIK.down, true);
+    key(DIK.down, false);
 end
-check(#ui.gp_q == QUEUE_MAX,
-      ('the queue should cap at %d, holds %d'):format(QUEUE_MAX, #ui.gp_q));
+check(ui.gp_act == 'up',
+      ('twenty presses should leave the first, left %s'):format(tostring(ui.gp_act)));
 
 -- An empty widget reads no key at all: it is off screen, and the list the
 -- arrows would walk is not there.
