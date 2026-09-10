@@ -166,11 +166,6 @@ M.KEY = {
     [0x0F] = 'tab',
 };
 
--- How many presses may wait for a frame that is not coming.  A queue nothing
--- is draining is a map that is not being drawn -- the window collapsed, say --
--- and a hundred presses landing at once when it comes back is worse than
--- losing them.
-M.QUEUE_MAX = 8;
 
 --[[
 * Marks the pad as what is driving, and answers whether this press is spent
@@ -218,7 +213,7 @@ function M.press(ui, act, down, h)
     -- and with the map shut it goes back to the client, which targets with it.
     if (act == 'tab') then
         -- A frame the map did not draw has no box to hand the caret to, the
-        -- same reason the queue below is not fed from one: a focus latched
+        -- same reason the slot below is not fed from one: a focus latched
         -- there would sit until the box came back and then take the keyboard
         -- out of nowhere.  Back to the client instead, the way the rest go.
         if (not ui.is_open[1] or not ui.gp_ready) then
@@ -337,8 +332,8 @@ function M.press(ui, act, down, h)
     end
     if (act == 'f') then act = 'y'; end
 
-    -- A frame that is not drawing the map has nothing to drain the queue -- no
-    -- texture, or a window ImGui collapsed -- so a press queued there is lost.
+    -- A frame that is not drawing the map has nothing to act on the press --
+    -- no texture, or a window ImGui collapsed -- so one held there is lost.
     -- Escape still has to work out of one, or the map could not be shut.
     if (ui.zoom == nil or not ui.gp_ready) then
         if (act ~= 'b') then
@@ -359,10 +354,14 @@ function M.press(ui, act, down, h)
     if (wake(ui) and act ~= 'b') then
         return true;
     end
-    -- Queued rather than acted on here: the zooms need the viewport size, and
-    -- only the draw knows that.
-    if (#ui.gp_q < M.QUEUE_MAX) then
-        table.insert(ui.gp_q, act);
+    -- Held for the draw rather than acted on here: the zooms need the viewport
+    -- size, and only the draw knows that.  The frame's first press wins; see
+    -- nav.pump for why the second is the one to lose.  Escape is the exception
+    -- twice over: exempt from the wake above, and here it takes the slot off a
+    -- press that has not run yet, or the one way out of the map could be eaten
+    -- by a D-pad press sharing its frame and still be swallowed from the game.
+    if (ui.gp_act == nil or act == 'b') then
+        ui.gp_act = act;
     end
     return true;
 end
@@ -453,8 +452,8 @@ function M.pad(ui, index, state, h)
     end
 
     -- The map, while it is on screen, has had a frame size the view, and is
-    -- being drawn -- a frame that returns out early has nothing to drain what
-    -- is queued.  Queued rather than acted on here: the zooms need the
+    -- being drawn -- a frame that returns out early has nothing to act on the
+    -- press.  Held for the draw rather than acted on here: the zooms need the
     -- viewport size, and only the draw knows that.
     if (not ui.is_open[1] or ui.zoom == nil or not ui.gp_ready) then
         return false;
@@ -465,8 +464,15 @@ function M.pad(ui, index, state, h)
     if (wake(ui)) then
         return true;
     end
-    if (#ui.gp_q < M.QUEUE_MAX) then
-        table.insert(ui.gp_q, act);
+    -- One press waits for the next frame, and the rest of that frame's are
+    -- dropped here.  The first wins: see nav.pump for why the later press of
+    -- a pair is the one that can go without moving a menu somewhere it does
+    -- not belong.  It also means a map nothing is drawing -- the window
+    -- collapsed, say -- holds one stale press rather than a hundred.  B is the
+    -- exception, taking the slot off a press that has not run yet: it is the
+    -- back-out, and it is blocked from the game whether it acts or not.
+    if (ui.gp_act == nil or act == 'b') then
+        ui.gp_act = act;
     end
     return true;
 end

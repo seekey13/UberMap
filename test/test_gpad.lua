@@ -21,15 +21,13 @@ local function check(ok, msg)
     end
 end
 
-local QUEUE_MAX = gp.QUEUE_MAX;
-
 local ui, favs_n;
 local function reset()
     -- Driving by default, so each case says outright when it is starting from
     -- a map the mouse has just taken.
     ui = { fw_on = false, is_open = { false, }, zoom = 1.0, fw_sel = 1,
            fw_hide = false, opened = 0, sent = 0,
-           gp_active = true, gp_ready = true, gp_q = { }, pad_held = { } };
+           gp_active = true, gp_ready = true, gp_act = nil, pad_held = { } };
     favs_n = 0;
 end
 
@@ -40,7 +38,7 @@ local h = {
     show = function ()
         ui.is_open[1] = true;
         ui.opened     = ui.opened + 1;
-        ui.gp_q       = { };
+        ui.gp_act     = nil;
     end,
     -- fw_confirm(), minus the warp itself.  It leaves fw_hide alone: the real
     -- one sets it only when the row can travel, and setting it here would leave
@@ -75,31 +73,57 @@ end
 check(gp.GP[2] == 'left' and gp.GP[3] == 'right',
       'the two the widget leaves alone should be left and right');
 
--- Map shut: every one of the seven is the client's, and nothing is queued.
+-- Map shut: every one of the seven is the client's, and nothing is held.
 reset();
 for _, i in ipairs(ALL) do
     check(not button(i, 1), ('button %d should be the client\'s with the map shut'):format(i));
     check(not button(i, 0), ('button %d release should follow its press'):format(i));
 end
-check(#ui.gp_q == 0, 'a shut map should queue nothing');
+check(ui.gp_act == nil, 'a shut map should hold nothing');
 
--- Map open and the widget down: all seven are taken, in the order pressed.
+-- Map open and the widget down: all seven are taken.  One slot holds them,
+-- so the six that land behind the first inside the same frame are dropped
+-- here -- the frame that acts on the first is what changes the map under
+-- them.  The B among them is the one exception, and takes the slot.
 reset();
 ui.is_open[1] = true;
 for _, i in ipairs(ALL) do
     check(button(i, 1), ('button %d should be taken with the map open'):format(i));
 end
-check(#ui.gp_q == 7, ('seven presses should queue seven actions, queued %d'):format(#ui.gp_q));
-check(ui.gp_q[1] == 'up' and ui.gp_q[4] == 'right' and ui.gp_q[6] == 'b'
-      and ui.gp_q[7] == 'y',
-      'the queue should hold the actions in the order they were pressed');
+check(ui.gp_act == 'b',
+      ('the B should have taken the slot, holds %s'):format(tostring(ui.gp_act)));
 
 -- The release of a press that was taken is taken too, and only once: a second
--- one is a release the client never gave us a press for.
+-- one is a release the client never gave us a press for.  The seven above are
+-- still held, which is what this reads.
 for _, i in ipairs(ALL) do
     check(button(i, 0), ('button %d release should be taken'):format(i));
     check(not button(i, 0), ('button %d should only release once'):format(i));
 end
+
+-- The same run without a B in it: the first press is the one that keeps the
+-- slot, and the five behind it are gone.
+reset();
+ui.is_open[1] = true;
+for _, i in ipairs({ 0, 1, 2, 3, 12, 15 }) do
+    check(button(i, 1), ('button %d should be taken with the map open'):format(i));
+end
+check(ui.gp_act == 'up',
+      ('the slot should hold the first press, holds %s'):format(tostring(ui.gp_act)));
+
+-- B is swallowed from the game whether it acts or not, so a back-out landing
+-- behind a press that has not run yet has to take the slot rather than go
+-- quiet: dropping it is a map with no way out of it for the frame.  Nothing
+-- else takes the slot off anything.
+reset();
+ui.is_open[1] = true;
+check(button(0, 1), 'the D-pad press should be taken');
+check(button(13, 1), 'the B behind it should be taken');
+check(ui.gp_act == 'b',
+      ('B should take the slot off the press ahead of it, holds %s'):format(tostring(ui.gp_act)));
+check(button(15, 1), 'the Y behind the B should be taken');
+check(ui.gp_act == 'b',
+      ('only B should take the slot, holds %s'):format(tostring(ui.gp_act)));
 
 -- The widget in front: it reads five of the seven and the map gets none of
 -- them, so walking up to a warp NPC still puts the widget first whatever is
@@ -109,7 +133,7 @@ ui.is_open[1], ui.fw_on, favs_n = true, true, 3;
 for _, i in ipairs({ 0, 1, 12, 13 }) do
     check(button(i, 1), ('button %d should be the widget\'s'):format(i));
 end
-check(#ui.gp_q == 0, 'the map should queue nothing while the widget is up');
+check(ui.gp_act == nil, 'the map should hold nothing while the widget is up');
 -- One step each way, so the selection is back where it started: both of the
 -- D-pad presses landed on the widget rather than on the map behind it.
 check(ui.fw_sel == 1, ('the widget selection should have walked, is %d'):format(ui.fw_sel));
@@ -133,27 +157,40 @@ end
 
 -- Y at the widget is the way up to the full map: the press is the widget's,
 -- the widget puts itself away for this visit, and the map is opened rather
--- than driven -- nothing is queued for it.
+-- than driven -- nothing is held for it.
 reset();
 ui.fw_on, favs_n = true, 3;
 check(button(15, 1), 'Y should be taken by the widget');
 check(ui.fw_hide, 'Y should put the widget away');
 check(ui.opened == 1, ('Y should open the map once, opened %d'):format(ui.opened));
-check(#ui.gp_q == 0, 'Y should queue nothing for the map it just opened');
+check(ui.gp_act == nil, 'Y should hold nothing for the map it just opened');
 check(ui.fw_sel == 1, ('Y should not step the row, is %d'):format(ui.fw_sel));
 check(button(15, 0), 'the Y release should follow its press');
 
--- A queue nothing is draining is a map that is not being drawn -- collapsed,
--- or behind a texture that failed -- and a hundred presses landing at once
--- when it comes back is worse than losing them.
+-- A map nothing is acting for is a map that is not being drawn -- collapsed,
+-- or behind a texture that failed -- and twenty presses waiting for the frame
+-- that comes back is worse than the one that was pressed first.
 reset();
 ui.is_open[1] = true;
-for _ = 1, QUEUE_MAX * 2 do
-    button(0, 1);
-    button(0, 0);
+button(0, 1);
+button(0, 0);
+for _ = 1, 19 do
+    button(1, 1);
+    button(1, 0);
 end
-check(#ui.gp_q == QUEUE_MAX,
-      ('the queue should cap at %d, holds %d'):format(QUEUE_MAX, #ui.gp_q));
+check(ui.gp_act == 'up',
+      ('twenty presses should leave the first, left %s'):format(tostring(ui.gp_act)));
+
+-- A map that is open but not being drawn has nothing to act on the press, so
+-- it is left to the client rather than swallowed: a blocked D-pad nothing acts
+-- on is one dead in the game's own menus, with nothing on screen to say why.
+reset();
+ui.is_open[1], ui.gp_ready = true, false;
+for _, i in ipairs(ALL) do
+    check(not button(i, 1),
+          ('button %d should be the client\'s with the map undrawn'):format(i));
+end
+check(ui.gp_act == nil, 'an undrawn map should hold nothing');
 
 -- The mouse took the map off the pad.  The press that takes it back is still
 -- the map's -- the client must not see it -- but it is spent lighting the
@@ -161,12 +198,12 @@ check(#ui.gp_q == QUEUE_MAX,
 reset();
 ui.is_open[1], ui.gp_active = true, false;
 check(button(0, 1), 'the waking press should still be taken');
-check(#ui.gp_q == 0, 'the waking press should queue nothing');
+check(ui.gp_act == nil, 'the waking press should hold nothing');
 check(ui.gp_active, 'the waking press should mark the pad as driving');
 check(button(0, 0), 'the waking press should release like any other');
 check(button(1, 1), 'the press after the wake should be taken');
-check(#ui.gp_q == 1,
-      ('the press after the wake should queue, queued %d'):format(#ui.gp_q));
+check(ui.gp_act == 'down',
+      ('the press after the wake should be held, held %s'):format(tostring(ui.gp_act)));
 
 -- The same at the widget, whose row the mouse puts out the same way: the
 -- waking press lights it rather than stepping it, or worse sending it.

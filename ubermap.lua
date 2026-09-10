@@ -768,8 +768,8 @@ local ui = T{
     -- of the frame, the same way cfg_typing is.
     kb_typing   = false,
     gp_row      = nil,       -- the warp list row lit, 1-based, nil for none
-    gp_q        = {},        -- actions waiting for a frame to act on them
-    gp_ready    = false,     -- the map drew last frame, so the queue is drained
+    gp_act      = nil,       -- the press waiting for a frame to act on it
+    gp_ready    = false,     -- the map drew last frame, so a press is acted on
     -- The favorite being dragged, as { i, live, moved } of the row that was
     -- pressed: i follows the cursor as the list reorders under it, live is
     -- whether it can travel, and moved tells a reorder from a plain click.
@@ -2416,40 +2416,41 @@ function nav.act(act, view_w, view_h)
 end
 
 --[[
-* Drains the presses that arrived since the last frame.  A queue rather than
-* one pending action, so two presses inside a frame both land instead of the
-* second eating the first.  Then, for a pad only, the selection is seated if
-* the presses left none: what keeps the highlight off the map of somebody
-* using the mouse is gp_active, not the absence of a press.
+* Acts on the press waiting since the last frame, if there is one.  One slot
+* rather than a queue: two presses inside a single 16 ms frame is not a
+* sequence anybody means as one.  Two buttons under two fingers do land there
+* -- the pad reports a state change an edge at a time, so a direction held
+* while a face button is tapped arrives as two -- and the later of the pair is
+* dropped where it arrives rather than queued.  Whichever the pad reported
+* first is the one kept, and keeping the first rather than the last is what
+* makes the drop safe -- every press that changes what is on screen changes it
+* for the press behind it.  Keeping the last would act on a screen the player
+* never saw: a D-pad press behind the B that shut the map would seat a
+* selection on a window that is gone, and a Y behind the A that opened the
+* warp list would hang its menu off the last panel's corner, since
+* ui.warp_px/py are written by draw_warp_popup and by nothing else.  Dropping
+* the later of the pair puts both out of reach rather than guarding against
+* them: the press that would have run second never runs at all.
+*
+* B is the one press that takes the slot off another.  It is the way out of a
+* map covering most of the screen and is swallowed from the client either way,
+* so a back-out landing behind a D-pad press inside one frame has to act
+* rather than go quiet -- see gpn.press, which exempts it from the wake for
+* the same reason.  It is safe where a general last-wins is not: the press it
+* displaces never ran, so the B still acts on the screen that was there when
+* it was pressed.
+*
+* Then, for a pad only, the selection is seated if no press seated one: what
+* keeps the highlight off the map of somebody using the mouse is gp_active,
+* not the absence of a press.
 --]]
 function nav.pump(view_w, view_h)
-    if (#ui.gp_q > 0) then
-        -- Taken off the queue up front: what is not acted on below is dropped
-        -- on purpose, and only the one case that puts presses back does.
-        local q = ui.gp_q;
-        ui.gp_q = { };
-        for i, act in ipairs(q) do
-            -- A press can close the map underneath the rest of them -- sending
-            -- a warp does -- and what is left was aimed at a map that is no
-            -- longer there.  Acting on it would seat a selection, or open a
-            -- warp list, behind a window that is shut.
-            if (not ui.is_open[1]) then
-                break;
-            end
-            local had_warp = ui.warp;
-            nav.act(act, view_w, view_h);
-            -- A press that opened the warp list ends the drain, and the rest
-            -- wait for the frame that draws it: ui.warp_px/py are written by
-            -- draw_warp_popup and by nothing else, so a Y queued behind the A
-            -- that opened the list would hang its menu off the last panel's
-            -- corner -- or off 0, 0 if no panel has been drawn at all.
-            if (had_warp == nil and ui.warp ~= nil) then
-                for j = i + 1, #q do
-                    table.insert(ui.gp_q, q[j]);
-                end
-                break;
-            end
-        end
+    -- Cleared up front, so a press the frame below drops cannot come back on
+    -- the frame after the one it was aimed at.
+    local act = ui.gp_act;
+    ui.gp_act = nil;
+    if (act ~= nil) then
+        nav.act(act, view_w, view_h);
     end
     -- A pad that is driving has no cursor to say where a press would land, so
     -- its marker is lit before it is pressed: on opening, and again on the
@@ -2507,11 +2508,11 @@ local function show()
     ui.ctx_hot   = false;
     -- The gamepad starts where the view does, which the first frame works out,
     -- and a press left over from the last time the map was up is not this
-    -- one's: nothing is queued between the map closing and it opening again.
+    -- one's: nothing is taken between the map closing and it opening again.
     ui.gp_icon   = nil;
     ui.gp_from   = nil;
     ui.gp_row    = nil;
-    ui.gp_q      = {};
+    ui.gp_act    = nil;
     ask_for_masks();
 end
 
@@ -3918,12 +3919,12 @@ ashita.events.register('d3d_present', 'ubermap_present', function ()
     draw_fav_widget();
 
     -- The map's presses are only worth swallowing on the frames it is drawn:
-    -- nav.pump is what drains them, and every early return below -- put away
+    -- nav.pump is what acts on them, and every early return below -- put away
     -- by the step just taken, no texture, and further down a window ImGui
-    -- collapsed or sized to nothing -- leaves nothing to do the draining.
-    -- Blocked presses with no drain is a D-pad dead in the game's own menus as
-    -- well as on the map, with nothing on screen to say why.  Put out here and
-    -- set again where the drain actually happens.
+    -- collapsed or sized to nothing -- leaves nothing to do the acting.
+    -- Blocked presses nothing acts on is a D-pad dead in the game's own menus
+    -- as well as on the map, with nothing on screen to say why.  Put out here
+    -- and set again where the press is actually acted on.
     ui.gp_ready = false;
 
     if (not ui.is_open[1]) then
