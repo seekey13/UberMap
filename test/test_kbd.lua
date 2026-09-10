@@ -1,7 +1,9 @@
 --[[
 * Self-check for which keys the map and the favorites widget take and which
-* they leave to the client.  Mirrors nav.press and the two keyboard handlers in
-* ubermap.lua: typing beats everything, the widget is asked first and wins
+* they leave to the client.  Drives gpn.press and the two keyboard handlers
+* over it -- gpn.key and gpn.state, the real ones out of lib/gpnav.lua rather
+* than a copy -- over a stand-in ui table and the four callbacks ubermap.lua
+* hands them: typing beats everything, the widget is asked first and wins
 * outright, the arrows are the player's own until an F asks for them, the map
 * takes them only while it is on screen, a press that only takes the map back
 * off the mouse is spent doing that -- except Escape, which always has to work
@@ -16,6 +18,8 @@
 *     lua test/test_kbd.lua
 --]]
 
+local gp = assert(loadfile('lib/gpnav.lua'))();
+
 local fails = 0;
 local function check(ok, msg)
     if (not ok) then
@@ -24,20 +28,17 @@ local function check(ok, msg)
     end
 end
 
--- The table, exactly as ubermap.lua keys it: the DirectInput scan code, which
--- is what the game reads.  The arrows are the D-pad, either Enter is A and
--- Escape is B.
-local KEY = {
-    [0xC8] = 'up',    [0xD0] = 'down',
-    [0xCB] = 'left',  [0xCD] = 'right',
-    [0x1C] = 'a',     [0x9C] = 'a',
-    [0x01] = 'b',
-    [0x16] = 'u',     [0x21] = 'f',
-    [0x0F] = 'tab',
-};
+-- The scan codes by name, for the cases below to press.  gpn.KEY is the table
+-- under test and maps each of them to the action it stands for: the arrows are
+-- the D-pad, either Enter is A and Escape is B.
 local DIK = { up = 0xC8, down = 0xD0, left = 0xCB, right = 0xCD,
               enter = 0x1C, pad_enter = 0x9C, esc = 0x01, u = 0x16, f = 0x21,
               tab = 0x0F };
+for name, dik in pairs(DIK) do
+    check(gp.KEY[dik] ~= nil, ('%s should be one of the addon\'s keys'):format(name));
+end
+check(gp.KEY[DIK.enter] == 'a' and gp.KEY[DIK.pad_enter] == 'a',
+      'both Enters should stand for the same action');
 
 local ui, favs_n;
 local function reset()
@@ -51,152 +52,55 @@ local function reset()
     favs_n = 0;
 end
 
-local function clamp(v, lo, hi)
-    return (v < lo) and lo or ((v > hi) and hi or v);
-end
-
--- nav.wake: marks the keys as what is driving, and says whether the press is
--- spent doing only that.
-local function wake()
-    local was = ui.gp_active;
-    ui.gp_active = true;
-    return not was;
-end
-
--- nav.press, minus the two calls into the map that need a frame behind them.
-local function press(act, down)
-    if (ui.chat ~= 0 or ui.cfg_typing) then
-        return false;
-    end
-    if (act == 'tab') then
-        if (not ui.is_open[1] or not ui.gp_ready) then
-            return false;
-        end
-        if (down) then
-            ui.focus_next, ui.search_blur = not ui.kb_typing, ui.kb_typing;
-        end
-        return true;
-    end
-    if (ui.kb_typing) then
-        return false;
-    end
-    if (act == 'b' and ui.esc_frames > 0) then
-        return false;
-    end
-
-    if (ui.fw_on) then
-        local n = favs_n;
-        if (n == 0) then
-            return false;
-        end
-        if (act == 'u') then
-            if (down) then
-                ui.fw_key     = false;
-                ui.fw_hide    = true;
-                -- show(), minus the frame behind it.
-                ui.is_open[1]  = true;
-                ui.opened      = ui.opened + 1;
-                ui.search_blur = false;
-            end
-            return true;
-        end
-        if (ui.fw_key) then
-            if (act ~= 'up' and act ~= 'down' and act ~= 'a' and act ~= 'b') then
-                return false;
-            end
-            if (not down) then
-                return true;
-            end
-            if (wake() and act ~= 'b') then
-                return true;
-            end
-            if (act == 'up') then
-                ui.fw_sel = (ui.fw_sel - 2) % n + 1;
-            elseif (act == 'down') then
-                ui.fw_sel = ui.fw_sel % n + 1;
-            elseif (act == 'a') then
-                -- fw_confirm(), minus the warp itself.
-                ui.sent    = ui.sent + 1;
-                ui.fw_hide = true;
-            else
-                ui.fw_key = false;
-            end
-            return true;
-        end
-        if (act == 'f') then
-            if (down) then
-                ui.fw_key = true;
-                ui.fw_sel = clamp(ui.fw_sel, 1, n);
-                wake();
-            end
-            return true;
-        end
-        if (act == 'b') then
-            if (down) then
-                ui.fw_hide = true;
-            end
-            return true;
-        end
-        return false;
-    end
-
-    if (not ui.is_open[1] or act == 'u') then
-        return false;
-    end
-    if (act == 'f') then
-        act = 'y';
-    end
-    if (ui.zoom == nil or not ui.gp_ready) then
-        if (act ~= 'b') then
-            return false;
-        end
-        if (down) then
-            ui.is_open[1] = false;
-        end
-        return true;
-    end
-    if (not down) then
-        return true;
-    end
-    if (wake() and act ~= 'b') then
-        return true;
-    end
-    if (ui.gp_act == nil or act == 'b') then
-        ui.gp_act = act;
-    end
-    return true;
-end
+-- The addon's side of the dispatch, cut down to what a press can be seen to do
+-- from out here: a list of the right length, a count of the calls, and the
+-- chat line asked of a number rather than of Ashita.
+local h = {
+    -- show(), minus the frame behind it.
+    show = function ()
+        ui.is_open[1]  = true;
+        ui.opened      = ui.opened + 1;
+        ui.focus_next  = false;
+        ui.search_blur = false;
+        ui.gp_act      = nil;
+    end,
+    -- fw_confirm(), minus the warp itself.  It leaves fw_hide alone: the real
+    -- one sets it only when the row can travel, and setting it here would leave
+    -- the flag already up before B is ever pressed, so the check that B puts the
+    -- widget away would pass whether or not B still does it.
+    fw_confirm = function ()
+        ui.sent = ui.sent + 1;
+    end,
+    fav_view = function ()
+        local t = { };
+        for i = 1, favs_n do t[i] = i; end
+        return t;
+    end,
+    chat_open = function () return ui.chat ~= 0; end,
+};
 
 -- The key_data handler: the buffered edge, and whether it was blocked.
 local function key(dik, down)
-    local act = KEY[dik];
-    if (act == nil) then
-        return false;
-    end
-    if (not down) then
-        if (ui.kb_held[dik]) then
-            ui.kb_held[dik] = nil;
-            return true;
-        end
-        return false;
-    end
-    if (not press(act, true)) then
-        return false;
-    end
-    ui.kb_held[dik] = true;
-    return true;
+    return gp.key(ui, dik, down, h);
 end
 
 -- The key_state handler, over a frame's state buffer given as a set of the
--- scan codes that are down.  Hands back what is left of it for the game.
+-- scan codes that are down.  The real buffer is a byte per scan code, so it is
+-- built that way here too and handed over to be wiped in place.  Hands back
+-- what is left of it for the game.
 local function state(down_set)
-    local keys = { };
-    for _, dik in ipairs(down_set) do
-        keys[dik] = 1;
+    local buf = { };
+    for dik in pairs(gp.KEY) do
+        buf[dik] = 0;
     end
-    for dik, act in pairs(KEY) do
-        if (keys[dik] ~= nil and (ui.kb_held[dik] or press(act, false))) then
-            keys[dik] = nil;
+    for _, dik in ipairs(down_set) do
+        buf[dik] = 1;
+    end
+    gp.state(ui, buf, h);
+    local keys = { };
+    for dik, v in pairs(buf) do
+        if (v ~= 0) then
+            keys[dik] = v;
         end
     end
     return keys;
@@ -307,6 +211,24 @@ check(state({ DIK.left })[DIK.left] ~= nil,
       'an arrow the map never took should reach the game');
 key(DIK.left, true);   -- taken by nothing, so no hold is recorded
 check(ui.kb_held[DIK.left] == nil, 'a key nothing took should record no hold');
+
+-- An alt-tab or a device re-acquire while a key is down loses the release
+-- event, and the hold it should have let go of would otherwise wipe that key
+-- out of the buffer on every later press -- a camera that will not turn for
+-- the whole of the next hold.  A frame that reads the key up is the one place
+-- left that can say so, whether or not its event ever arrived.
+reset();
+ui.is_open[1], ui.gp_active = true, true;
+key(DIK.up, true);
+check(ui.kb_held[DIK.up], 'a press the map took should record a hold');
+state({ });     -- the frame the window comes back on, with nothing down
+check(ui.kb_held[DIK.up] == nil,
+      'a frame that reads the key up should let go of a hold its release never did');
+-- And the hold really is gone: the same key, held again with the map shut
+-- under it, reaches the game rather than being wiped by a stale flag.
+ui.is_open[1] = false;
+check(state({ DIK.up })[DIK.up] ~= nil,
+      'a later hold should reach the game once the lost release has been made good');
 
 -- The state buffer is wiped on the frame the press lands as well, whichever
 -- order the game reads its two buffers in.
@@ -466,6 +388,20 @@ check(not key(DIK.left, true), 'left should stay the client\'s in focus mode');
 check(not key(DIK.right, true), 'right should stay the client\'s in focus mode');
 check(state({ DIK.left })[DIK.left] ~= nil,
       'left should reach the game in focus mode');
+
+-- F seats the highlight on a row that is on the list.  A selection left over
+-- from a longer one -- a favorite dropped while the widget was off screen --
+-- would otherwise start the arrows off past the end of it.
+reset();
+ui.fw_on, favs_n, ui.fw_sel = true, 3, 9;
+check(key(DIK.f, true), 'F should be taken by the widget');
+check(ui.fw_sel == 3,
+      ('F should pull a row past the end back onto the list, is %d'):format(ui.fw_sel));
+reset();
+ui.fw_on, favs_n, ui.fw_sel = true, 3, 0;
+key(DIK.f, true);
+check(ui.fw_sel == 1,
+      ('F should pull a row below the list back onto it, is %d'):format(ui.fw_sel));
 
 -- Enter sends the lit row, and the widget gets out of the way behind it.
 reset();

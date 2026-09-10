@@ -1,13 +1,17 @@
 --[[
 * Self-check for which gamepad buttons the map takes and which it leaves to the
-* client.  Mirrors the xinput_button handler in ubermap.lua: the favorites
-* widget is asked first and wins outright, the map takes buttons only while it
-* is on screen, a press that only takes the pad back off the mouse is spent
-* doing that, and a release is blocked exactly when its press was -- a release
-* handed to the client without the press would leave a button stuck down in
-* the game's own menus.  Run with any Lua 5.1+:
+* client.  Drives gpn.pad -- the real xinput_button dispatch out of
+* lib/gpnav.lua, not a copy of it -- over a stand-in ui table and the four
+* callbacks ubermap.lua hands it: the favorites widget is asked first and wins
+* outright, the map takes buttons only while it is on screen, a press that only
+* takes the pad back off the mouse is spent doing that, and a release is
+* blocked exactly when its press was -- a release handed to the client without
+* the press would leave a button stuck down in the game's own menus.  Run with
+* any Lua 5.1+:
 *     lua test/test_gpad.lua
 --]]
+
+local gp = assert(loadfile('lib/gpnav.lua'))();
 
 local fails = 0;
 local function check(ok, msg)
@@ -17,78 +21,57 @@ local function check(ok, msg)
     end
 end
 
--- The table, exactly as ubermap.lua keys it: the XInput button index the event
--- delivers.  The widget reads the five that are not left and right.
-local GP = { [0] = 'up', [1] = 'down', [2] = 'left', [3] = 'right',
-             [12] = 'a', [13] = 'b', [15] = 'y' };
-
 local ui, favs_n;
 local function reset()
     -- Driving by default, so each case says outright when it is starting from
     -- a map the mouse has just taken.
     ui = { fw_on = false, is_open = { false, }, zoom = 1.0, fw_sel = 1,
-           fw_hide = false, opened = 0,
+           fw_hide = false, opened = 0, sent = 0,
            gp_active = true, gp_ready = true, gp_act = nil, pad_held = { } };
     favs_n = 0;
 end
 
--- nav.wake: marks the pad as what is driving, and says whether the press is
--- spent doing only that.
-local function wake()
-    local was = ui.gp_active;
-    ui.gp_active = true;
-    return not was;
-end
+-- The addon's side of the dispatch, cut down to what a press can be seen to do
+-- from out here: a list of the right length, and a count of the calls.
+local h = {
+    -- show(), minus the frame behind it: the map comes up and starts empty.
+    show = function ()
+        ui.is_open[1] = true;
+        ui.opened     = ui.opened + 1;
+        ui.gp_act     = nil;
+    end,
+    -- fw_confirm(), minus the warp itself.  It leaves fw_hide alone: the real
+    -- one sets it only when the row can travel, and setting it here would leave
+    -- the flag already up before B is ever pressed, so the check that B puts the
+    -- widget away would pass whether or not B still does it.
+    fw_confirm = function ()
+        ui.sent = ui.sent + 1;
+    end,
+    fav_view = function ()
+        local t = { };
+        for i = 1, favs_n do t[i] = i; end
+        return t;
+    end,
+    -- The pad never asks, but the table is one shape for both halves.
+    chat_open = function () return false; end,
+};
 
--- The handler, minus the two calls into the map that need a frame behind them.
--- Hands back whether the press was blocked, which is the whole question.
+-- One button event, and whether the client was kept from seeing it, which is
+-- the whole question.
 local function button(index, state)
-    local act = GP[index];
-    if (act == nil) then
-        return false;
-    end
-    if (state ~= 1) then
-        if (ui.pad_held[index]) then
-            ui.pad_held[index] = nil;
-            return true;
-        end
-        return false;
-    end
-    if (ui.fw_on) then
-        if (act == 'left' or act == 'right' or favs_n == 0) then
-            return false;
-        end
-        ui.pad_held[index] = true;
-        if (wake()) then
-            return true;
-        end
-        if (act == 'up') then
-            ui.fw_sel = (ui.fw_sel - 2) % favs_n + 1;
-        elseif (act == 'down') then
-            ui.fw_sel = ui.fw_sel % favs_n + 1;
-        elseif (act == 'y') then
-            -- show(), minus the frame behind it: the widget puts itself away
-            -- for this visit and the map comes up in its place.
-            ui.fw_hide    = true;
-            ui.is_open[1] = true;
-            ui.opened     = ui.opened + 1;
-        end
-        return true;
-    end
-    if (not ui.is_open[1] or ui.zoom == nil or not ui.gp_ready) then
-        return false;
-    end
-    ui.pad_held[index] = true;
-    if (wake()) then
-        return true;
-    end
-    if (ui.gp_act == nil or act == 'b') then
-        ui.gp_act = act;
-    end
-    return true;
+    return gp.pad(ui, index, state, h);
 end
 
 local ALL = { 0, 1, 2, 3, 12, 13, 15 };
+
+-- The seven the addon reads at all, exactly as ubermap.lua's handler looks
+-- them up: the XInput button index the event delivers.
+for _, i in ipairs(ALL) do
+    check(gp.GP[i] ~= nil, ('button %d should be one of the addon\'s'):format(i));
+end
+-- The widget reads the five that are not left and right.
+check(gp.GP[2] == 'left' and gp.GP[3] == 'right',
+      'the two the widget leaves alone should be left and right');
 
 -- Map shut: every one of the seven is the client's, and nothing is held.
 reset();
@@ -154,10 +137,22 @@ check(ui.gp_act == nil, 'the map should hold nothing while the widget is up');
 -- One step each way, so the selection is back where it started: both of the
 -- D-pad presses landed on the widget rather than on the map behind it.
 check(ui.fw_sel == 1, ('the widget selection should have walked, is %d'):format(ui.fw_sel));
+-- A is the widget's send and B is the way back to the NPC's own menu, so
+-- neither of them reached the map either.
+check(ui.sent == 1, ('A should send the lit row once, sent %d'):format(ui.sent));
+check(ui.fw_hide, 'B should put the widget away');
 -- The two the widget does not read stay the client's rather than falling
 -- through to the map behind it.
 for _, i in ipairs({ 2, 3 }) do
     check(not button(i, 1), ('button %d should be the client\'s under the widget'):format(i));
+end
+
+-- An empty list takes the widget off screen before it can be pressed, so its
+-- five go back to the client rather than being swallowed by nothing.
+reset();
+ui.fw_on, favs_n = true, 0;
+for _, i in ipairs(ALL) do
+    check(not button(i, 1), ('button %d should be the client\'s with nothing saved'):format(i));
 end
 
 -- Y at the widget is the way up to the full map: the press is the widget's,
@@ -217,6 +212,7 @@ ui.fw_on, favs_n, ui.gp_active = true, 3, false;
 check(button(1, 1), 'the widget should take the waking press');
 check(ui.fw_sel == 1,
       ('a waking press should not step the row, is %d'):format(ui.fw_sel));
+check(ui.sent == 0, 'a waking press should send nothing');
 check(button(1, 0), 'the waking press should release like any other');
 button(1, 1);
 check(ui.fw_sel == 2,
