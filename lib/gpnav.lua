@@ -181,7 +181,7 @@ M.QUEUE_MAX = 8;
 * on the way back in would step off -- or worse, send -- something nothing on
 * screen was showing.
 --]]
-function M.wake(ui)
+local function wake(ui)
     local was = ui.gp_active;
     ui.gp_active = true;
     return not was;
@@ -282,7 +282,7 @@ function M.press(ui, act, down, h)
             -- the row to be lit again, the same as the pad's do: a press that
             -- acted on the way back in would step off -- or worse, send --
             -- something nothing on screen was showing.
-            if (M.wake(ui) and act ~= 'b') then
+            if (wake(ui) and act ~= 'b') then
                 return true;
             end
             if (act == 'up') then
@@ -308,7 +308,7 @@ function M.press(ui, act, down, h)
                 ui.fw_sel = math.max(1, math.min(ui.fw_sel, n));
                 -- Lights the row on the way in, so the first arrow steps it
                 -- rather than being spent turning the highlight back on.
-                M.wake(ui);
+                wake(ui);
             end
             return true;
         end
@@ -356,7 +356,7 @@ function M.press(ui, act, down, h)
     -- Escape is the one exception to the wake: it is the way out of a map
     -- covering most of the screen, so it acts on the first press however the
     -- map was being driven.  See M.pad for the rest of it.
-    if (M.wake(ui) and act ~= 'b') then
+    if (wake(ui) and act ~= 'b') then
         return true;
     end
     -- Queued rather than acted on here: the zooms need the viewport size, and
@@ -424,7 +424,7 @@ function M.pad(ui, index, state, h)
         -- release, a trigger -- says nothing about which hand is on the map,
         -- and a player working the mouse with a controller still in reach had
         -- the highlight coming back on all of them.
-        if (M.wake(ui)) then
+        if (wake(ui)) then
             return true;
         end
 
@@ -462,7 +462,7 @@ function M.pad(ui, index, state, h)
     ui.pad_held[index] = true;
     -- The map's own seven, on the press edge, while the map is up: the only
     -- thing that says the pad is what is driving it.  See the widget above.
-    if (M.wake(ui)) then
+    if (wake(ui)) then
         return true;
     end
     if (#ui.gp_q < M.QUEUE_MAX) then

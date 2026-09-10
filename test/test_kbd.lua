@@ -66,10 +66,12 @@ local h = {
         ui.search_blur = false;
         ui.gp_q        = { };
     end,
-    -- fw_confirm(), minus the warp itself.
+    -- fw_confirm(), minus the warp itself.  It leaves fw_hide alone: the real
+    -- one sets it only when the row can travel, and setting it here would leave
+    -- the flag already up before B is ever pressed, so the check that B puts the
+    -- widget away would pass whether or not B still does it.
     fw_confirm = function ()
-        ui.sent    = ui.sent + 1;
-        ui.fw_hide = true;
+        ui.sent = ui.sent + 1;
     end,
     fav_view = function ()
         local t = { };
@@ -78,10 +80,6 @@ local h = {
     end,
     chat_open = function () return ui.chat ~= 0; end,
 };
-
-local function press(act, down)
-    return gp.press(ui, act, down, h);
-end
 
 -- The key_data handler: the buffered edge, and whether it was blocked.
 local function key(dik, down)
@@ -173,6 +171,24 @@ check(state({ DIK.left })[DIK.left] ~= nil,
       'an arrow the map never took should reach the game');
 key(DIK.left, true);   -- taken by nothing, so no hold is recorded
 check(ui.kb_held[DIK.left] == nil, 'a key nothing took should record no hold');
+
+-- An alt-tab or a device re-acquire while a key is down loses the release
+-- event, and the hold it should have let go of would otherwise wipe that key
+-- out of the buffer on every later press -- a camera that will not turn for
+-- the whole of the next hold.  A frame that reads the key up is the one place
+-- left that can say so, whether or not its event ever arrived.
+reset();
+ui.is_open[1], ui.gp_active = true, true;
+key(DIK.up, true);
+check(ui.kb_held[DIK.up], 'a press the map took should record a hold');
+state({ });     -- the frame the window comes back on, with nothing down
+check(ui.kb_held[DIK.up] == nil,
+      'a frame that reads the key up should let go of a hold its release never did');
+-- And the hold really is gone: the same key, held again with the map shut
+-- under it, reaches the game rather than being wiped by a stale flag.
+ui.is_open[1] = false;
+check(state({ DIK.up })[DIK.up] ~= nil,
+      'a later hold should reach the game once the lost release has been made good');
 
 -- The state buffer is wiped on the frame the press lands as well, whichever
 -- order the game reads its two buffers in.
@@ -333,6 +349,20 @@ check(not key(DIK.right, true), 'right should stay the client\'s in focus mode')
 check(state({ DIK.left })[DIK.left] ~= nil,
       'left should reach the game in focus mode');
 
+-- F seats the highlight on a row that is on the list.  A selection left over
+-- from a longer one -- a favorite dropped while the widget was off screen --
+-- would otherwise start the arrows off past the end of it.
+reset();
+ui.fw_on, favs_n, ui.fw_sel = true, 3, 9;
+check(key(DIK.f, true), 'F should be taken by the widget');
+check(ui.fw_sel == 3,
+      ('F should pull a row past the end back onto the list, is %d'):format(ui.fw_sel));
+reset();
+ui.fw_on, favs_n, ui.fw_sel = true, 3, 0;
+key(DIK.f, true);
+check(ui.fw_sel == 1,
+      ('F should pull a row below the list back onto it, is %d'):format(ui.fw_sel));
+
 -- Enter sends the lit row, and the widget gets out of the way behind it.
 reset();
 ui.fw_on, favs_n, ui.fw_key, ui.gp_active = true, 3, true, true;
@@ -418,7 +448,7 @@ check(not ui.is_open[1], 'Escape should close a map that is not being drawn');
 -- at once when the map comes back is not what any of them meant.
 reset();
 ui.is_open[1], ui.gp_active = true, true;
-for _ = 1, 20 do
+for _ = 1, QUEUE_MAX * 2 do
     key(DIK.up, true);
     key(DIK.up, false);
 end

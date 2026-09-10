@@ -2211,10 +2211,11 @@ local function zoom_to_search(view_w, view_h)
     return false;
 end
 
--- The map's own gamepad functions, hung off one table rather than standing as
--- four locals of their own.  This chunk runs a handful of names short of Lua's
--- limit of 200 locals to a function, and four more do not fit; it is the shape
--- SCALE.px is already written in, so it is no stranger here than there.
+-- The map's own gamepad functions, and the table of callbacks the dispatch
+-- reaches them through, hung off one name rather than standing as five locals
+-- of their own.  This chunk runs a handful of names short of Lua's limit of 200
+-- locals to a function, and five more do not fit; it is the shape SCALE.px is
+-- already written in, so it is no stranger here than there.
 -- ponytail: one table because the limit is the whole reason for it.  Split the
 -- chunk into modules and these can go back to being plain locals.
 --

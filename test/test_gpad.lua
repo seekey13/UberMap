@@ -42,10 +42,12 @@ local h = {
         ui.opened     = ui.opened + 1;
         ui.gp_q       = { };
     end,
-    -- fw_confirm(), minus the warp itself.
+    -- fw_confirm(), minus the warp itself.  It leaves fw_hide alone: the real
+    -- one sets it only when the row can travel, and setting it here would leave
+    -- the flag already up before B is ever pressed, so the check that B puts the
+    -- widget away would pass whether or not B still does it.
     fw_confirm = function ()
-        ui.sent    = ui.sent + 1;
-        ui.fw_hide = true;
+        ui.sent = ui.sent + 1;
     end,
     fav_view = function ()
         local t = { };
@@ -146,7 +148,7 @@ check(button(15, 0), 'the Y release should follow its press');
 -- when it comes back is worse than losing them.
 reset();
 ui.is_open[1] = true;
-for _ = 1, 20 do
+for _ = 1, QUEUE_MAX * 2 do
     button(0, 1);
     button(0, 0);
 end
