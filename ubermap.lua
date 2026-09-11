@@ -24,6 +24,13 @@ require('common');
 local chat     = require('chat');
 local settings = require('settings');
 local imgui = require('imgui');
+
+-- ImGuiHoveredFlags_RectOnly folds in AllowWhenOverlapped, which newer ImGui
+-- rejects for IsWindowHovered() ('Invalid flags for IsWindowHovered()!').  The
+-- two flags this actually wants -- stay true while a popup or an active item
+-- would otherwise block the test -- are both still legal on their own.
+local HOVER_RECT = bit.bor(ImGuiHoveredFlags_AllowWhenBlockedByPopup,
+                           ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
 local ffi   = require('ffi');
 local d3d   = require('d3d8');
 local mm    = require('lib.mapmath');
@@ -2849,10 +2856,11 @@ local function draw_fav_widget()
         flags = bit.bor(flags, ImGuiWindowFlags_NoMove);
     end
     imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, { 0, 0 });
-    -- 'true' rather than nil for the open flag: Ashita's binding reads a nil
-    -- there as the two-argument Begin and throws the flags away, which puts
-    -- back the title bar and the resize grip this is meant to be without.
-    if (imgui.Begin('UberMap Favorites##ubermap_fw', true, flags)) then
+    -- A table rather than nil for the open flag: Ashita's binding takes a
+    -- table there, and a nil reads as the two-argument Begin and throws the
+    -- flags away, which puts back the title bar and the resize grip this is
+    -- meant to be without.  Nothing reads it back; NoTitleBar hides the X.
+    if (imgui.Begin('UberMap Favorites##ubermap_fw', { true, }, flags)) then
         -- The panel's own list, drawn into this window rather than over the
         -- map: same rows, same colours, same drag to reorder.  No empty text,
         -- since a list with nothing in it took the widget down above.
@@ -2863,7 +2871,7 @@ local function draw_fav_widget()
         -- hover then says which row a click would send; the pad's row is drawn
         -- again from the next press of one.
         nav.mouse(imgui.IsWindowHovered(
-            bit.bor(ImGuiHoveredFlags_ChildWindows, ImGuiHoveredFlags_RectOnly)));
+            bit.bor(ImGuiHoveredFlags_ChildWindows, HOVER_RECT)));
         local hot_i = draw_fav_list(px, py, m, mouse_x, mouse_y,
                                     { sel = ui.gp_active and ui.fw_sel or nil,
                                       grab = not shift,
@@ -3286,10 +3294,10 @@ local function draw_map(view_w, view_h)
 
     -- The map child covers the whole content region, so it is the window ImGui
     -- reports as hovered.  Without ChildWindows this test is false exactly when
-    -- the cursor is over the map, which kills both zoom and pan.  RectOnly
+    -- the cursor is over the map, which kills both zoom and pan.  HOVER_RECT
     -- keeps it true mid-drag, when an active item would otherwise block it.
     local hovered = imgui.IsWindowHovered(
-        bit.bor(ImGuiHoveredFlags_ChildWindows, ImGuiHoveredFlags_RectOnly));
+        bit.bor(ImGuiHoveredFlags_ChildWindows, HOVER_RECT));
 
     -- A cursor moving over any of that -- map, toolbar or panel -- is the hand
     -- leaving the pad, and takes the pad's highlight with it.  After the pump
@@ -3366,7 +3374,7 @@ local function draw_map(view_w, view_h)
 
     -- The child clips and a negative cursor position does the panning, which
     -- avoids depending on ImGui's scroll API.
-    if (imgui.BeginChild('ubermap_view', { view_w, view_h }, false,
+    if (imgui.BeginChild('ubermap_view', { view_w, view_h }, 0,
             bit.bor(ImGuiWindowFlags_NoScrollbar, ImGuiWindowFlags_NoScrollWithMouse))) then
         imgui.SetCursorPos({ -ui.pan_x, -ui.pan_y });
         imgui.Image(tonumber(ffi.cast('uint32_t', ui.texture)), { content_w, content_h });
