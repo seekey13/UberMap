@@ -41,6 +41,9 @@ check(gp.KEY[DIK.enter] == 'a' and gp.KEY[DIK.pad_enter] == 'a',
       'both Enters should stand for the same action');
 
 local ui, favs_n;
+-- The widget's two optional extras: the length of an opened zone group's
+-- panel, and whether a Cancel row heads the list.
+local sub_n, cancel_on;
 local function reset()
     -- The mouse drives by default, the way it does on a fresh session, so each
     -- case says outright when it is starting from a map the keys already have.
@@ -49,7 +52,7 @@ local function reset()
            kb_typing = false, cfg_typing = false, kb_held = { },
            esc_frames = 0, focus_next = false, search_blur = false,
            gp_active = false, gp_ready = true, gp_act = nil };
-    favs_n = 0;
+    favs_n, sub_n, cancel_on = 0, 0, false;
 end
 
 -- The addon's side of the dispatch, cut down to what a press can be seen to do
@@ -71,11 +74,12 @@ local h = {
     fw_confirm = function ()
         ui.sent = ui.sent + 1;
     end,
-    fav_view = function ()
-        local t = { };
-        for i = 1, favs_n do t[i] = i; end
-        return t;
+    -- The rows the D-pad walks: a zone group's panel while one is open out,
+    -- else the widget's own list.
+    fw_count = function ()
+        return (ui.fw_grp ~= nil) and sub_n or favs_n;
     end,
+    fw_cancel = function () return cancel_on; end,
     chat_open = function () return ui.chat ~= 0; end,
 };
 
@@ -497,6 +501,38 @@ for _ = 1, 19 do
 end
 check(ui.gp_act == 'up',
       ('twenty presses should leave the first, left %s'):format(tostring(ui.gp_act)));
+
+-- With a Cancel row on top, F lands on it whatever row was lit, and shuts any
+-- zone group that was open, so the Enter after it cancels rather than warps.
+reset();
+ui.fw_on, favs_n, sub_n, cancel_on = true, 4, 2, true;
+ui.fw_sel, ui.fw_grp, ui.fw_sub = 3, 'Lower Jeuno', 2;
+key(DIK.f, true); key(DIK.f, false);
+check(ui.fw_key, 'F should hand the widget the arrows');
+check(ui.fw_sel == 1, ('F should land on the Cancel row, is %d'):format(ui.fw_sel));
+check(ui.fw_grp == nil, 'F should shut an open zone group');
+
+-- Without one, F keeps the row it had.
+reset();
+ui.fw_on, favs_n, ui.fw_sel = true, 4, 3;
+key(DIK.f, true); key(DIK.f, false);
+check(ui.fw_sel == 3, ('F without a Cancel row should keep the row, is %d'):format(ui.fw_sel));
+
+-- In focus mode an open group takes the arrows, and Escape shuts it before it
+-- hands the keys back.
+reset();
+ui.fw_on, favs_n, sub_n, ui.fw_key, ui.gp_active = true, 4, 3, true, true;
+ui.fw_sel, ui.fw_grp, ui.fw_sub = 2, 'Lower Jeuno', 1;
+key(DIK.down, true); key(DIK.down, false);
+check(ui.fw_sub == 2, ('down should walk the group, is %d'):format(ui.fw_sub));
+check(ui.fw_sel == 2, ('the list\'s row should stay put, is %d'):format(ui.fw_sel));
+key(DIK.esc, true); key(DIK.esc, false);
+check(ui.fw_grp == nil, 'Escape should shut the group');
+check(ui.fw_key, 'Escape out of a group should keep the arrows');
+check(ui.fw_sel == 2, ('Escape should land back on the zone\'s row, is %d'):format(ui.fw_sel));
+key(DIK.esc, true); key(DIK.esc, false);
+check(not ui.fw_key, 'the Escape after that should hand the arrows back');
+check(not ui.fw_hide, 'and leave the widget up');
 
 -- An empty widget reads no key at all: it is off screen, and the list the
 -- arrows would walk is not there.
