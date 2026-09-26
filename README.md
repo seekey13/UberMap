@@ -196,6 +196,8 @@ The Multisend gate, your favorites, the five toggles and everything on the confi
 - Thorny — [Uberwarp](https://github.com/ThornyFFXI/Uberwarp) and
   [Multisend](https://github.com/ThornyFFXI/Multisend)
 - The [FFXI Remapster Project](https://remapster.com/)
+- Tai — the idea for the widget's [Cancel button](#cancel-button) and
+  [Group by zone](#group-by-zone)
 
 ## License
 
