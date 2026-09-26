@@ -22,13 +22,16 @@ local function check(ok, msg)
 end
 
 local ui, favs_n;
+-- The widget's two optional extras: the length of an opened zone group's
+-- panel, and whether a Cancel row heads the list.
+local sub_n, cancel_on;
 local function reset()
     -- Driving by default, so each case says outright when it is starting from
     -- a map the mouse has just taken.
     ui = { fw_on = false, is_open = { false, }, zoom = 1.0, fw_sel = 1,
            fw_hide = false, opened = 0, sent = 0,
            gp_active = true, gp_ready = true, gp_act = nil, pad_held = { } };
-    favs_n = 0;
+    favs_n, sub_n, cancel_on = 0, 0, false;
 end
 
 -- The addon's side of the dispatch, cut down to what a press can be seen to do
@@ -47,11 +50,12 @@ local h = {
     fw_confirm = function ()
         ui.sent = ui.sent + 1;
     end,
-    fav_view = function ()
-        local t = { };
-        for i = 1, favs_n do t[i] = i; end
-        return t;
+    -- The rows the D-pad walks: a zone group's panel while one is open out,
+    -- else the widget's own list.
+    fw_count = function ()
+        return (ui.fw_grp ~= nil) and sub_n or favs_n;
     end,
+    fw_cancel = function () return cancel_on; end,
     -- The pad never asks, but the table is one shape for both halves.
     chat_open = function () return false; end,
 };
@@ -217,6 +221,32 @@ check(button(1, 0), 'the waking press should release like any other');
 button(1, 1);
 check(ui.fw_sel == 2,
       ('the press after the wake should step the row, is %d'):format(ui.fw_sel));
+
+-- A zone group opened out beside the widget takes the D-pad: up and down walk
+-- its panel, wrapping, and leave the zone's row where it was.
+reset();
+ui.fw_on, favs_n, sub_n = true, 4, 3;
+ui.fw_sel, ui.fw_grp, ui.fw_sub = 2, 'Lower Jeuno', 1;
+button(1, 1); button(1, 0);
+check(ui.fw_sub == 2, ('down should walk the group, is %d'):format(ui.fw_sub));
+button(0, 1); button(0, 0);
+button(0, 1); button(0, 0);
+check(ui.fw_sub == 3, ('up off the group\'s top should wrap, is %d'):format(ui.fw_sub));
+check(ui.fw_sel == 2, ('the list\'s row should stay put, is %d'):format(ui.fw_sel));
+-- A still goes to fw_confirm, which knows which list it is on.
+button(12, 1); button(12, 0);
+check(ui.sent == 1, 'A in the group should confirm');
+-- B shuts the group back onto the zone's row, and leaves the widget up.
+button(13, 1); button(13, 0);
+check(ui.fw_grp == nil, 'B should shut the group');
+check(not ui.fw_hide, 'B out of a group should leave the widget up');
+check(ui.fw_sel == 2, ('B should land back on the zone\'s row, is %d'):format(ui.fw_sel));
+-- And the D-pad walks the list again.
+button(1, 1); button(1, 0);
+check(ui.fw_sel == 3, ('down after B should walk the list, is %d'):format(ui.fw_sel));
+-- The B after that is the widget's own.
+button(13, 1); button(13, 0);
+check(ui.fw_hide, 'a second B should put the widget away');
 
 -- Nothing else on the pad is anybody's business: Start, the shoulders and X
 -- stay the client's with the map wide open.

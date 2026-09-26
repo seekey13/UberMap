@@ -440,6 +440,14 @@ local default_settings = T{
     -- emptied on purpose; both look the same on disk.
     seeded = false,
     widget = true,   -- the gamepad favorites widget is on
+    -- A Cancel row at the top of the widget, where the selection starts.  Off
+    -- by default.  For the player who walks up to a warp NPC and presses A out
+    -- of habit: with it on, that press shuts the widget instead of warping.
+    fw_cancel = false,
+    -- Two or more favorites in one zone listed on the widget as a single row
+    -- named for the zone, which opens them out in a panel beside it.  Off by
+    -- default, so the widget lists what it always did until asked not to.
+    fw_group  = false,
     -- The EXP Guide errand.  On by default, the way the widget is: it acts only
     -- on the walk past a guide and can be watched happening.  A toggle all the
     -- same, because it sends a packet and a keystroke with no click behind it.
@@ -726,6 +734,12 @@ local ui = T{
     fw_shown    = false,     -- it was up last frame, i.e. this is not its first
     fw_sel      = 1,         -- the row the D-pad has landed on, 1-based
     fw_hide     = false,     -- B put it away until the player walks off the NPC
+    -- The zone whose grouped favorites are opened out beside the widget, as
+    -- the key the rows share, or nil while no group is open; and the row of
+    -- that panel the D-pad has landed on.  While a group is open, up, down and
+    -- A walk and send its rows, and B shuts it back onto the zone's row.
+    fw_grp      = nil,
+    fw_sub      = 1,
     -- The widget's right-click menu was up last frame.  Read the same way as
     -- ctx_hot: the popup is submitted after the list it hangs off, so the rows
     -- underneath learn it is there a frame late.
@@ -1735,10 +1749,100 @@ local function fav_view()
     return view, raw;
 end
 
+--[[
+* The widget's two rows that are not favorites.  Cancel does nothing but shut
+* the widget; a zone group stands in for every favorite saved in one zone and
+* carries them in 'members', with 'key' and 'type' copied off the first so the
+* list draws it with that zone's name and that kind's icon.
+*
+* Hung off one table, fw, along with the widget's helpers below, rather than
+* standing as locals of their own: the main chunk is at Lua's cap of 200.
+--]]
+local fw = {
+    CANCEL     = { cancel = true },
+    CANCEL_TXT = 'Cancel',
+    -- What a group row carries in the grid-reference column: its rows are in
+    -- the panel it opens, so the column says that rather than naming one.
+    GROUP_POS  = '>',
+};
+
 -- What a favorite reads as: the zone the row hung off, then the row itself,
--- e.g. 'Windurst Woods - Home Point #2'.
+-- e.g. 'Windurst Woods - Home Point #2'.  A zone group reads as the zone
+-- alone, and Cancel as itself.
 local function fav_text(f)
+    if (f.cancel) then
+        return fw.CANCEL_TXT;
+    end
+    if (f.members ~= nil) then
+        return f.key;
+    end
     return ('%s - %s'):fmt(f.key, f.label);
+end
+
+--[[
+* The widget's own list: fav_view, with a Cancel row on top and favorites that
+* share a zone folded into one row, each when its checkbox asks for it.
+* Handed back the way fav_view hands its rows back, with the slot each sits in
+* in cfg.favs, so a drag inside it still reorders the saved list.  Cancel has
+* no slot and cannot be dragged or dropped on.  A group takes its first
+* member's slot, since that is where it is listed: a row dropped on it lands
+* on the same side of that member the drop put it on the group.
+*
+* A group is listed where its first member would have been, and only where two
+* or more share a zone -- one favorite alone in its zone reads as it always has.
+--]]
+function fw.view()
+    local favs, raw = fav_view();
+    local view, slot, n = T{ }, T{ }, 0;
+    if (cfg.fw_cancel) then
+        n = 1;
+        view[n] = fw.CANCEL;
+    end
+    local count = { };
+    if (cfg.fw_group) then
+        for _, f in ipairs(favs) do
+            count[f.key] = (count[f.key] or 0) + 1;
+        end
+    end
+    local groups = { };
+    for i, f in ipairs(favs) do
+        local s = raw and raw[i] or i;
+        if ((count[f.key] or 0) < 2) then
+            n = n + 1;
+            view[n], slot[n] = f, s;
+        elseif (groups[f.key] == nil) then
+            local g = { key = f.key, type = f.type,
+                        members = T{ f }, slots = T{ s } };
+            groups[f.key] = g;
+            n = n + 1;
+            view[n], slot[n] = g, s;
+        else
+            local g = groups[f.key];
+            g.members[#g.members + 1] = f;
+            g.slots[#g.slots + 1]     = s;
+        end
+    end
+    return view, slot;
+end
+
+--[[
+* The group opened out beside the widget, and the row of fw.view it hangs off,
+* or nil while none is.  A group that has gone -- its members narrowed away by
+* walking to another NPC, or removed down to one -- shuts itself here, so the
+* D-pad is handed back to the list rather than left walking a panel that is no
+* longer drawn.
+--]]
+function fw.group_open()
+    if (ui.fw_grp == nil) then
+        return nil;
+    end
+    for i, f in ipairs(fw.view()) do
+        if (f.members ~= nil and f.key == ui.fw_grp) then
+            return f, i;
+        end
+    end
+    ui.fw_grp = nil;
+    return nil;
 end
 
 --[[
@@ -1750,6 +1854,9 @@ end
 * whether or not its type's toggle is lit.
 --]]
 local function fav_pos(f)
+    if (f.members ~= nil) then
+        return fw.GROUP_POS;
+    end
     for _, r in ipairs(WARPS[f.key] or {}) do
         if (r.type == f.type and r.label == f.label) then
             return r.pos;
@@ -2517,15 +2624,14 @@ local function show()
 end
 
 --[[
-* Send the selected favorite, if it is one that can travel.  A row that cannot
-* takes no press, the same way a red row in the panel takes no click: the /uw
-* would be turned down at the NPC, and a row that looks live but does nothing
-* reads as a broken list.  The two tests are the ones draw_fav_list colours a
-* row on: a row travels only from the kind of NPC it was saved off, and only to
+* Send a favorite, if it is one that can travel.  A row that cannot takes no
+* press, the same way a red row in the panel takes no click: the /uw would be
+* turned down at the NPC, and a row that looks live but does nothing reads as
+* a broken list.  The two tests are the ones draw_fav_list colours a row on: a
+* row travels only from the kind of NPC it was saved off, and only to
 * somewhere the player has registered.
 --]]
-local function fw_confirm()
-    local f = fav_view()[ui.fw_sel];
+function fw.send(f)
     if (f == nil or f.type ~= ui.near_kind or not warp_known(f.key, f)) then
         return;
     end
@@ -2542,12 +2648,53 @@ local function fw_confirm()
 end
 
 --[[
-* The four ways the dispatch in lib/gpnav.lua reaches back into the addon.
+* What a press on one of the widget's rows does, by A or by a click: row i of
+* the group panel when 'sub' is set, of the widget's own list otherwise.
+* Cancel shuts the widget the way B does, handing back the arrows with it.  A
+* zone group opens its panel with the cursor on the panel's top row, or shuts
+* it again if it was the one already open.  Anything else is a favorite, and
+* travels if it can.
+--]]
+function fw.pick(sub, i)
+    if (sub) then
+        local g = fw.group_open();
+        fw.send(g and g.members[i]);
+        return;
+    end
+    local f = fw.view()[i];
+    if (f == nil) then
+        return;
+    end
+    if (f.cancel) then
+        ui.fw_hide = true;
+        ui.fw_key  = false;
+    elseif (f.members ~= nil) then
+        if (ui.fw_grp == f.key) then
+            ui.fw_grp = nil;
+        else
+            ui.fw_grp, ui.fw_sub = f.key, 1;
+        end
+    else
+        fw.send(f);
+    end
+end
+
+-- A: on the open group's panel while there is one, else on the list.
+function fw.confirm()
+    if (fw.group_open() ~= nil) then
+        fw.pick(true, ui.fw_sub);
+    else
+        fw.pick(false, ui.fw_sel);
+    end
+end
+
+--[[
+* The five ways the dispatch in lib/gpnav.lua reaches back into the addon.
 * Everything else it needs is a field of ui, which it is handed alongside this.
 *
 * Hung off nav rather than standing as a local of its own for the reason the
 * rest of nav is, and written down here rather than up beside it because show
-* and fw_confirm are locals declared above this point and nowhere earlier.
+* and fw.confirm are declared above this point and nowhere earlier.
 *
 * chat_open is the one that is not a call into the map: the game's own chat
 * line or a bazaar comment has the keyboard before anything here does, and
@@ -2556,8 +2703,17 @@ end
 --]]
 nav.h = {
     show       = show,
-    fw_confirm = fw_confirm,
-    fav_view   = fav_view,
+    fw_confirm = fw.confirm,
+    -- How many rows the D-pad walks: the open group's panel while one is open,
+    -- else the widget's own list.
+    fw_count   = function ()
+        local g = fw.group_open();
+        return g and #g.members or #fw.view();
+    end,
+    -- Whether the widget's top row is Cancel, which F lands the arrows on.
+    fw_cancel  = function ()
+        return cfg.fw_cancel == true;
+    end,
     chat_open  = function ()
         return bit.band(AshitaCore:GetChatManager():IsInputOpen(), 0x01) ~= 0;
     end,
@@ -2576,9 +2732,12 @@ nav.h = {
 * nothing in it measures the one row of FAV_EMPTY instructions the panel draws
 * in its place; the widget never sees that case, since an empty list takes it
 * off screen before it measures anything.
+*
+* Measures fav_view unless handed a list of its own: the widget's, or the
+* members of the zone group it has opened out.
 --]]
-local function fav_metrics()
-    local favs  = fav_view();
+local function fav_metrics(favs)
+    favs        = favs or fav_view();
     local n     = #favs;
     local _, th = imgui.CalcTextSize('A');
     -- Columns: the warp type's icon, then the text.  An empty list is one row
@@ -2620,15 +2779,24 @@ end
 *          it hovers, drags or right-clicks while that is up.
 *   grab - false to draw the rows and take nothing, which is what hands a
 *          press to the window underneath instead.
+*   rows - the list to draw and the slot each row sits in in cfg.favs, as
+*   slot   fav_view hands them back; fav_view itself when not given.  A row
+*          with no slot (Cancel) is never dragged or dropped on, and a zone
+*          group, which carries 'members', is dropped on but never dragged.
+*   id   - the list's name, for its button and its drags: the widget draws a
+*          zone group's panel beside its own list in the one window.
+*   click- what a click that did not drag does, handed the row's number;
+*          unset, the row travels if it can.
 *
-* One drag at a time, in ui.fav_drag: only ever one of the two lists is on
-* screen, since turning the widget on takes the heart and its panel away.
+* One drag at a time, in ui.fav_drag, tagged with the id of the list it
+* started in so that only that list moves it.
 --]]
 local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
     local dl      = imgui.GetWindowDrawList();
     local n, w, h = m.n, m.w, m.h;
     local sel     = opts.sel;
     local veto    = opts.veto;
+    local id      = opts.id or '##ubermap_favs';
 
     dl:AddRectFilled({ px, py }, { px + w, py + h }, COL_POPUP_BG,
                      0, ImDrawCornerFlags_All);
@@ -2646,26 +2814,50 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
 
     -- Which row the cursor is on, read while drawing and acted on after: a
     -- drag reorders the list the loop is walking.
-    local hot_i, hot_live, hot_lock = nil, false, nil;
+    local hot_i, hot_live, hot_lock, hot_fixed = nil, false, nil, false;
+    -- Only a drag that started in this list is this list's to draw and move.
     local drag = ui.fav_drag;
+    if (drag ~= nil and drag.id ~= id) then
+        drag = nil;
+    end
     -- Narrowed to the NPC in reach, so every row drawn here is one that can be
     -- sent from where the player is stood; raw is nil when it is not narrowed,
     -- and then a row's slot in the list is its slot in cfg.favs.
-    local favs, raw = fav_view();
+    local favs, raw = opts.rows, opts.slot;
+    if (favs == nil) then
+        favs, raw = fav_view();
+    end
+    local function slot(k)
+        if (raw == nil) then
+            return k;
+        end
+        return raw[k];
+    end
     for i, f in ipairs(favs) do
         local ry = py + POPUP_ROW * (i - 1);
         -- The same two tests the popup rows use: a favorite travels only from
         -- the kind of NPC it was saved off, and only to somewhere the player
         -- has registered.  A favorite can outlive neither, so both are asked
-        -- again every frame rather than saved with the entry.
-        local live  = f.type == ui.near_kind;
-        local known = warp_known(f.key, f);
+        -- again every frame rather than saved with the entry.  Cancel always
+        -- reads live, and a zone group as registered while any row in it is.
+        local live, known = f.type == ui.near_kind, true;
+        if (f.cancel) then
+            live = true;
+        elseif (f.members ~= nil) then
+            known = false;
+            for _, g in ipairs(f.members) do
+                known = known or warp_known(g.key, g);
+            end
+        else
+            known = warp_known(f.key, f);
+        end
         local over  = not veto
                       and mouse_x >= px and mouse_x <= px + w
                       and mouse_y >= ry and mouse_y < ry + POPUP_ROW;
         if (over) then
             hot_i, hot_live = i, live and known;
             hot_lock = (not known) and LOCK_TIP[f.type] or nil;
+            hot_fixed = slot(i) == nil or f.members ~= nil;
         end
         -- The selection, and over it the row under the cursor -- or while one
         -- is being dragged, the slot the cursor has carried it to rather than
@@ -2681,8 +2873,8 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
 
         -- Unlike a popup row, a favorite comes back off disk, so its type is
         -- only as good as the settings file: one no toggle names draws no icon
-        -- rather than looking one up under a nil.
-        local art = WARP_ICON[f.type];
+        -- rather than looking one up under a nil.  Cancel has no type at all.
+        local art = (f.type ~= nil) and WARP_ICON[f.type] or nil;
         local tex, iw, ih;
         if (art ~= nil) then tex, iw, ih = icon_texture(art); end
         if (tex ~= nil) then
@@ -2722,40 +2914,51 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
         imgui.Dummy({ w, h });
         return nil;
     end
-    imgui.InvisibleButton('##ubermap_favs', { w, h });
+    imgui.InvisibleButton(id, { w, h });
     local fav_hot = mouse_x >= px and mouse_x <= px + w
                     and mouse_y >= py and mouse_y <= py + h;
     -- Held on to through a drag as well as a hover: a row dragged past the
     -- ends of the list puts the cursor outside the list, which would otherwise
     -- hand the same press to the map and pan it.
     ui.hot = ui.hot or fav_hot or ui.fav_drag ~= nil;
+    -- A drag left behind by a list that is no longer drawn -- a zone group
+    -- shut mid-drag, say -- is dropped once the button is up, or ui.hot would
+    -- hold the map deaf for good.  Kept through the release frame itself, for
+    -- the list it belongs to if that is drawn later in it.
+    if (ui.fav_drag ~= nil and drag == nil
+        and not imgui.IsMouseDown(0) and not imgui.IsMouseReleased(0)) then
+        ui.fav_drag = nil;
+    end
     -- Why a red favorite does not travel.  Not while the pad or the keys are
     -- driving: the cursor is not what a press would land on then.
     if (hot_lock ~= nil and not veto and not ui.gp_active) then
         imgui.SetTooltip(hot_lock);
     end
 
-    if (ui.fav_drag ~= nil) then
+    if (drag ~= nil) then
         if (imgui.IsMouseDown(0)) then
             -- Held: the row rides to whichever slot the cursor is over, so the
             -- list reorders under the hand holding it.  Clamped to the list,
-            -- since the cursor is free to leave it.
+            -- since the cursor is free to leave it.  A row that cannot move,
+            -- or a slot it cannot land on, leaves the list as it is.
             local j = mm.clamp(
                 math.floor((mouse_y - py) / POPUP_ROW) + 1, 1, n);
-            if (j ~= ui.fav_drag.i) then
-                fav_reorder(raw and raw[ui.fav_drag.i] or ui.fav_drag.i,
-                            raw and raw[j] or j);
-                ui.fav_drag.i, ui.fav_drag.moved = j, true;
+            if (j ~= drag.i and not drag.fixed and slot(j) ~= nil) then
+                fav_reorder(slot(drag.i), slot(j));
+                drag.i, drag.moved = j, true;
             end
         elseif (imgui.IsMouseReleased(0)) then
             -- Let go: one that moved is a reorder to write out, one that never
-            -- left its row is a plain click, so it travels.
-            if (ui.fav_drag.moved) then
+            -- left its row is a plain click, so it travels -- or does what
+            -- the caller says a click does.
+            if (drag.moved) then
                 settings.save();
-            elseif (ui.fav_drag.live) then
+            elseif (opts.click ~= nil) then
+                opts.click(drag.i);
+            elseif (drag.live) then
                 -- The saved entry carries every field warp_cmd reads, so it
                 -- travels as the row it was taken from.
-                local f   = favs[ui.fav_drag.i];
+                local f   = favs[drag.i];
                 local cmd = warp_cmd(f.key, f);
                 if (cmd ~= nil) then
                     send_cmd(cmd);
@@ -2768,9 +2971,10 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
             -- does not also travel.
             ui.fav_drag = nil;
         end
-    elseif (imgui.IsMouseClicked(0) and hot_i ~= nil
+    elseif (ui.fav_drag == nil and imgui.IsMouseClicked(0) and hot_i ~= nil
             and ui.ctx == nil and not veto) then
-        ui.fav_drag = { i = hot_i, live = hot_live, moved = false };
+        ui.fav_drag = { i = hot_i, live = hot_live, moved = false,
+                        id = id, fixed = hot_fixed };
     end
     return hot_i;
 end
@@ -2800,6 +3004,8 @@ local function draw_fav_widget()
         -- A menu left open by a widget going off screen is gone with it, so
         -- the veto goes too: a stale one leaves the rows deaf on the way back.
         ui.fw_ctx = false;
+        -- And a zone group opened out goes with the list it hung off.
+        ui.fw_grp = nil;
         -- The arrows go back to the player with the list they were walking:
         -- a widget off screen holding the movement keys is a character that
         -- will not walk, with nothing on screen to say why.
@@ -2812,7 +3018,10 @@ local function draw_fav_widget()
         return;
     end
     ui.fw_on  = true;
-    ui.fw_sel = mm.clamp(ui.fw_sel, 1, n);
+    -- The list as the widget lists it: Cancel on top and zones folded into a
+    -- row apiece, where the config panel asks for either.
+    local rows, slots = fw.view();
+    ui.fw_sel = mm.clamp(ui.fw_sel, 1, #rows);
 
     -- Asked for once, on the frame it comes up, and never again.  Ashita gives
     -- every addon the one ImGui context, and focusing a window closes every
@@ -2823,9 +3032,14 @@ local function draw_fav_widget()
     -- What used to make that per-frame ask look necessary was the map burying
     -- this on a click; the map carries NoBringToFrontOnFocus now, so a click
     -- down there leaves the stack alone and one ask on the way up holds.
+    --
+    -- The selection starts on the top row, which is Cancel where there is one,
+    -- and with no group opened out: a press made out of habit on the way up to
+    -- the NPC then shuts the widget rather than warping anywhere.
     if (not ui.fw_shown) then
         ui.fw_shown = true;
         ui.fw_sel   = 1;
+        ui.fw_grp   = nil;
         imgui.SetNextWindowFocus();
     end
 
@@ -2848,6 +3062,44 @@ local function draw_fav_widget()
     if (not shift) then
         flags = bit.bor(flags, ImGuiWindowFlags_NoMove);
     end
+
+    --[[
+    * Right-click a row for the same one-item menu the map's panel offers.  An
+    * ImGui popup rather than the hand-drawn menu draw_ctx_menu puts up: that
+    * one is drawn into the map window, which this window stands in front of.
+    * It hangs off the InvisibleButton the list just drawn left behind, so it
+    * is asked for straight after each list, and acts on f -- the row the
+    * right-click just moved that list's selection to.  Neither Cancel nor a
+    * zone group is a favorite to remove, so neither offers it.
+    *
+    * Placed under that row rather than at the cursor, the same as the map's
+    * menu and for the same reason: a menu lying over the row it came from
+    * puts its item and that row under the one click.  The rows stand down
+    * while it is up as well -- an ImGui popup blocks its own items from the
+    * ones below, but these rows are hand-tested rects and know nothing of it.
+    *
+    * Behind the same shift test as the popup, or the position is set for a
+    * popup that is never begun: Ashita shares one ImGui context across every
+    * addon, and a pending NextWindowPos nothing consumes lands on whatever
+    * window Begins next in the frame.
+    --]]
+    local function menu(pid, f, x, y)
+        if (shift or f == nil or f.cancel or f.members ~= nil) then
+            return;
+        end
+        imgui.SetNextWindowPos({ x, y });
+        if (imgui.BeginPopupContextItem(pid)) then
+            ui.fw_ctx = true;
+            if (imgui.MenuItem('Remove point from favorites list')) then
+                -- One shorter from here: the selection is clamped back onto
+                -- the list at the top of the next draw, and an emptied list
+                -- takes the widget down with it.
+                fav_toggle(f.key, f);
+            end
+            imgui.EndPopup();
+        end
+    end
+
     imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, { 0, 0 });
     -- 'true' rather than nil for the open flag: Ashita's binding reads a nil
     -- there as the two-argument Begin and throws the flags away, which puts
@@ -2856,7 +3108,7 @@ local function draw_fav_widget()
         -- The panel's own list, drawn into this window rather than over the
         -- map: same rows, same colours, same drag to reorder.  No empty text,
         -- since a list with nothing in it took the widget down above.
-        local m = fav_metrics();
+        local m = fav_metrics(rows);
         local mouse_x, mouse_y = imgui.GetMousePos();
         local px, py = imgui.GetCursorScreenPos();
         -- A cursor moving over the widget hands it to the mouse, whose own
@@ -2864,40 +3116,31 @@ local function draw_fav_widget()
         -- again from the next press of one.
         nav.mouse(imgui.IsWindowHovered(
             bit.bor(ImGuiHoveredFlags_ChildWindows, ImGuiHoveredFlags_RectOnly)));
+        -- The veto is last frame's: the popups are submitted after the lists
+        -- they hang off, so the rows underneath learn one is up a frame late.
+        local veto = ui.fw_ctx;
+        ui.fw_ctx = false;
+        -- A click does what A does, so Cancel shuts the widget and a zone
+        -- group opens its panel whichever hand chose it.
         local hot_i = draw_fav_list(px, py, m, mouse_x, mouse_y,
-                                    { sel = ui.gp_active and ui.fw_sel or nil,
-                                      grab = not shift,
-                                      veto = ui.fw_ctx });
+                                    { sel   = ui.gp_active and ui.fw_sel or nil,
+                                      grab  = not shift,
+                                      veto  = veto,
+                                      rows  = rows,
+                                      slot  = slots,
+                                      id    = '##ubermap_fw_list',
+                                      click = function (i) fw.pick(false, i); end });
         -- Mouse and D-pad share the one selection: a press of either button
         -- on a row moves it there, and a row dragged up or down the list
         -- carries the selection along with it.  A click puts the pad's
         -- highlight out, so the A after one lights the row it left and the A
         -- after that is what sends it.
-        if (ui.fav_drag ~= nil) then
-            ui.fw_sel = ui.fav_drag.i;
+        local drag = ui.fav_drag;
+        if (drag ~= nil and drag.id == '##ubermap_fw_list') then
+            ui.fw_sel = drag.i;
         elseif (hot_i ~= nil
                 and (imgui.IsMouseClicked(0) or imgui.IsMouseClicked(1))) then
             ui.fw_sel = hot_i;
-        end
-        -- Right-click a row for the same one-item menu the map's panel offers.
-        -- An ImGui popup rather than the hand-drawn menu draw_ctx_menu puts
-        -- up: that one is drawn into the map window, which this window stands
-        -- in front of.  It hangs off the list's InvisibleButton, and acts on
-        -- the row the right-click just moved the selection to.
-        --
-        -- Placed under that row rather than at the cursor, the same as the
-        -- map's menu and for the same reason: a menu lying over the row it
-        -- came from puts its item and that row under the one click.  The rows
-        -- stand down while it is up as well -- an ImGui popup blocks its own
-        -- items from the ones below, but these rows are hand-tested rects and
-        -- know nothing of it.
-        --
-        -- Behind the same shift test as the popup below, or the position is set
-        -- for a popup that is never begun: Ashita shares one ImGui context
-        -- across every addon, and a pending NextWindowPos nothing consumes
-        -- lands on whatever window Begins next in the frame.
-        if (not shift) then
-            imgui.SetNextWindowPos({ px, py + POPUP_ROW * ui.fw_sel + POPUP_GAP });
         end
         -- Dressed in the panel's own colours, or this would be the one menu on
         -- screen wearing ImGui's: the ground and outline the lists draw
@@ -2908,19 +3151,35 @@ local function draw_fav_widget()
         imgui.PushStyleColor(ImGuiCol_Border, { 0.0, 0.0, 0.0, 1.0 });
         imgui.PushStyleColor(ImGuiCol_HeaderHovered, cfg.col_hover);
         imgui.PushStyleColor(ImGuiCol_HeaderActive, cfg.col_hover);
-        ui.fw_ctx = false;
-        if (not shift and imgui.BeginPopupContextItem('##ubermap_fw_ctx')) then
-            ui.fw_ctx = true;
-            if (imgui.MenuItem('Remove point from favorites list')) then
-                local f = fav_view()[ui.fw_sel];
-                if (f ~= nil) then
-                    -- One shorter from here: the selection is clamped back
-                    -- onto the list at the top of the next draw, and an
-                    -- emptied list takes the widget down with it.
-                    fav_toggle(f.key, f);
-                end
+        menu('##ubermap_fw_ctx', rows[ui.fw_sel],
+             px, py + POPUP_ROW * ui.fw_sel + POPUP_GAP);
+
+        -- The zone group opened out, as a second list to the right of the
+        -- first with its top row level with the zone's own.  Asked for after
+        -- the click above, so a group opened by it is drawn the same frame.
+        local grp, gi = fw.group_open();
+        if (grp ~= nil) then
+            ui.fw_sub = mm.clamp(ui.fw_sub, 1, #grp.members);
+            local gm = fav_metrics(grp.members);
+            local gx = px + m.w + POPUP_GAP;
+            local gy = py + POPUP_ROW * (gi - 1);
+            local sub_i = draw_fav_list(gx, gy, gm, mouse_x, mouse_y,
+                                        { sel   = ui.gp_active and ui.fw_sub or nil,
+                                          grab  = not shift,
+                                          veto  = veto,
+                                          rows  = grp.members,
+                                          slot  = grp.slots,
+                                          id    = '##ubermap_fw_grp',
+                                          click = function (i) fw.pick(true, i); end });
+            drag = ui.fav_drag;
+            if (drag ~= nil and drag.id == '##ubermap_fw_grp') then
+                ui.fw_sub = drag.i;
+            elseif (sub_i ~= nil
+                    and (imgui.IsMouseClicked(0) or imgui.IsMouseClicked(1))) then
+                ui.fw_sub = sub_i;
             end
-            imgui.EndPopup();
+            menu('##ubermap_fw_grp_ctx', grp.members[ui.fw_sub],
+                 gx, gy + POPUP_ROW * ui.fw_sub + POPUP_GAP);
         end
         imgui.PopStyleColor(4);
     end
@@ -3593,6 +3852,10 @@ local function draw_map(view_w, view_h)
                                { cfg.autoopen }, 'autoopen' },
                              { 'Favorites Widget',
                                { cfg.widget }, 'widget' },
+                             { 'Widget Cancel Button',
+                               { cfg.fw_cancel }, 'fw_cancel' },
+                             { 'Widget Group By Zone',
+                               { cfg.fw_group }, 'fw_group' },
                              { 'EXP Guide Pickup',
                                { cfg.guide }, 'guide' },
                              { 'Search Focus On Open',

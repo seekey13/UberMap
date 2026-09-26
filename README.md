@@ -91,6 +91,8 @@ A character who has never saved one starts with 30, so the widget has something 
 | Hover | Fill under the row the cursor is on: warp rows, favorites and the right-click menu. White, near-transparent |
 | Warp NPC Opens Map | Walking up to a Home Point, Survival Guide, Unity Concord or Abyssea teleporter puts the map on screen by itself. On by default; off leaves `/um` and **Y** at the favorites widget as the ways in |
 | Favorites Widget | The controller window below. On by default; ticking it back on also undoes a **B** press that put it away for this visit |
+| Widget Cancel Button | Puts a **Cancel** row at the top of the widget, where the selection starts, see below. Off by default |
+| Widget Group By Zone | Folds two or more favorites in one zone into a single row on the widget, see below. Off by default |
 | EXP Guide Pickup | Take an Instant Warp scroll off a guide you walk past, see below. On by default |
 | Search Focus On Open | The search box takes the keyboard the frame the map opens, so you can type straight away. Off by default: while it holds the caret the map takes no clicks to pan or zoom |
 | Hide Uberwarp Chat | Drop Uberwarp's `[Uberwarp:<module>]` lines from the log, errors included. On by default; untick it when a warp misbehaves and you want the reason |
@@ -122,7 +124,7 @@ A small window listing the same favorites, built for a controller. It comes up o
 | --- | --- |
 | D-pad up / down | Move the selection, wrapping at both ends |
 | A | Warp to the selected row |
-| B | Put the widget away until you walk off the NPC |
+| B | Put the widget away until you walk off the NPC. With a zone's panel open (see [Group by zone](#group-by-zone)), shut that panel instead |
 | Y | Swap the widget for the full map |
 
 **Left** and **right** are left to the game while the widget is up: the list is a single column, so taking them would leave no way to work the NPC's own menu behind it.
@@ -130,6 +132,14 @@ A small window listing the same favorites, built for a controller. It comes up o
 The widget and the map's panel are one list drawn twice, so the mouse works the same in either: click a row to warp, drag it up or down to reorder, right-click for *Remove point from favorites list*. Turning the widget on hides the heart and its panel, so the list is on screen in one place, not two.
 
 The list is narrowed the same way the panel's is, so every row on it is one the NPC holding it up can send; a destination you have not registered still reads red, and A refuses it. With nothing saved for that kind of NPC the widget stays down. The window has no title bar and sizes itself to the list; like the map, hold shift to drag it somewhere else. On by default -- untick **Favorites Widget** on the `/um config` panel to turn it off -- and saved per character with the rest of the settings. A character who already turned it off keeps it off: the setting is written to their file, and the checkbox is the only way back on.
+
+### Cancel button
+
+Tick **Widget Cancel Button** on the `/um config` panel and the widget grows a **Cancel** row at the top. The selection starts on it every time the widget comes up, and **F** on the keyboard lands on it too, so an **A** or **Enter** pressed out of habit as you run up to a warp just closes the widget instead of warping you somewhere. Selecting it does exactly what **B** does. Off by default.
+
+### Group by zone
+
+Tick **Widget Group By Zone** and any zone with two or more favorites on the widget is listed as a single row named for the zone — **Lower Jeuno**, rather than one row per Home Point. The row sits where the first of them was, with a `>` in the grid-reference column. Select it (**A**, **Enter** or a click) and a second panel opens to its right listing that zone's favorites, with the selection on its top row; the D-pad and the arrows walk that panel until you press **B** (or **Esc** after **F**), which shuts it and puts you back on the zone's row. Clicking the zone's row again shuts it too. A zone with just one favorite is listed as it always was. Rows still drag to reorder, in either panel, and right-click still removes one from the list. Off by default.
 
 XInput only: an Xbox pad, or anything Windows presents as one. A DirectInput controller (DualShock, DualSense) still works by mouse.
 
@@ -186,6 +196,8 @@ The Multisend gate, your favorites, the five toggles and everything on the confi
 - Thorny — [Uberwarp](https://github.com/ThornyFFXI/Uberwarp) and
   [Multisend](https://github.com/ThornyFFXI/Multisend)
 - The [FFXI Remapster Project](https://remapster.com/)
+- Tai — the idea for the widget's [Cancel button](#cancel-button) and
+  [Group by zone](#group-by-zone)
 
 ## License
 
