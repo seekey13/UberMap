@@ -91,6 +91,10 @@ local WARP_NPC = T{
     -- to any other in its own zone, so the zone is the whole of the question,
     -- and the row's own 'zid' is what answers it.
     { '^Veridical Conflux', 'conflux' },
+    -- A Cavernous Maw enters the Abyssea area behind it and nowhere else, so
+    -- it has no rows on the map: it lists in the widget alone, as the one
+    -- favorite '/uw ae' is.
+    { '^Cavernous Maw',     'maw'     },
 };
 
 -- The NPC interaction packets, and the offset each carries the NPC's target
@@ -596,6 +600,14 @@ local function fill_defaults()
         end
         settings.save();
     end
+    -- The maw came after the seeds above, so it carries a marker of its own:
+    -- a character seeded before it existed gets it once as well, and one who
+    -- deletes it keeps it deleted.
+    if (cfg.seeded_maw ~= true) then
+        cfg.seeded_maw = true;
+        table.insert(cfg.favs, { key = 'Cavernous Maw', type = 'maw', label = 'Enter Abyssea' });
+        settings.save();
+    end
     -- A settings file written before the pickers existed carries no colours,
     -- and a picker handed a nil table would index it on the first frame.  The
     -- shape is checked rather than only the nil, for the same reason cfg.font is
@@ -1070,11 +1082,12 @@ local function poke_npc(id, index)
 end
 
 --[[
-* Narrow the map to one kind of warp, or light every kind again when given nil.
+* Narrow the map to one kind of warp, or light every kind again when given nil
+* or a kind no toggle names -- a maw has no rows to narrow to.
 --]]
 local function filter_to(kind)
     for t, file in pairs(WARP_ICON) do
-        cfg.toggle[file] = (kind ~= nil and t ~= kind) or nil;
+        cfg.toggle[file] = (WARP_ICON[kind] ~= nil and t ~= kind) or nil;
     end
 end
 
@@ -1607,7 +1620,7 @@ end
 * authority on which is which.
 --]]
 local UW_TYPE = T{ home = 'hp', guide = 'sg', unity = 'uc', abyssea = 'aw',
-                   conflux = 'ab' };
+                   conflux = 'ab', maw = 'ae' };
 
 --[[
 * The destination half of that line, which is also the name Uberwarp files its
@@ -1633,6 +1646,10 @@ local function warp_cmd(label, row)
     local kind = UW_TYPE[row.type];
     if (kind == nil) then
         return nil;
+    end
+    -- A maw names no destination: it only enters the area behind it.
+    if (row.type == 'maw') then
+        return '/uw ' .. kind;
     end
     -- Rows out of lib/warps.lua are checked by test_warps, but a favorite is
     -- read back off the settings file, which is hand-editable: a conflux label
@@ -2682,7 +2699,8 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
         -- Unlike a popup row, a favorite comes back off disk, so its type is
         -- only as good as the settings file: one no toggle names draws no icon
         -- rather than looking one up under a nil.
-        local art = WARP_ICON[f.type];
+        -- A maw names no toggle, having no map rows, but reads as Abyssea.
+        local art = (f.type == 'maw') and 'Abyssea.png' or WARP_ICON[f.type];
         local tex, iw, ih;
         if (art ~= nil) then tex, iw, ih = icon_texture(art); end
         if (tex ~= nil) then
@@ -2777,8 +2795,9 @@ end
 
 --[[
 * The gamepad favorites widget.  It rides with the NPC, not the map: up the
-* moment a Home Point, Survival Guide, Unity Concord or Abyssea teleporter is
-* in reach, gone the moment it is not, whether or not the map is open.
+* moment a Home Point, Survival Guide, Unity Concord, Abyssea teleporter or
+* Cavernous Maw is in reach, gone the moment it is not, whether or not the map
+* is open.
 *
 * That is also the only time the xinput handler takes a button -- one
 * condition, written here and read there, so the two cannot come apart and
@@ -4025,7 +4044,8 @@ ashita.events.register('packet_in', 'ubermap_packet_in', function (e)
     -- send closed it on purpose.
     -- cfg.autoopen is the '/um config' checkbox: with it off the NPC is walked
     -- up to in peace, and Y at the favorites widget or '/um' puts the map up.
-    if (warp_npc_type(name) ~= nil and cfg.autoopen
+    -- Only NPCs with rows on the map open it: a maw has none.
+    if (WARP_ICON[warp_npc_type(name)] ~= nil and cfg.autoopen
         and os.clock() - ui.sent_at > SEND_QUIET) then
         show();
     end

@@ -48,13 +48,16 @@ local function fav_pos(f)
 end
 
 local UW_TYPE = { home = 'hp', guide = 'sg', unity = 'uc', abyssea = 'aw',
-                  conflux = 'ab' };
+                  conflux = 'ab', maw = 'ae' };
 
 -- ('%s'):fmt is Ashita's string extension, which plain Lua does not have.
 local function warp_cmd(label, row)
     local kind = UW_TYPE[row.type];
     if (kind == nil) then
         return nil;
+    end
+    if (row.type == 'maw') then
+        return '/uw ' .. kind;
     end
     if (row.type == 'conflux') then
         return string.format('/uw %s %s', kind, row.label:match('#(%d+)') or '');
@@ -287,6 +290,8 @@ do
                         { 'La Theine Plateau',   132 },  -- Abyssea - La Theine
                         { 'Tahrongi Canyon',     45  } };  -- Abyssea - Tahrongi
 
+    local MAW = { key = 'Cavernous Maw', type = 'maw', label = 'Enter Abyssea' };
+
     local function seed(cfg)
         if (cfg.seeded ~= true) then
             cfg.seeded = true;
@@ -311,6 +316,10 @@ do
                 end
             end
         end
+        if (cfg.seeded_maw ~= true) then
+            cfg.seeded_maw = true;
+            table.insert(cfg.favs, MAW);
+        end
         return cfg;
     end
 
@@ -320,9 +329,11 @@ do
     end
 
     local fresh = load({});
-    check(#fresh.favs == 30,
-          'a new character should start with six warps and 24 confluxes, got '
+    check(#fresh.favs == 31,
+          'a new character should start with six warps, 24 confluxes and the maw, got '
           .. #fresh.favs);
+    check(warp_cmd(MAW.key, MAW) == '/uw ae',
+          'the maw should send a bare /uw ae, got ' .. tostring(warp_cmd(MAW.key, MAW)));
 
     -- Every seeded conflux and Abyssea maw is a row that really exists, under
     -- the zone id the data gives it: a seed that agreed with nothing in
@@ -360,7 +371,7 @@ do
 
     -- Emptied on purpose and loaded again: the marker is already in the file,
     -- so nothing is put back.  This is the case the old defaults got wrong.
-    local emptied = { favs = {}, seeded = true };
+    local emptied = { favs = {}, seeded = true, seeded_maw = true };
     check(#load(emptied).favs == 0,
           'an emptied list should stay empty across a load');
 
@@ -372,9 +383,19 @@ do
           'an emptied list should stay empty however often it is loaded');
 
     -- A list with rows of its own is not topped back up either.
-    local kept = { favs = { { key = 'mine' } }, seeded = true };
+    local kept = { favs = { { key = 'mine' } }, seeded = true, seeded_maw = true };
     check(#load(kept).favs == 1 and kept.favs[1].key == 'mine',
           'a saved list should come back exactly as it was saved');
+
+    -- A character seeded before the maw existed gets it once, on the end of
+    -- the list they already have, and deleting it keeps it deleted.
+    local old = { favs = { { key = 'mine' } }, seeded = true };
+    load(old);
+    check(#old.favs == 2 and old.favs[2].type == 'maw',
+          'an older list should gain the maw once, got ' .. #old.favs);
+    table.remove(old.favs, 2);
+    load(old);
+    check(#old.favs == 1, 'a deleted maw should stay deleted');
 end
 
 if (fails == 0) then
