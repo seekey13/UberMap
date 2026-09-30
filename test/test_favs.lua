@@ -180,10 +180,15 @@ end
 -- Home Point row and a row that cannot be pressed should not be listed.
 -- A conflux row is narrowed on its zone as well, since every Abyssea area has
 -- its own Conflux #3 and only the one the player stands in is reachable.
+-- A maw lists its one fixed row instead, which is never saved.
 -- Mirrors fav_view in ubermap.lua.
+local MAW_FAV = { key = 'Cavernous Maw', type = 'maw', label = 'Enter Abyssea' };
 local function fav_view(near_kind, near_zid)
     if (not near_kind) then
         return favs, nil;
+    end
+    if (near_kind == 'maw') then
+        return { MAW_FAV }, nil;
     end
     local view, raw = {}, {};
     for i, f in ipairs(favs) do
@@ -213,6 +218,13 @@ check(home_raw[1] == 1 and home_raw[2] == 3,
 check(#fav_view('guide') == 1, 'a Survival Guide should list only the guide row');
 check(#fav_view('unity') == 0,
       'a warp with nothing saved for it should list nothing at all');
+
+-- A maw lists its row whatever is saved, and sends the bare enter.
+local maw = fav_view('maw');
+check(#maw == 1 and maw[1] == MAW_FAV, 'a maw should list its one row, got ' .. #maw);
+check(fav_index(MAW_FAV.key, MAW_FAV) == nil, 'the maw row should not be a saved favorite');
+check(warp_cmd(MAW_FAV.key, MAW_FAV) == '/uw ae',
+      'the maw should send a bare /uw ae, got ' .. tostring(warp_cmd(MAW_FAV.key, MAW_FAV)));
 
 -- Dragging inside the narrowed list reorders the saved list, and leaves the
 -- rows it does not show where they were.
@@ -290,8 +302,6 @@ do
                         { 'La Theine Plateau',   132 },  -- Abyssea - La Theine
                         { 'Tahrongi Canyon',     45  } };  -- Abyssea - Tahrongi
 
-    local MAW = { key = 'Cavernous Maw', type = 'maw', label = 'Enter Abyssea' };
-
     local function seed(cfg)
         if (cfg.seeded ~= true) then
             cfg.seeded = true;
@@ -316,10 +326,6 @@ do
                 end
             end
         end
-        if (cfg.seeded_maw ~= true) then
-            cfg.seeded_maw = true;
-            table.insert(cfg.favs, MAW);
-        end
         return cfg;
     end
 
@@ -329,11 +335,9 @@ do
     end
 
     local fresh = load({});
-    check(#fresh.favs == 31,
-          'a new character should start with six warps, 24 confluxes and the maw, got '
+    check(#fresh.favs == 30,
+          'a new character should start with six warps and 24 confluxes, got '
           .. #fresh.favs);
-    check(warp_cmd(MAW.key, MAW) == '/uw ae',
-          'the maw should send a bare /uw ae, got ' .. tostring(warp_cmd(MAW.key, MAW)));
 
     -- Every seeded conflux and Abyssea maw is a row that really exists, under
     -- the zone id the data gives it: a seed that agreed with nothing in
@@ -371,7 +375,7 @@ do
 
     -- Emptied on purpose and loaded again: the marker is already in the file,
     -- so nothing is put back.  This is the case the old defaults got wrong.
-    local emptied = { favs = {}, seeded = true, seeded_maw = true };
+    local emptied = { favs = {}, seeded = true };
     check(#load(emptied).favs == 0,
           'an emptied list should stay empty across a load');
 
@@ -383,19 +387,9 @@ do
           'an emptied list should stay empty however often it is loaded');
 
     -- A list with rows of its own is not topped back up either.
-    local kept = { favs = { { key = 'mine' } }, seeded = true, seeded_maw = true };
+    local kept = { favs = { { key = 'mine' } }, seeded = true };
     check(#load(kept).favs == 1 and kept.favs[1].key == 'mine',
           'a saved list should come back exactly as it was saved');
-
-    -- A character seeded before the maw existed gets it once, on the end of
-    -- the list they already have, and deleting it keeps it deleted.
-    local old = { favs = { { key = 'mine' } }, seeded = true };
-    load(old);
-    check(#old.favs == 2 and old.favs[2].type == 'maw',
-          'an older list should gain the maw once, got ' .. #old.favs);
-    table.remove(old.favs, 2);
-    load(old);
-    check(#old.favs == 1, 'a deleted maw should stay deleted');
 end
 
 if (fails == 0) then

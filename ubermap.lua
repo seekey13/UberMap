@@ -93,9 +93,15 @@ local WARP_NPC = T{
     { '^Veridical Conflux', 'conflux' },
     -- A Cavernous Maw enters the Abyssea area behind it and nowhere else, so
     -- it has no rows on the map: it lists in the widget alone, as the one
-    -- favorite '/uw ae' is.
+    -- row '/uw ae' is.  Only in MAW_ZONES, below.
     { '^Cavernous Maw',     'maw'     },
 };
+
+-- The zones whose Cavernous Maw leads into one of the map's Abyssea areas: La
+-- Theine Plateau, Konschtat Highlands and Tahrongi Canyon.  The Wings of the
+-- Goddess maws carry the same name and travel through time instead, where
+-- '/uw ae' has nothing to enter.
+local MAW_ZONES = T{ [102] = true, [108] = true, [117] = true };
 
 -- The NPC interaction packets, and the offset each carries the NPC's target
 -- index at.  0x034 puts 32 bytes of menu parameters ahead of its index, so it
@@ -600,14 +606,6 @@ local function fill_defaults()
         end
         settings.save();
     end
-    -- The maw came after the seeds above, so it carries a marker of its own:
-    -- a character seeded before it existed gets it once as well, and one who
-    -- deletes it keeps it deleted.
-    if (cfg.seeded_maw ~= true) then
-        cfg.seeded_maw = true;
-        table.insert(cfg.favs, { key = 'Cavernous Maw', type = 'maw', label = 'Enter Abyssea' });
-        settings.save();
-    end
     -- A settings file written before the pickers existed carries no colours,
     -- and a picker handed a nil table would index it on the first frame.  The
     -- shape is checked rather than only the nil, for the same reason cfg.font is
@@ -1003,9 +1001,10 @@ end
 --[[
 * The warp type of the nearest such NPC within WARP_NPC_NEAR, or nil when none
 * is in reach.  Nearest rather than first found: a zone can hold two kinds
-* within the radius, and the one being stood at is the one meant.
+* within the radius, and the one being stood at is the one meant.  zid is the
+* zone the player is in, which says whether a maw is one of MAW_ZONES'.
 --]]
-local function near_warp_type()
+local function near_warp_type(zid)
     local ent = AshitaCore:GetMemoryManager():GetEntity();
     if (ent == nil) then
         return nil;
@@ -1018,7 +1017,7 @@ local function near_warp_type()
         local d = ent:GetDistance(i);
         if (d < near and bit.band(ent:GetRenderFlags0(i), 0x200) == 0x200) then
             local t = warp_npc_type(ent:GetName(i) or '');
-            if (t ~= nil) then
+            if (t ~= nil and (t ~= 'maw' or MAW_ZONES[zid])) then
                 kind, near = t, d;
             end
         end
@@ -1201,7 +1200,7 @@ local function poll_near(now)
     ui.ring_bag = ring_bag();
     ui.ring     = ring_step(ui.ring_bag ~= nil, ring_worn(),
                             now - ui.ring_at < RING_EQUIP_WAIT);
-    local kind = near_warp_type();
+    local kind = near_warp_type(ui.near_zid);
     if (kind ~= ui.near_kind) then
         ui.near_kind = kind;
         filter_to(kind);
@@ -1736,11 +1735,21 @@ end
 * cfg.favs, so a drag inside the narrowed list reorders the saved list: the
 * row is pulled out of its own slot and put back in the one the row it was
 * dragged onto holds, which lands it on that side of it in both lists.
+*
+* A maw lists MAW_FAV and nothing else.  It is made here rather than saved, so
+* no misclick can take it off the list for good -- it has no map row to be put
+* back from -- and it stays out of the whole list, where it could never be
+* pressed.  One row with no slot in cfg.favs, so no drag can reorder it.
 --]]
+local MAW_FAV = T{ key = 'Cavernous Maw', type = 'maw', label = 'Enter Abyssea' };
+
 local function fav_view()
     local kind = ui.near_kind;
     if (not kind) then
         return cfg.favs, nil;
+    end
+    if (kind == 'maw') then
+        return T{ MAW_FAV }, nil;
     end
     local view, raw = T{ }, T{ };
     for i, f in ipairs(cfg.favs) do
@@ -2700,7 +2709,7 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
         -- only as good as the settings file: one no toggle names draws no icon
         -- rather than looking one up under a nil.
         -- A maw names no toggle, having no map rows, but reads as Abyssea.
-        local art = (f.type == 'maw') and 'Abyssea.png' or WARP_ICON[f.type];
+        local art = (f.type == 'maw') and WARP_ICON.abyssea or WARP_ICON[f.type];
         local tex, iw, ih;
         if (art ~= nil) then tex, iw, ih = icon_texture(art); end
         if (tex ~= nil) then
@@ -2911,11 +2920,13 @@ local function draw_fav_widget()
         -- items from the ones below, but these rows are hand-tested rects and
         -- know nothing of it.
         --
-        -- Behind the same shift test as the popup below, or the position is set
-        -- for a popup that is never begun: Ashita shares one ImGui context
-        -- across every addon, and a pending NextWindowPos nothing consumes
-        -- lands on whatever window Begins next in the frame.
-        if (not shift) then
+        -- Behind the same test as the popup below, or the position is set for a
+        -- popup that is never begun: Ashita shares one ImGui context across
+        -- every addon, and a pending NextWindowPos nothing consumes lands on
+        -- whatever window Begins next in the frame.  No menu at a maw: MAW_FAV
+        -- is not on the list to take off.
+        local menu = not shift and ui.near_kind ~= 'maw';
+        if (menu) then
             imgui.SetNextWindowPos({ px, py + POPUP_ROW * ui.fw_sel + POPUP_GAP });
         end
         -- Dressed in the panel's own colours, or this would be the one menu on
@@ -2928,7 +2939,7 @@ local function draw_fav_widget()
         imgui.PushStyleColor(ImGuiCol_HeaderHovered, cfg.col_hover);
         imgui.PushStyleColor(ImGuiCol_HeaderActive, cfg.col_hover);
         ui.fw_ctx = false;
-        if (not shift and imgui.BeginPopupContextItem('##ubermap_fw_ctx')) then
+        if (menu and imgui.BeginPopupContextItem('##ubermap_fw_ctx')) then
             ui.fw_ctx = true;
             if (imgui.MenuItem('Remove point from favorites list')) then
                 local f = fav_view()[ui.fw_sel];
@@ -2997,8 +3008,10 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
         -- cursor: a menu lying over the row it was opened on puts its item and
         -- that row under the one click, which reads as picking both.  Rows are
         -- POPUP_ROW apart from the panel's top, so the hot row's bottom edge is
-        -- its own index times the pitch.
-        if (imgui.IsMouseClicked(1) and hot_i ~= nil and not ui.warp_hot) then
+        -- its own index times the pitch.  None at a maw, whose one row is not
+        -- on the list: its menu would offer to add a second.
+        if (imgui.IsMouseClicked(1) and hot_i ~= nil and not ui.warp_hot
+            and ui.near_kind ~= 'maw') then
             local f = fav_view()[hot_i];
             ui.ctx = { x = mouse_x, ry = py + POPUP_ROW * (hot_i - 1),
                        fresh = true, key = f.key, row = f };
