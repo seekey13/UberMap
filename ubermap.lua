@@ -454,6 +454,9 @@ local default_settings = T{
     -- empty favorites list is one that has never been used or one the player
     -- emptied on purpose; both look the same on disk.
     seeded = false,
+    -- The same, for the Runic Portal rows alone: they came after 'seeded', so
+    -- a file that already has it gets them once under this marker instead.
+    seeded_rp = false,
     widget = true,   -- the gamepad favorites widget is on
     -- The EXP Guide errand.  On by default, the way the widget is: it acts only
     -- on the walk past a guide and can be watched happening.  A toggle all the
@@ -563,8 +566,7 @@ end
 local function fill_defaults()
     cfg.toggle = cfg.toggle or T{};
     cfg.favs   = cfg.favs   or T{};
-    -- A row per kind of warp NPC to start with, all six Runic Portal
-    -- destinations -- one portal's whole menu -- then every conflux, so the
+    -- A row per kind of warp NPC to start with, then every conflux, so the
     -- widget has something to show at the first one a new character walks up
     -- to.  Seeded here rather than from default_settings, which merge would
     -- push back into a list they had been deleted from on every load; done once
@@ -583,12 +585,6 @@ local function fill_defaults()
                 { key = 'Konschtat Highlands', type = 'abyssea', label = 'Abyssea - Konschtat' },
                 { key = 'La Theine Plateau',   type = 'abyssea', label = 'Abyssea - La Theine' },
                 { key = 'Tahrongi Canyon',     type = 'abyssea', label = 'Abyssea - Tahrongi' },
-                { key = 'Caedarva Mire',           type = 'runic', label = 'Azouph Isle Staging Point',  zone = 'Azouph Isle' },
-                { key = 'Caedarva Mire',           type = 'runic', label = 'Dvucca Isle Staging Point',  zone = 'Dvucca Isle' },
-                { key = 'Bhaflau Thickets',        type = 'runic', label = 'Mamool Ja Staging Point',    zone = 'Mamool Ja' },
-                { key = 'Mount Zhayolm',           type = 'runic', label = 'Halvung Staging Point',      zone = 'Halvung' },
-                { key = 'Arrapago Reef',           type = 'runic', label = 'Ilrusi Atoll Staging Point', zone = 'Ilrusi Atoll' },
-                { key = 'Alzadaal Undersea Ruins', type = 'runic', label = 'Nyzul Isle Staging Point',   zone = 'Nyzul Isle' },
             };
             -- All eight confluxes of all three areas, in the order the popups
             -- list them.  Written out here rather than read off WARPS: this
@@ -613,6 +609,30 @@ local function fill_defaults()
                 end
             end
             for _, f in ipairs(seeds) do
+                table.insert(cfg.favs, f);
+            end
+        end
+        settings.save();
+    end
+    -- All six Runic Portal destinations, the Whitegate portal's whole menu.
+    -- A marker of their own, so a character seeded before they existed gets
+    -- them too -- once, like the rest, so deleting them sticks.  Whatever the
+    -- list already holds is left alone and not doubled.
+    if (cfg.seeded_rp ~= true) then
+        cfg.seeded_rp = true;
+        for _, f in ipairs({
+            { key = 'Caedarva Mire',           type = 'runic', label = 'Azouph Isle Staging Point',  zone = 'Azouph Isle' },
+            { key = 'Caedarva Mire',           type = 'runic', label = 'Dvucca Isle Staging Point',  zone = 'Dvucca Isle' },
+            { key = 'Bhaflau Thickets',        type = 'runic', label = 'Mamool Ja Staging Point',    zone = 'Mamool Ja' },
+            { key = 'Mount Zhayolm',           type = 'runic', label = 'Halvung Staging Point',      zone = 'Halvung' },
+            { key = 'Arrapago Reef',           type = 'runic', label = 'Ilrusi Atoll Staging Point', zone = 'Ilrusi Atoll' },
+            { key = 'Alzadaal Undersea Ruins', type = 'runic', label = 'Nyzul Isle Staging Point',   zone = 'Nyzul Isle' },
+        }) do
+            local have = false;
+            for _, g in ipairs(cfg.favs) do
+                have = have or (g.key == f.key and g.type == f.type and g.label == f.label);
+            end
+            if (not have) then
                 table.insert(cfg.favs, f);
             end
         end

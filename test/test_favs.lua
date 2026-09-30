@@ -313,12 +313,6 @@ do
                     { key = 'Konschtat Highlands', type = 'abyssea', label = 'Abyssea - Konschtat' },
                     { key = 'La Theine Plateau',   type = 'abyssea', label = 'Abyssea - La Theine' },
                     { key = 'Tahrongi Canyon',     type = 'abyssea', label = 'Abyssea - Tahrongi' },
-                    { key = 'Caedarva Mire',           type = 'runic', label = 'Azouph Isle Staging Point',  zone = 'Azouph Isle' },
-                    { key = 'Caedarva Mire',           type = 'runic', label = 'Dvucca Isle Staging Point',  zone = 'Dvucca Isle' },
-                    { key = 'Bhaflau Thickets',        type = 'runic', label = 'Mamool Ja Staging Point',    zone = 'Mamool Ja' },
-                    { key = 'Mount Zhayolm',           type = 'runic', label = 'Halvung Staging Point',      zone = 'Halvung' },
-                    { key = 'Arrapago Reef',           type = 'runic', label = 'Ilrusi Atoll Staging Point', zone = 'Ilrusi Atoll' },
-                    { key = 'Alzadaal Undersea Ruins', type = 'runic', label = 'Nyzul Isle Staging Point',   zone = 'Nyzul Isle' },
                 };
                 for _, z in ipairs(FLUX_ZONE) do
                     for n = 1, 8 do
@@ -328,6 +322,25 @@ do
                     end
                 end
                 for _, f in ipairs(seeds) do
+                table.insert(cfg.favs, f);
+            end
+        end
+    end
+    if (cfg.seeded_rp ~= true) then
+        cfg.seeded_rp = true;
+        for _, f in ipairs({
+            { key = 'Caedarva Mire',           type = 'runic', label = 'Azouph Isle Staging Point',  zone = 'Azouph Isle' },
+            { key = 'Caedarva Mire',           type = 'runic', label = 'Dvucca Isle Staging Point',  zone = 'Dvucca Isle' },
+            { key = 'Bhaflau Thickets',        type = 'runic', label = 'Mamool Ja Staging Point',    zone = 'Mamool Ja' },
+            { key = 'Mount Zhayolm',           type = 'runic', label = 'Halvung Staging Point',      zone = 'Halvung' },
+            { key = 'Arrapago Reef',           type = 'runic', label = 'Ilrusi Atoll Staging Point', zone = 'Ilrusi Atoll' },
+            { key = 'Alzadaal Undersea Ruins', type = 'runic', label = 'Nyzul Isle Staging Point',   zone = 'Nyzul Isle' },
+            }) do
+                local have = false;
+                for _, g in ipairs(cfg.favs) do
+                    have = have or (g.key == f.key and g.type == f.type and g.label == f.label);
+                end
+                if (not have) then
                     table.insert(cfg.favs, f);
                 end
             end
@@ -337,7 +350,7 @@ do
 
     -- One load: the file off disk, the defaults merged in, then fill_defaults.
     local function load(file)
-        return seed(merge(file, { favs = {}, seeded = false }));
+        return seed(merge(file, { favs = {}, seeded = false, seeded_rp = false }));
     end
 
     local fresh = load({});
@@ -367,9 +380,25 @@ do
         end
     end
     check(seeded_flux == 24, 'all 24 confluxes should be seeded, got ' .. seeded_flux);
-    check(warp_cmd(fresh.favs[10].key, fresh.favs[10]) == '/uw rp Halvung',
+    check(warp_cmd(fresh.favs[34].key, fresh.favs[34]) == '/uw rp Halvung',
           'a seeded Runic Portal should send its staging point, got '
-          .. tostring(warp_cmd(fresh.favs[10].key, fresh.favs[10])));
+          .. tostring(warp_cmd(fresh.favs[34].key, fresh.favs[34])));
+
+    -- A file seeded before Runic Portals existed gets the six once, after what
+    -- it already holds, without doubling one it saved by hand -- and deleting
+    -- them afterwards sticks like any other starter row.
+    local old = { favs = { { key = 'mine' },
+                           { key = 'Mount Zhayolm', type = 'runic',
+                             label = 'Halvung Staging Point', zone = 'Halvung' } },
+                  seeded = true };
+    load(old);
+    check(#old.favs == 7 and old.favs[1].key == 'mine',
+          'an older file should gain the five Runic Portals it lacked, got ' .. #old.favs);
+    load(old);
+    check(#old.favs == 7, 'the Runic Portals should be seeded once, got ' .. #old.favs);
+    old.favs = { { key = 'mine' } };
+    load(old);
+    check(#old.favs == 1, 'deleted Runic Portals should stay deleted');
 
     -- And the pairs the seed spells out are the ones the data holds, so a zone
     -- id typed wrong in ubermap.lua fails here rather than in game.
@@ -385,7 +414,7 @@ do
 
     -- Emptied on purpose and loaded again: the marker is already in the file,
     -- so nothing is put back.  This is the case the old defaults got wrong.
-    local emptied = { favs = {}, seeded = true };
+    local emptied = { favs = {}, seeded = true, seeded_rp = true };
     check(#load(emptied).favs == 0,
           'an emptied list should stay empty across a load');
 
@@ -397,7 +426,7 @@ do
           'an emptied list should stay empty however often it is loaded');
 
     -- A list with rows of its own is not topped back up either.
-    local kept = { favs = { { key = 'mine' } }, seeded = true };
+    local kept = { favs = { { key = 'mine' } }, seeded = true, seeded_rp = true };
     check(#load(kept).favs == 1 and kept.favs[1].key == 'mine',
           'a saved list should come back exactly as it was saved');
 end
