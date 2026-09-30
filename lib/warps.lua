@@ -4,13 +4,14 @@
 * The key matches a point's 'label' in points.lua.  Each row is one place the
 * player can warp to, in the order the popup lists them: Home Points, then
 * Survival Guides, then the Unity Concord, then the Abyssea warps, then the
-* Abyssea confluxes.  'type' picks the icon - 'home' is Crystal.png, 'guide' is
-* Guide.png, 'unity' is Unity.png, 'abyssea' is Abyssea.png, 'conflux' is
-* Conflux.png.  'pos' is the grid reference, kept out of
+* Abyssea confluxes, then the Runic Portals.  'type' picks the icon - 'home' is
+* Crystal.png, 'guide' is Guide.png, 'unity' is Unity.png, 'abyssea' is
+* Abyssea.png, 'conflux' is Conflux.png, 'runic' is Runic.png.  'pos' is the
+* grid reference, kept out of
 * the label so the popup draws it in a column of its own and every row's lines
 * up; a row with none simply leaves it out.
 *
-* Clicking a row sends '/uw <hp|sg|uc|aw|ab> <zone><number>', with the zone taken
+* Clicking a row sends '/uw <hp|sg|uc|aw|ab|rp> <zone><number>', with the zone taken
 * from the key.  A row whose key is not the game's own name for the zone - a
 * marker covering two zones, or a name the map spells differently - carries a
 * 'zone' of its own for the command to use.
@@ -30,6 +31,13 @@
 * being stood at a conflux is not enough on its own.  Uberwarp files these
 * under the conflux number alone, which is what the command carries:
 * '/uw ab 3' walks to Conflux #3 of wherever the player already is.
+*
+* A Runic Portal row hangs off the zone its assault staging point stands in,
+* at that portal's grid reference.  Uberwarp files the six under the staging
+* point's own name rather than the zone's, so every row carries a 'zone' of its
+* own: '/uw rp Halvung' takes the Chamber of Passage in Aht Urhgan Whitegate to
+* Mount Zhayolm.  Only that one portal sends; the staging points' own portals
+* only lead back, which Uberwarp has no command for.
 --]]
 
 -- Windurst Waters is one zone in game, but points.lua draws its north and south
@@ -54,8 +62,12 @@ return {
         { type = 'home', label = 'Home Point #2', pos = '(E-6)' },
         { type = 'home', label = 'Home Point #3', pos = '(L-6)' },
     },
+    ["Alzadaal Undersea Ruins"] = {
+        { type = 'runic', label = 'Nyzul Isle Staging Point', pos = '(J-8)', zone = 'Nyzul Isle' },
+    },
     ["Arrapago Reef"] = {
-        { type = 'guide', label = 'Survival Guide', pos = '(H-11)' },
+        { type = 'guide', label = 'Survival Guide',             pos = '(H-11)' },
+        { type = 'runic', label = 'Ilrusi Atoll Staging Point', pos = '(G-5)', zone = 'Ilrusi Atoll' },
     },
     ["Attohwa Chasm"] = {
         { type = 'home', label = 'Home Point #1', pos = '(G-6)' },
@@ -101,7 +113,8 @@ return {
         { type = 'unity', label = 'Unity Concord',  pos = '(F-7)' },
     },
     ["Bhaflau Thickets"] = {
-        { type = 'home', label = 'Home Point #1', pos = '(I-9)' },
+        { type = 'home',  label = 'Home Point #1',           pos = '(I-9)' },
+        { type = 'runic', label = 'Mamool Ja Staging Point', pos = '(H-11)', zone = 'Mamool Ja' },
     },
     ["Bibiki Bay"] = {
         { type = 'guide', label = 'Survival Guide', pos = '(H-7)' },
@@ -114,8 +127,12 @@ return {
         { type = 'unity', label = 'Unity Concord',  pos = '(F-6)' },
     },
     ["Caedarva Mire"] = {
-        { type = 'home',  label = 'Home Point #1',  pos = '(E-9)' },
-        { type = 'guide', label = 'Survival Guide', pos = '(G-6)' },
+        { type = 'home',  label = 'Home Point #1',             pos = '(E-9)' },
+        { type = 'guide', label = 'Survival Guide',            pos = '(G-6)' },
+        -- The mire is two maps: Azouph Isle's portal is on the first, Dvucca
+        -- Isle's on the second.
+        { type = 'runic', label = 'Azouph Isle Staging Point', pos = '(K-9)', zone = 'Azouph Isle' },
+        { type = 'runic', label = 'Dvucca Isle Staging Point', pos = '(I-9)', zone = 'Dvucca Isle' },
     },
     ["Cape Teriggan"] = {
         { type = 'home',  label = 'Home Point #1',  pos = '(F-5)' },
@@ -322,7 +339,8 @@ return {
         { type = 'home', label = 'Home Point #1', pos = '(E-5)' },
     },
     ["Mount Zhayolm"] = {
-        { type = 'home', label = 'Home Point #1', pos = '(D-8)' },
+        { type = 'home',  label = 'Home Point #1',         pos = '(D-8)' },
+        { type = 'runic', label = 'Halvung Staging Point', pos = '(K-6)', zone = 'Halvung' },
     },
     ["Nashmau"] = {
         { type = 'home',  label = 'Home Point #1',  pos = '(G-8)' },
