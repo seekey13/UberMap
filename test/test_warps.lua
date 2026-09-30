@@ -7,11 +7,10 @@
 *     lua test/test_warps.lua
 --]]
 
-local TYPES = { home = true, guide = true, unity = true, abyssea = true,
-                conflux = true, runic = true };
 local UW    = { home = 'hp', guide = 'sg', unity = 'uc', abyssea = 'aw',
                 conflux = 'ab', runic = 'rp' };
--- The order the popup lists the types in, which is the order the rows sit in.
+-- The order the popup lists the types in, which is the order the rows sit in,
+-- and the types it knows how to draw.
 local RANK  = { home = 1, guide = 2, unity = 3, abyssea = 4, conflux = 5, runic = 6 };
 
 local data = assert(loadfile('lib/warps.lua'))();
@@ -32,7 +31,7 @@ for zone, list in pairs(data) do
     local unities, homes, seenOrder, fluxes = 0, {}, 0, {};
     for i, row in ipairs(list) do
         assert(type(row) == 'table', ('%s[%d]: row is not a table'):format(zone, i));
-        assert(TYPES[row.type], ('%s[%d]: bad type %q'):format(zone, i, tostring(row.type)));
+        assert(RANK[row.type], ('%s[%d]: bad type %q'):format(zone, i, tostring(row.type)));
         assert(type(row.label) == 'string' and row.label ~= '',
                ('%s[%d]: label must be a non-empty string'):format(zone, i));
         assert(not row.label:match('%(%u%-%d+%)$'),

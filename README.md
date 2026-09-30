@@ -58,7 +58,7 @@ A **Cavernous Maw** in La Theine Plateau, Konschtat Highlands or Tahrongi Canyon
 | Ilrusi Atoll Staging Point | Arrapago Reef | G-5 |
 | Nyzul Isle Staging Point | Alzadaal Undersea Ruins | J-8 |
 
-They go live at the **Runic Portal** in the Chamber of Passage, Aht Urhgan Whitegate (L-7), and nowhere else: the staging points' own portals share the name but only lead back, which Uberwarp has no command for. While you carry assault orders — Leujaoam, Mamool Ja, Lebros, Periqia, Ilrusi or Nyzul Isle — the portal will not send you, so every Runic Portal row reads red until the assault is done.
+They go live at the **Runic Portal** in the Chamber of Passage, Aht Urhgan Whitegate (L-7), and nowhere else: the staging points' own portals share the name but only lead back, which Uberwarp has no command for. While you carry assault orders — Leujaoam, Mamool Ja, Lebros, Periqia, Ilrusi or Nyzul Isle — the portal offers only that assault's staging point, through a prompt of its own rather than the menu `/uw rp` drives, so every Runic Portal row reads red until the assault is done; talk to the portal yourself to go. Which staging points you have reached is not read, so one you have not still reads normal and the portal turns its `/uw` down.
 
 ### Row states
 
@@ -194,7 +194,7 @@ Stand at a warp NPC and the map narrows to it: only that kind of row stays lit, 
 
 A dimmed filter reaches the map itself: a zone marker with no row left fades back the way an unfocused group does and stops taking the cursor. Dim **Guide**, **Unity**, **Abyssea**, **Conflux** and **Runic** and only Home Point zones stay lit.
 
-The Multisend gate, your favorites, the five toggles and everything on the config panel are saved per character in `config/addons/UberMap/<name>_<server id>/settings.lua` the moment you change one.
+The Multisend gate, your favorites, the six toggles and everything on the config panel are saved per character in `config/addons/UberMap/<name>_<server id>/settings.lua` the moment you change one.
 
 ## Credits
 

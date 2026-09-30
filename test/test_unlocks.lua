@@ -187,6 +187,12 @@ else
         fh:close();
     end
 
+    -- Runic Portals carry no mask, but the alias is still the whole command:
+    -- one runicportal.xml does not list is a row that sends nothing useful.
+    local fh = assert(io.open(UW_DIR .. 'runicportal.xml', 'r'));
+    local rp = fh:read('*a');
+    fh:close();
+
     local warps   = assert(loadfile('lib/warps.lua'))();
     local checked = 0;
     for zone, list in pairs(warps) do
@@ -202,17 +208,7 @@ else
                 check(('%s knows %q'):format(unlocks.REGION[row.type].file, alias),
                       listed[row.type][alias] ~= nil, true);
                 checked = checked + 1;
-            end
-        end
-    end
-    -- Runic Portals carry no mask, but the alias is still the whole command:
-    -- one runicportal.xml does not list is a row that sends nothing useful.
-    local fh = assert(io.open(UW_DIR .. 'runicportal.xml', 'r'));
-    local rp = fh:read('*a');
-    fh:close();
-    for _, list in pairs(warps) do
-        for _, row in ipairs(list) do
-            if (row.type == 'runic') then
+            elseif (row.type == 'runic') then
                 check(('runicportal.xml knows %q'):format(row.zone),
                       rp:find(('alias="%s"'):format(row.zone), 1, true) ~= nil, true);
                 checked = checked + 1;

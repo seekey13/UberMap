@@ -377,7 +377,7 @@ local COL_POPUP_LOCK = 0xFFB3B3FF;
 local LOCK_TIP = T{
     home  = 'Not registered - interact with this Home Point once to unlock it',
     guide = 'Not registered - interact with this Survival Guide once to unlock it',
-    runic = 'Assault orders held - the Runic Portal will not send you until they are done',
+    runic = 'Assault orders held - the Runic Portal only offers their staging point; talk to it to go',
 };
 
 -- Multisend, in the viewport's bottom-right corner.  While it is lit every
@@ -402,8 +402,8 @@ local FAV_NONE     = 'No favorites for this warp';
 
 -- The favorites widget: the same saved list, drawn as a small window of its own
 -- and driven from the gamepad.  It comes up only where it can be used -- stood
--- at a Home Point, Survival Guide, Unity Concord or Abyssea teleporter --
--- because it swallows the buttons it reads, and the D-pad belongs to the
+-- at a Home Point, Survival Guide, Unity Concord, Abyssea teleporter,
+-- Whitegate's Runic Portal or Cavernous Maw -- because it swallows the buttons it reads, and the D-pad belongs to the
 -- game's own menus everywhere else.  On by default, and turned off from the
 -- '/um config' panel: the buttons it takes are ones the client has nothing to
 -- do with while a warp menu is up.  Which buttons those are, and which the map
@@ -489,7 +489,8 @@ local default_settings = T{
     -- box turns it back on when a warp is misbehaving and the reason matters.
     quiet  = true,
     -- Whether walking up to a warp NPC -- Home Point, Survival Guide, Unity
-    -- Concord or Abyssea teleporter -- puts the map on screen by itself.  On
+    -- Concord, Abyssea teleporter or Whitegate's Runic Portal -- puts the map
+    -- on screen by itself.  On
     -- by default: that is what the map has always done, and the reason it
     -- exists.  Off leaves '/um' and Y at the favorites widget as the ways in.
     autoopen = true,
@@ -2847,8 +2848,8 @@ end
 
 --[[
 * The gamepad favorites widget.  It rides with the NPC, not the map: up the
-* moment a Home Point, Survival Guide, Unity Concord, Abyssea teleporter or
-* Cavernous Maw is in reach, gone the moment it is not, whether or not the map
+* moment a Home Point, Survival Guide, Unity Concord, Abyssea teleporter,
+* Whitegate's Runic Portal or Cavernous Maw is in reach, gone the moment it is not, whether or not the map
 * is open.
 *
 * That is also the only time the xinput handler takes a button -- one

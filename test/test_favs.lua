@@ -322,19 +322,19 @@ do
                     end
                 end
                 for _, f in ipairs(seeds) do
-                table.insert(cfg.favs, f);
+                    table.insert(cfg.favs, f);
+                end
             end
         end
-    end
-    if (cfg.seeded_rp ~= true) then
-        cfg.seeded_rp = true;
-        for _, f in ipairs({
-            { key = 'Caedarva Mire',           type = 'runic', label = 'Azouph Isle Staging Point',  zone = 'Azouph Isle' },
-            { key = 'Caedarva Mire',           type = 'runic', label = 'Dvucca Isle Staging Point',  zone = 'Dvucca Isle' },
-            { key = 'Bhaflau Thickets',        type = 'runic', label = 'Mamool Ja Staging Point',    zone = 'Mamool Ja' },
-            { key = 'Mount Zhayolm',           type = 'runic', label = 'Halvung Staging Point',      zone = 'Halvung' },
-            { key = 'Arrapago Reef',           type = 'runic', label = 'Ilrusi Atoll Staging Point', zone = 'Ilrusi Atoll' },
-            { key = 'Alzadaal Undersea Ruins', type = 'runic', label = 'Nyzul Isle Staging Point',   zone = 'Nyzul Isle' },
+        if (cfg.seeded_rp ~= true) then
+            cfg.seeded_rp = true;
+            for _, f in ipairs({
+                { key = 'Caedarva Mire',           type = 'runic', label = 'Azouph Isle Staging Point',  zone = 'Azouph Isle' },
+                { key = 'Caedarva Mire',           type = 'runic', label = 'Dvucca Isle Staging Point',  zone = 'Dvucca Isle' },
+                { key = 'Bhaflau Thickets',        type = 'runic', label = 'Mamool Ja Staging Point',    zone = 'Mamool Ja' },
+                { key = 'Mount Zhayolm',           type = 'runic', label = 'Halvung Staging Point',      zone = 'Halvung' },
+                { key = 'Arrapago Reef',           type = 'runic', label = 'Ilrusi Atoll Staging Point', zone = 'Ilrusi Atoll' },
+                { key = 'Alzadaal Undersea Ruins', type = 'runic', label = 'Nyzul Isle Staging Point',   zone = 'Nyzul Isle' },
             }) do
                 local have = false;
                 for _, g in ipairs(cfg.favs) do
@@ -380,9 +380,13 @@ do
         end
     end
     check(seeded_flux == 24, 'all 24 confluxes should be seeded, got ' .. seeded_flux);
-    check(warp_cmd(fresh.favs[34].key, fresh.favs[34]) == '/uw rp Halvung',
+    local halvung;
+    for _, f in ipairs(fresh.favs) do
+        if (f.label == 'Halvung Staging Point') then halvung = f; end
+    end
+    check(halvung ~= nil and warp_cmd(halvung.key, halvung) == '/uw rp Halvung',
           'a seeded Runic Portal should send its staging point, got '
-          .. tostring(warp_cmd(fresh.favs[34].key, fresh.favs[34])));
+          .. tostring(halvung and warp_cmd(halvung.key, halvung)));
 
     -- A file seeded before Runic Portals existed gets the six once, after what
     -- it already holds, without doubling one it saved by hand -- and deleting
