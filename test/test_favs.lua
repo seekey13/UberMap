@@ -48,13 +48,16 @@ local function fav_pos(f)
 end
 
 local UW_TYPE = { home = 'hp', guide = 'sg', unity = 'uc', abyssea = 'aw',
-                  conflux = 'ab' };
+                  conflux = 'ab', maw = 'ae' };
 
 -- ('%s'):fmt is Ashita's string extension, which plain Lua does not have.
 local function warp_cmd(label, row)
     local kind = UW_TYPE[row.type];
     if (kind == nil) then
         return nil;
+    end
+    if (row.type == 'maw') then
+        return '/uw ' .. kind;
     end
     if (row.type == 'conflux') then
         return string.format('/uw %s %s', kind, row.label:match('#(%d+)') or '');
@@ -177,10 +180,15 @@ end
 -- Home Point row and a row that cannot be pressed should not be listed.
 -- A conflux row is narrowed on its zone as well, since every Abyssea area has
 -- its own Conflux #3 and only the one the player stands in is reachable.
+-- A maw lists its one fixed row instead, which is never saved.
 -- Mirrors fav_view in ubermap.lua.
+local MAW_FAV = { key = 'Cavernous Maw', type = 'maw', label = 'Enter Abyssea' };
 local function fav_view(near_kind, near_zid)
     if (not near_kind) then
         return favs, nil;
+    end
+    if (near_kind == 'maw') then
+        return { MAW_FAV }, nil;
     end
     local view, raw = {}, {};
     for i, f in ipairs(favs) do
@@ -210,6 +218,13 @@ check(home_raw[1] == 1 and home_raw[2] == 3,
 check(#fav_view('guide') == 1, 'a Survival Guide should list only the guide row');
 check(#fav_view('unity') == 0,
       'a warp with nothing saved for it should list nothing at all');
+
+-- A maw lists its row whatever is saved, and sends the bare enter.
+local maw = fav_view('maw');
+check(#maw == 1 and maw[1] == MAW_FAV, 'a maw should list its one row, got ' .. #maw);
+check(fav_index(MAW_FAV.key, MAW_FAV) == nil, 'the maw row should not be a saved favorite');
+check(warp_cmd(MAW_FAV.key, MAW_FAV) == '/uw ae',
+      'the maw should send a bare /uw ae, got ' .. tostring(warp_cmd(MAW_FAV.key, MAW_FAV)));
 
 -- Dragging inside the narrowed list reorders the saved list, and leaves the
 -- rows it does not show where they were.

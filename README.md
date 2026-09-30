@@ -18,7 +18,7 @@ Drop the `UberMap` folder into `Ashita/addons/`, then `/addon load ubermap`.
 
 Mouse wheel zooms, left-drag pans, **shift**-drag moves the window/widget.  
 A controller works it too — see [Gamepad map navigation](#gamepad-map-navigation).  
-Talking to a warp NPC opens it; or use `/um`.  
+Talking to a warp NPC (other than a Cavernous Maw) opens it; or use `/um`.  
 It closes itself once you walk away or a warp is used.  
 The UberMap widget will open when approaching a warp point.
 
@@ -44,6 +44,8 @@ Left-click a zone point — for a panel of that zone's destinations. Clicking a 
 | Conflux #8 | J-4 | I-9 | J-5 |
 
 A conflux row goes live only when you are stood at a **Veridical Conflux** *and* inside that row's own Abyssea area — being at a conflux is not enough, since all eight of every area carry the same name. From anywhere else they stay listed and grey.
+
+A **Cavernous Maw** in La Theine Plateau, Konschtat Highlands or Tahrongi Canyon has no rows on the map — it only enters the Abyssea area behind it. Stand within 7 yalms of one and the favorites widget lists **Cavernous Maw - Enter Abyssea**, which sends `/uw ae`. That row is not a saved favorite: it is always there at a maw and nowhere else, so there is nothing to remove or reorder. The Wings of the Goddess maws elsewhere share the name but travel through time, so they are left alone.
 
 ### Row states
 
@@ -89,7 +91,7 @@ A character who has never saved one starts with 30, so the widget has something 
 | Outline | The stamp behind that text that keeps it readable over the art. White, half alpha |
 | Background | A plate drawn under it. Fully transparent by default, i.e. off -- raise its alpha for a solid label instead of an outlined one |
 | Hover | Fill under the row the cursor is on: warp rows, favorites and the right-click menu. White, near-transparent |
-| Warp NPC Opens Map | Walking up to a Home Point, Survival Guide, Unity Concord or Abyssea teleporter puts the map on screen by itself. On by default; off leaves `/um` and **Y** at the favorites widget as the ways in |
+| Warp NPC Opens Map | Walking up to a Home Point, Survival Guide, Unity Concord or Abyssea teleporter puts the map on screen by itself. A Cavernous Maw never does, since it has no rows on the map. On by default; off leaves `/um` and **Y** at the favorites widget as the ways in |
 | Favorites Widget | The controller window below. On by default; ticking it back on also undoes a **B** press that put it away for this visit |
 | EXP Guide Pickup | Take an Instant Warp scroll off a guide you walk past, see below. On by default |
 | Search Focus On Open | The search box takes the keyboard the frame the map opens, so you can type straight away. Off by default: while it holds the caret the map takes no clicks to pan or zoom |
@@ -116,7 +118,7 @@ The guides stand in **Ru'Lude Gardens** and **Lower Jeuno**, and the zone is che
 ## Gamepad favorites widget
 <img width="414" height="118" alt="image" src="https://github.com/user-attachments/assets/eeb0dc76-6626-4547-a3e2-79f9441dd8ef" />
 
-A small window listing the same favorites, built for a controller. It comes up on its own the moment you walk up to a Home Point, Survival Guide, Unity Concord or Abyssea teleporter — map open or not — and goes away the moment you walk off. Never wider than that, because it swallows the buttons it reads and the D-pad belongs to the game's menus everywhere else.
+A small window listing the same favorites, built for a controller. It comes up on its own the moment you walk up to a Home Point, Survival Guide, Unity Concord, Abyssea teleporter or Cavernous Maw — map open or not — and goes away the moment you walk off. Never wider than that, because it swallows the buttons it reads and the D-pad belongs to the game's menus everywhere else.
 
 | Button | Effect |
 | --- | --- |
@@ -167,7 +169,7 @@ The same three tiers off the keyboard, with the arrows standing in for the D-pad
 
 Esc at the widget without an **F** first puts the widget away, the way **B** does; press it again for the NPC's own menu behind it. The map takes the arrows only while it is on screen, and the widget only after an **F**, so walking is never swallowed.
 
-**U** and **F** are taken for the whole time the widget is on screen, whether or not you are using it — so a `/bind u` or `/bind f` of your own will not fire while you stand at a Home Point, Survival Guide, Unity Concord or Abyssea teleporter. Untick **Favorites Widget** on the `/um config` panel if you need those keys there. **F** is taken by the open map as well, for the same reason the arrows are.
+**U** and **F** are taken for the whole time the widget is on screen, whether or not you are using it — so a `/bind u` or `/bind f` of your own will not fire while you stand at a Home Point, Survival Guide, Unity Concord, Abyssea teleporter or Cavernous Maw. Untick **Favorites Widget** on the `/um config` panel if you need those keys there. **F** is taken by the open map as well, for the same reason the arrows are.
 
 Typing wins over nearly all of it. The game's own chat line, the map's search box and the config panel's number boxes each take the arrows, Enter and Esc while a caret is in them — with **Search Focus On Open** ticked, that includes the frame the map opens in, so start typing straight away and press Tab, Enter, Esc or click the map when you want the keys back. **Tab** is the exception, since a key that could only ever get the keyboard *into* the box would be a door with no handle on the inside: it moves the caret in and back out again, and is taken from the game for as long as the map is up. The chat line and the config panel's number boxes still beat it.
 
@@ -175,7 +177,7 @@ A key the map takes is kept from the game outright, for as long as it is held, s
 
 ## Filters set themselves
 
-Stand at a warp NPC and the map narrows to it: only that kind of row stays lit, since it is the only one you can travel on from there. Walk away and they all light again. Your own clicks are not overridden — a toggle you set by hand stands until you move to a different kind of NPC.
+Stand at a warp NPC and the map narrows to it: only that kind of row stays lit, since it is the only one you can travel on from there. Walk away and they all light again. A Cavernous Maw has no rows, so standing at one lights them all. Your own clicks are not overridden — a toggle you set by hand stands until you move to a different kind of NPC.
 
 A dimmed filter reaches the map itself: a zone marker with no row left fades back the way an unfocused group does and stops taking the cursor. Dim **Guide**, **Unity**, **Abyssea** and **Conflux** and only Home Point zones stay lit.
 
