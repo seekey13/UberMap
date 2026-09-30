@@ -8,7 +8,8 @@
 --]]
 
 local WARP_ICON = { home = 'Crystal.png', guide = 'Guide.png', unity = 'Unity.png',
-                    abyssea = 'Abyssea.png', conflux = 'Conflux.png' };
+                    abyssea = 'Abyssea.png', conflux = 'Conflux.png',
+                    runic = 'Runic.png' };
 
 local WARPS  = assert(loadfile('lib/warps.lua'))();
 local POINTS = assert(loadfile('lib/points.lua'))();
@@ -80,24 +81,32 @@ end
 -- Abyssea warps only: the three zones holding a Cavernous Maw, and only those
 -- -- which is also what catches a zone key that names no marker.
 toggle['Crystal.png'], toggle['Guide.png'], toggle['Unity.png'] = true, true, true;
-toggle['Conflux.png'] = true;
+toggle['Conflux.png'], toggle['Runic.png'] = true, true;
 assert(warps_filtered(), 'a dimmed warp toggle must read as filtered');
 assert(only('abyssea') == 3, 'three zones must carry a Cavernous Maw');
 toggle['Crystal.png'], toggle['Guide.png'], toggle['Unity.png'] = nil, nil, nil;
-toggle['Conflux.png'] = nil;
+toggle['Conflux.png'], toggle['Runic.png'] = nil, nil;
 
 -- Confluxes only: the same three markers, since the eight of a set hang off the
 -- Vana'diel zone whose maw leads to the Abyssea area they stand in.
 toggle['Crystal.png'], toggle['Guide.png'], toggle['Unity.png'] = true, true, true;
-toggle['Abyssea.png'] = true;
+toggle['Abyssea.png'], toggle['Runic.png'] = true, true;
 assert(only('conflux') == 3, 'three zones must carry a set of confluxes');
 toggle['Crystal.png'], toggle['Guide.png'], toggle['Unity.png'] = nil, nil, nil;
-toggle['Abyssea.png'] = nil;
+toggle['Abyssea.png'], toggle['Runic.png'] = nil, nil;
+
+-- Runic Portals only: the five zones holding a staging point, Caedarva Mire
+-- carrying two of the six.
+toggle['Crystal.png'], toggle['Guide.png'], toggle['Unity.png'] = true, true, true;
+toggle['Abyssea.png'], toggle['Conflux.png'] = true, true;
+assert(only('runic') == 5, 'five zones must carry a staging point');
+toggle['Crystal.png'], toggle['Guide.png'], toggle['Unity.png'] = nil, nil, nil;
+toggle['Abyssea.png'], toggle['Conflux.png'] = nil, nil;
 
 -- Home Points only: every marker left lit has one, and every zone with one is
 -- left lit.
 toggle['Guide.png'], toggle['Unity.png'], toggle['Abyssea.png'] = true, true, true;
-toggle['Conflux.png'] = true;
+toggle['Conflux.png'], toggle['Runic.png'] = true, true;
 local homes = only('home');
 assert(homes > 0 and homes < total, 'the Home Point filter must cut something');
 print(('Home Points only: %d of %d markers lit'):format(homes, total));
@@ -109,7 +118,7 @@ assert(lit() == 0, 'dimming every toggle must fade back every zone marker');
 -- ...and lighting them all again puts the map back.
 toggle['Crystal.png'], toggle['Guide.png'] = nil, nil;
 toggle['Unity.png'],   toggle['Abyssea.png']   = nil, nil;
-toggle['Conflux.png'] = nil;
+toggle['Conflux.png'], toggle['Runic.png'] = nil, nil;
 assert(lit() == total, 'relighting every toggle must restore the map');
 
 print(('ok: %d zone markers, %d warp zones'):format(total, (function()
@@ -176,7 +185,7 @@ end
 -- Home Points only: a group marker is lit exactly when one of its zones has a
 -- Home Point, or when no zone carries it at all.
 toggle['Guide.png'], toggle['Unity.png'], toggle['Abyssea.png'] = true, true, true;
-toggle['Conflux.png'] = true;
+toggle['Conflux.png'], toggle['Runic.png'] = true, true;
 local dimmed = 0;
 for _, ic in ipairs(overview) do
     local has, any = false, false;
@@ -209,6 +218,6 @@ for _, ic in ipairs(overview) do
 end
 toggle['Crystal.png'], toggle['Guide.png'] = nil, nil;
 toggle['Unity.png'],   toggle['Abyssea.png']   = nil, nil;
-toggle['Conflux.png'] = nil;
+toggle['Conflux.png'], toggle['Runic.png'] = nil, nil;
 
 print(('ok: %d group markers on the %s map'):format(#overview, time));

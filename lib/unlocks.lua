@@ -29,6 +29,13 @@ unlocks.REGION = {
     guide = { file = 'survivalguide.xml', base = 160, byte = 16 },
 };
 
+-- The assault orders key items: Leujaoam, Mamool Ja, Lebros, Periqia, Ilrusi
+-- and Nyzul Isle.  The Runic Portal will not send anyone carrying one, so the
+-- map reads them off the player and turns its Runic Portal rows down with it.
+-- Runic Portals carry no mask here either: their bitflags count from the
+-- portal's own menu, not the 0x63 block, so nothing below gates them.
+unlocks.ORDERS = { 762, 763, 764, 765, 766, 878 };
+
 -- alias -> { byte, mask }, per warp type.  Empty until load() reads the files,
 -- and an empty one gates nothing.
 local BITS = { home = {}, guide = {} };

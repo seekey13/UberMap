@@ -8,16 +8,16 @@
 --]]
 
 local TYPES = { home = true, guide = true, unity = true, abyssea = true,
-                conflux = true };
+                conflux = true, runic = true };
 local UW    = { home = 'hp', guide = 'sg', unity = 'uc', abyssea = 'aw',
-                conflux = 'ab' };
+                conflux = 'ab', runic = 'rp' };
 -- The order the popup lists the types in, which is the order the rows sit in.
-local RANK  = { home = 1, guide = 2, unity = 3, abyssea = 4, conflux = 5 };
+local RANK  = { home = 1, guide = 2, unity = 3, abyssea = 4, conflux = 5, runic = 6 };
 
 local data = assert(loadfile('lib/warps.lua'))();
 assert(type(data) == 'table', 'warps.lua did not return a table');
 
-local byType = { home = 0, guide = 0, unity = 0, abyssea = 0, conflux = 0 };
+local byType = { home = 0, guide = 0, unity = 0, abyssea = 0, conflux = 0, runic = 0 };
 local zones, rows, noGrid, cmds = 0, 0, {}, {};
 -- Conflux rows, gathered per zone so the eight of a set can be checked as one:
 -- they are numbered 1..8 with no gaps, and all eight name the same Abyssea zone
@@ -74,6 +74,9 @@ for zone, list in pairs(data) do
         seenOrder = rank;
 
         if row.type == 'unity' then unities = unities + 1; end
+        -- '/uw rp' takes the staging point's name, never the zone it is in.
+        assert(row.type ~= 'runic' or row.zone ~= nil,
+               ('%s[%d]: a Runic Portal row needs its own zone'):format(zone, i));
         if row.type == 'conflux' then
             local n = tonumber(row.label:match('^Conflux #(%d+)'));
             assert(n, ('%s[%d]: %q is not a numbered Conflux'):format(zone, i, row.label));
@@ -138,9 +141,11 @@ for zone in pairs(fluxZid) do
     assert(WANT_ZID[zone], ('%s: conflux rows on an unexpected zone'):format(zone));
 end
 
-print(('warps OK: %d zones, %d rows (%d home, %d guide, %d unity, %d abyssea, %d conflux)')
+assert(byType.runic == 6, ('%d Runic Portal rows, expected 6'):format(byType.runic));
+
+print(('warps OK: %d zones, %d rows (%d home, %d guide, %d unity, %d abyssea, %d conflux, %d runic)')
       :format(zones, rows, byType.home, byType.guide, byType.unity, byType.abyssea,
-              byType.conflux));
+              byType.conflux, byType.runic));
 for _, s in ipairs(noGrid) do print('  no grid reference -> ' .. s); end
 
 -- Two commands the popup would send, so a change to the format is visible here.

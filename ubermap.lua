@@ -71,7 +71,8 @@ local TEX_W, TEX_H = 4096, 2048;
 -- Home Point entities are named 'Home Point #1', 'Home Point #2' and so on,
 -- and Survival Guides carry their own name; the Unity Concord and the Abyssea
 -- teleporters are people, so those are named one by one.  A server that renames
--- them is fixed here.
+-- them is fixed here.  A third field is the set of zone ids the NPC only counts
+-- in, for a name shared with NPCs elsewhere that do something else.
 local WARP_NPC = T{
     { '^Home Point',        'home'    },
     { '^Survival Guide',    'guide'   },
@@ -93,15 +94,16 @@ local WARP_NPC = T{
     { '^Veridical Conflux', 'conflux' },
     -- A Cavernous Maw enters the Abyssea area behind it and nowhere else, so
     -- it has no rows on the map: it lists in the widget alone, as the one
-    -- row '/uw ae' is.  Only in MAW_ZONES, below.
-    { '^Cavernous Maw',     'maw'     },
+    -- row '/uw ae' is.  Only in the zones whose maw leads into one of the
+    -- map's Abyssea areas: La Theine Plateau, Konschtat Highlands and Tahrongi
+    -- Canyon.  The Wings of the Goddess maws carry the same name and travel
+    -- through time instead, where '/uw ae' has nothing to enter.
+    { '^Cavernous Maw',     'maw',    T{ [102] = true, [108] = true, [117] = true } },
+    -- Only the Chamber of Passage in Aht Urhgan Whitegate sends: each assault
+    -- staging point has a Runic Portal of its own, but that one only leads
+    -- back, and '/uw rp' does not drive it.
+    { '^Runic Portal$',     'runic',  T{ [50] = true } },
 };
-
--- The zones whose Cavernous Maw leads into one of the map's Abyssea areas: La
--- Theine Plateau, Konschtat Highlands and Tahrongi Canyon.  The Wings of the
--- Goddess maws carry the same name and travel through time instead, where
--- '/uw ae' has nothing to enter.
-local MAW_ZONES = T{ [102] = true, [108] = true, [117] = true };
 
 -- The NPC interaction packets, and the offset each carries the NPC's target
 -- index at.  0x034 puts 32 bytes of menu parameters ahead of its index, so it
@@ -271,13 +273,14 @@ local SEARCH_H_MULT = 1.5;
 -- Layer toggles, drawn on the toolbar row.  Clicking one dims its icon;
 -- the state is kept per file name in cfg.toggle (nil = lit).
 local TOGGLES      = T{ 'Crystal.png', 'Guide.png', 'Unity.png', 'Abyssea.png',
-                        'Conflux.png' };
+                        'Conflux.png', 'Runic.png' };
 -- What each toggle is called on its tooltip, keyed the way cfg.toggle is.
 local TOGGLE_NAME  = T{ ['Crystal.png'] = 'Home Points',
                         ['Guide.png']   = 'Survival Guides',
                         ['Unity.png']   = 'Unity Concords',
                         ['Abyssea.png'] = 'Abyssea Warps',
-                        ['Conflux.png'] = 'Abyssea Confluxes' };
+                        ['Conflux.png'] = 'Abyssea Confluxes',
+                        ['Runic.png']   = 'Runic Portals' };
 local TOGGLE_GAP   = 6;   -- screen pixels between toggles
 
 -- What the Size box will take, in screen pixels, and what it means by "leave it
@@ -315,7 +318,8 @@ local COL_ICON_OFF = 0x40FFFFFF;  -- 25% opacity, i.e. 75% transparent
 -- Warp type -> the toggle that lists it, so dimming a toggle drops those rows
 -- from the popup.  A type no toggle names never shows.
 local WARP_ICON = T{ home = 'Crystal.png', guide = 'Guide.png', unity = 'Unity.png',
-                     abyssea = 'Abyssea.png', conflux = 'Conflux.png' };
+                     abyssea = 'Abyssea.png', conflux = 'Conflux.png',
+                     runic = 'Runic.png' };
 
 -- The Instant Warp scroll, drawn on the toggles' line after them.  Not a layer:
 -- it warps out of the bag rather than from an NPC, so it filters nothing and is
@@ -373,6 +377,7 @@ local COL_POPUP_LOCK = 0xFFB3B3FF;
 local LOCK_TIP = T{
     home  = 'Not registered - interact with this Home Point once to unlock it',
     guide = 'Not registered - interact with this Survival Guide once to unlock it',
+    runic = 'Assault orders held - the Runic Portal will not send you until they are done',
 };
 
 -- Multisend, in the viewport's bottom-right corner.  While it is lit every
@@ -558,7 +563,8 @@ end
 local function fill_defaults()
     cfg.toggle = cfg.toggle or T{};
     cfg.favs   = cfg.favs   or T{};
-    -- A row per kind of warp NPC to start with, then every conflux, so the
+    -- A row per kind of warp NPC to start with, all six Runic Portal
+    -- destinations -- one portal's whole menu -- then every conflux, so the
     -- widget has something to show at the first one a new character walks up
     -- to.  Seeded here rather than from default_settings, which merge would
     -- push back into a list they had been deleted from on every load; done once
@@ -577,6 +583,12 @@ local function fill_defaults()
                 { key = 'Konschtat Highlands', type = 'abyssea', label = 'Abyssea - Konschtat' },
                 { key = 'La Theine Plateau',   type = 'abyssea', label = 'Abyssea - La Theine' },
                 { key = 'Tahrongi Canyon',     type = 'abyssea', label = 'Abyssea - Tahrongi' },
+                { key = 'Caedarva Mire',           type = 'runic', label = 'Azouph Isle Staging Point',  zone = 'Azouph Isle' },
+                { key = 'Caedarva Mire',           type = 'runic', label = 'Dvucca Isle Staging Point',  zone = 'Dvucca Isle' },
+                { key = 'Bhaflau Thickets',        type = 'runic', label = 'Mamool Ja Staging Point',    zone = 'Mamool Ja' },
+                { key = 'Mount Zhayolm',           type = 'runic', label = 'Halvung Staging Point',      zone = 'Halvung' },
+                { key = 'Arrapago Reef',           type = 'runic', label = 'Ilrusi Atoll Staging Point', zone = 'Ilrusi Atoll' },
+                { key = 'Alzadaal Undersea Ruins', type = 'runic', label = 'Nyzul Isle Staging Point',   zone = 'Nyzul Isle' },
             };
             -- All eight confluxes of all three areas, in the order the popups
             -- list them.  Written out here rather than read off WARPS: this
@@ -698,6 +710,7 @@ local ui = T{
     -- inside one Abyssea area, so being stood at one says nothing about which
     -- eight are in reach; 0 is no zone, which no row's 'zid' is.
     near_zid    = 0,
+    orders      = false,     -- assault orders held as of last poll: no Runic Portal
     -- The EXP Guide errand's whole state, shaped and stepped by lib/guide.lua.
     -- Kept out here rather than inside that file so the map can read
     -- errand.has_warp for the Instant Warp icon it draws.
@@ -987,12 +1000,13 @@ local function warps_lit(label)
 end
 
 --[[
-* The warp type an NPC's name begins, or nil when it begins none.
+* The warp type an NPC's name begins, or nil when it begins none -- or when
+* WARP_NPC limits it to zones and zid, the player's own, is not one of them.
 --]]
-local function warp_npc_type(name)
+local function warp_npc_type(name, zid)
     for _, v in ipairs(WARP_NPC) do
         if (name:match(v[1])) then
-            return v[2];
+            return (v[3] == nil or v[3][zid]) and v[2] or nil;
         end
     end
     return nil;
@@ -1002,7 +1016,7 @@ end
 * The warp type of the nearest such NPC within WARP_NPC_NEAR, or nil when none
 * is in reach.  Nearest rather than first found: a zone can hold two kinds
 * within the radius, and the one being stood at is the one meant.  zid is the
-* zone the player is in, which says whether a maw is one of MAW_ZONES'.
+* zone the player is in, which is what says a maw or a Runic Portal counts.
 --]]
 local function near_warp_type(zid)
     local ent = AshitaCore:GetMemoryManager():GetEntity();
@@ -1016,8 +1030,8 @@ local function near_warp_type(zid)
         -- slot keeps the name of whatever last held it after that despawns.
         local d = ent:GetDistance(i);
         if (d < near and bit.band(ent:GetRenderFlags0(i), 0x200) == 0x200) then
-            local t = warp_npc_type(ent:GetName(i) or '');
-            if (t ~= nil and (t ~= 'maw' or MAW_ZONES[zid])) then
+            local t = warp_npc_type(ent:GetName(i) or '', zid);
+            if (t ~= nil) then
                 kind, near = t, d;
             end
         end
@@ -1200,6 +1214,11 @@ local function poll_near(now)
     ui.ring_bag = ring_bag();
     ui.ring     = ring_step(ui.ring_bag ~= nil, ring_worn(),
                             now - ui.ring_at < RING_EQUIP_WAIT);
+    local player = AshitaCore:GetMemoryManager():GetPlayer();
+    ui.orders = false;
+    for _, id in ipairs(unlocks.ORDERS) do
+        ui.orders = ui.orders or (player ~= nil and player:HasKeyItem(id));
+    end
     local kind = near_warp_type(ui.near_zid);
     if (kind ~= ui.near_kind) then
         ui.near_kind = kind;
@@ -1619,7 +1638,7 @@ end
 * authority on which is which.
 --]]
 local UW_TYPE = T{ home = 'hp', guide = 'sg', unity = 'uc', abyssea = 'aw',
-                   conflux = 'ab', maw = 'ae' };
+                   conflux = 'ab', maw = 'ae', runic = 'rp' };
 
 --[[
 * The destination half of that line, which is also the name Uberwarp files its
@@ -1665,8 +1684,12 @@ end
 * Whether the row's destination is one the player has stood at.  One that is
 * not draws red and takes no press: the /uw for it would be turned down at
 * the NPC, and a row that looks live but does nothing reads as a broken map.
+* A Runic Portal is turned down the same way while assault orders are held.
 --]]
 local function warp_known(label, row)
+    if (row.type == 'runic' and ui.orders) then
+        return false;
+    end
     return unlocks.known(row.type, warp_alias(label, row), ui.masks);
 end
 
@@ -4058,7 +4081,8 @@ ashita.events.register('packet_in', 'ubermap_packet_in', function (e)
     -- cfg.autoopen is the '/um config' checkbox: with it off the NPC is walked
     -- up to in peace, and Y at the favorites widget or '/um' puts the map up.
     -- Only NPCs with rows on the map open it: a maw has none.
-    if (WARP_ICON[warp_npc_type(name)] ~= nil and cfg.autoopen
+    local zid = AshitaCore:GetMemoryManager():GetParty():GetMemberZone(0);
+    if (WARP_ICON[warp_npc_type(name, zid)] ~= nil and cfg.autoopen
         and os.clock() - ui.sent_at > SEND_QUIET) then
         show();
     end

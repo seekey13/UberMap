@@ -48,7 +48,7 @@ local function fav_pos(f)
 end
 
 local UW_TYPE = { home = 'hp', guide = 'sg', unity = 'uc', abyssea = 'aw',
-                  conflux = 'ab', maw = 'ae' };
+                  conflux = 'ab', maw = 'ae', runic = 'rp' };
 
 -- ('%s'):fmt is Ashita's string extension, which plain Lua does not have.
 local function warp_cmd(label, row)
@@ -313,6 +313,12 @@ do
                     { key = 'Konschtat Highlands', type = 'abyssea', label = 'Abyssea - Konschtat' },
                     { key = 'La Theine Plateau',   type = 'abyssea', label = 'Abyssea - La Theine' },
                     { key = 'Tahrongi Canyon',     type = 'abyssea', label = 'Abyssea - Tahrongi' },
+                    { key = 'Caedarva Mire',           type = 'runic', label = 'Azouph Isle Staging Point',  zone = 'Azouph Isle' },
+                    { key = 'Caedarva Mire',           type = 'runic', label = 'Dvucca Isle Staging Point',  zone = 'Dvucca Isle' },
+                    { key = 'Bhaflau Thickets',        type = 'runic', label = 'Mamool Ja Staging Point',    zone = 'Mamool Ja' },
+                    { key = 'Mount Zhayolm',           type = 'runic', label = 'Halvung Staging Point',      zone = 'Halvung' },
+                    { key = 'Arrapago Reef',           type = 'runic', label = 'Ilrusi Atoll Staging Point', zone = 'Ilrusi Atoll' },
+                    { key = 'Alzadaal Undersea Ruins', type = 'runic', label = 'Nyzul Isle Staging Point',   zone = 'Nyzul Isle' },
                 };
                 for _, z in ipairs(FLUX_ZONE) do
                     for n = 1, 8 do
@@ -335,31 +341,35 @@ do
     end
 
     local fresh = load({});
-    check(#fresh.favs == 30,
-          'a new character should start with six warps and 24 confluxes, got '
+    check(#fresh.favs == 36,
+          'a new character should start with six warps, six Runic Portals and 24 confluxes, got '
           .. #fresh.favs);
 
     -- Every seeded conflux and Abyssea maw is a row that really exists, under
     -- the zone id the data gives it: a seed that agreed with nothing in
     -- lib/warps.lua would be a favorite with no grid reference, a map row that
     -- never draws green, and a right-click that duplicates instead of removing.
-    -- The maws are checked too because they are the pair that drifted apart.
+    -- The maws are checked too because they are the pair that drifted apart,
+    -- and the Runic Portals because their 'zone' is the whole /uw.
     local seeded_flux = 0;
     for _, f in ipairs(fresh.favs) do
-        if (f.type == 'conflux' or f.type == 'abyssea') then
+        if (f.type == 'conflux' or f.type == 'abyssea' or f.type == 'runic') then
             local row;
             for _, r in ipairs(WARPS[f.key] or {}) do
                 if (r.type == f.type and r.label == f.label) then row = r; end
             end
             check(row ~= nil,
                   ('a seeded %s should be a real row: %s - %s'):format(f.type, f.key, f.label));
-            check(row ~= nil and row.zid == f.zid,
-                  ('a seeded %s should carry its row\'s zone id: %s - %s'):format(
+            check(row ~= nil and row.zid == f.zid and row.zone == f.zone,
+                  ('a seeded %s should carry its row\'s zone: %s - %s'):format(
                       f.type, f.key, f.label));
             if (f.type == 'conflux') then seeded_flux = seeded_flux + 1; end
         end
     end
     check(seeded_flux == 24, 'all 24 confluxes should be seeded, got ' .. seeded_flux);
+    check(warp_cmd(fresh.favs[10].key, fresh.favs[10]) == '/uw rp Halvung',
+          'a seeded Runic Portal should send its staging point, got '
+          .. tostring(warp_cmd(fresh.favs[10].key, fresh.favs[10])));
 
     -- And the pairs the seed spells out are the ones the data holds, so a zone
     -- id typed wrong in ubermap.lua fails here rather than in game.

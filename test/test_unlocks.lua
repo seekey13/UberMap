@@ -205,6 +205,20 @@ else
             end
         end
     end
+    -- Runic Portals carry no mask, but the alias is still the whole command:
+    -- one runicportal.xml does not list is a row that sends nothing useful.
+    local fh = assert(io.open(UW_DIR .. 'runicportal.xml', 'r'));
+    local rp = fh:read('*a');
+    fh:close();
+    for _, list in pairs(warps) do
+        for _, row in ipairs(list) do
+            if (row.type == 'runic') then
+                check(('runicportal.xml knows %q'):format(row.zone),
+                      rp:find(('alias="%s"'):format(row.zone), 1, true) ~= nil, true);
+                checked = checked + 1;
+            end
+        end
+    end
     print(('checked %d warp aliases against the installed Uberwarp data'):format(checked));
 end
 
