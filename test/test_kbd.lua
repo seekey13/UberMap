@@ -518,6 +518,18 @@ ui.fw_on, favs_n, ui.fw_sel = true, 4, 3;
 key(DIK.f, true); key(DIK.f, false);
 check(ui.fw_sel == 3, ('F without a Cancel row should keep the row, is %d'):format(ui.fw_sel));
 
+-- Without one, and with a group open, F must not clamp the parent row to the
+-- member count.  That count is what the arrows walk; the zone's own row is a
+-- different number, and Esc returns to it.
+reset();
+ui.fw_on, favs_n, sub_n, cancel_on = true, 5, 2, false;
+ui.fw_sel, ui.fw_grp, ui.fw_sub = 4, 'Lower Jeuno', 9;
+key(DIK.f, true); key(DIK.f, false);
+check(ui.fw_key, 'F should hand the widget the arrows');
+check(ui.fw_grp ~= nil, 'F without a Cancel row should leave the group open');
+check(ui.fw_sel == 4, ('F should keep the zone\'s row, is %d'):format(ui.fw_sel));
+check(ui.fw_sub == 2, ('F should pull the panel\'s row back onto it, is %d'):format(ui.fw_sub));
+
 -- In focus mode an open group takes the arrows, and Escape shuts it before it
 -- hands the keys back.
 reset();

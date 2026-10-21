@@ -778,6 +778,11 @@ local ui = T{
     fw_shown    = false,     -- it was up last frame, i.e. this is not its first
     fw_sel      = 1,         -- the row the D-pad has landed on, 1-based
     fw_hide     = false,     -- B put it away until the player walks off the NPC
+    -- The two widget checkboxes as of the last frame the widget was drawn.
+    -- A change reshapes the list under fw_sel, which is only a row number, so
+    -- the highlight is reset rather than shifted onto a different zone.
+    fw_opt_cancel = nil,
+    fw_opt_group  = nil,
     -- The zone whose grouped favorites are opened out beside the widget, as
     -- the key the rows share, or nil while no group is open; and the row of
     -- that panel the D-pad has landed on.  While a group is open, up, down and
@@ -1900,18 +1905,29 @@ end
 * or nil while none is.  A group that has gone -- its members narrowed away by
 * walking to another NPC, or removed down to one -- shuts itself here, so the
 * D-pad is handed back to the list rather than left walking a panel that is no
-* longer drawn.
+* longer drawn.  fw_sel stays on that zone's row either way: on the group while
+* it is open, and on the plain row left when it collapses.  B reads fw_sel
+* once the panel is shut, so a stale index warps to whatever slid into it.
 --]]
 function fw.group_open()
     if (ui.fw_grp == nil) then
         return nil;
     end
+    local key = ui.fw_grp;
+    local plain;
     for i, f in ipairs(fw.view()) do
-        if (f.members ~= nil and f.key == ui.fw_grp) then
+        if (f.members ~= nil and f.key == key) then
+            ui.fw_sel = i;
             return f, i;
+        end
+        if (plain == nil and f.members == nil and f.key == key) then
+            plain = i;
         end
     end
     ui.fw_grp = nil;
+    if (plain ~= nil) then
+        ui.fw_sel = plain;
+    end
     return nil;
 end
 
@@ -3046,7 +3062,8 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
     elseif (ui.fav_drag == nil and imgui.IsMouseClicked(0) and hot_i ~= nil
             and ui.ctx == nil and not veto) then
         ui.fav_drag = { i = hot_i, live = hot_live, moved = false,
-                        id = id, fixed = hot_fixed };
+                        id = id, fixed = hot_fixed,
+                        anchor_x = px, anchor_y = py };
     end
     return hot_i;
 end
@@ -3091,10 +3108,22 @@ local function draw_fav_widget()
         return;
     end
     ui.fw_on  = true;
+    -- Ticking either checkbox reshapes the list under a highlight that is only
+    -- a row number: Cancel inserts one at the top, grouping collapses several
+    -- into one.  Reset the way the widget's first frame does, or the next A
+    -- lands on a different zone.  Remembered here rather than shifted, since
+    -- grouping does not move every row by one.
+    if (ui.fw_shown
+        and (ui.fw_opt_cancel ~= cfg.fw_cancel
+             or ui.fw_opt_group ~= cfg.fw_group)) then
+        ui.fw_sel = 1;
+        ui.fw_grp = nil;
+    end
+    ui.fw_opt_cancel = cfg.fw_cancel;
+    ui.fw_opt_group  = cfg.fw_group;
     -- The list as the widget lists it: Cancel on top and zones folded into a
     -- row apiece, where the config panel asks for either.
     local rows, slots = fw.view();
-    ui.fw_sel = mm.clamp(ui.fw_sel, 1, #rows);
 
     -- Asked for once, on the frame it comes up, and never again.  Ashita gives
     -- every addon the one ImGui context, and focusing a window closes every
@@ -3115,6 +3144,11 @@ local function draw_fav_widget()
         ui.fw_grp   = nil;
         imgui.SetNextWindowFocus();
     end
+    -- Before the list draws the highlight.  Lands fw_sel on the open zone, or
+    -- on the plain row left when that group has collapsed, so the row the
+    -- list paints is the one B will return to.
+    fw.group_open();
+    ui.fw_sel = mm.clamp(ui.fw_sel, 1, #rows);
 
     local display = imgui.GetIO().DisplaySize;
     imgui.SetNextWindowPos({ UI_MARGIN, display.y * 0.5 }, ImGuiCond_FirstUseEver);
@@ -3239,6 +3273,18 @@ local function draw_fav_widget()
             local gm = fav_metrics(grp.members);
             local gx = px + m.w + POPUP_GAP;
             local gy = py + POPUP_ROW * (gi - 1);
+            -- The panel is anchored on the group's first member, so a drag
+            -- that moves that member past another zone moves gi, and the panel
+            -- with it, under a cursor that has not.  The next frame then
+            -- reorders whichever member that lands on.  Hold the panel where
+            -- the drag started until the button comes up.  The slot list stays
+            -- live: fav_reorder shifts saved indexes, so the slots from the
+            -- first frame would point at a different favorite.
+            local held = ui.fav_drag;
+            if (held ~= nil and held.id == '##ubermap_fw_grp'
+                and held.anchor_y ~= nil) then
+                gx, gy = held.anchor_x, held.anchor_y;
+            end
             local sub_i = draw_fav_list(gx, gy, gm, mouse_x, mouse_y,
                                         { sel   = ui.gp_active and ui.fw_sub or nil,
                                           grab  = not shift,

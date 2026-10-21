@@ -183,6 +183,75 @@ check(#v == 4, ('three lone rows and Cancel should be four, lists %d'):format(#v
 check(v[4] ~= nil and v[4].key == 'Lower Jeuno' and v[4].members == nil,
       'one Lower Jeuno left should be a plain row');
 
+-- The highlight follows the zone's row.  Moving the group's first member past
+-- another zone changes which row the group sits on; B reads fw_sel once the
+-- panel is shut, so a stale index warps to whatever slid into it.
+for i = #saved, 1, -1 do saved[i] = nil; end
+local fresh = {
+    { key = 'Lower Jeuno', type = 'home', label = 'Home Point #1' },
+    { key = 'Port Jeuno',  type = 'home', label = 'Home Point #1' },
+    { key = 'Lower Jeuno', type = 'home', label = 'Home Point #2' },
+    { key = 'Lower Jeuno', type = 'home', label = 'Home Point #3' },
+};
+for i, f in ipairs(fresh) do saved[i] = f; end
+cfg.fw_cancel, cfg.fw_group = false, true;
+local ui = { fw_grp = 'Lower Jeuno', fw_sel = 4, fw_sub = 1 };
+env.ui = ui;
+local gbody = src:match('\n(function fw%.group_open%(%).-\nend)\n');
+check(gbody ~= nil, 'fw.group_open is no longer written as one function');
+local gchunk;
+if (setfenv ~= nil) then
+    gchunk = assert(loadstring(gbody or ''));
+    setfenv(gchunk, env);
+else
+    gchunk = assert(load(gbody or '', 'fw.group_open', 't', env));
+end
+gchunk();
+
+local open, gi = fw.group_open();
+check(open ~= nil and gi == 1,
+      ('the group should be row 1, is %s'):format(tostring(gi)));
+check(ui.fw_sel == 1,
+      ('the highlight should move onto the group, is %d'):format(ui.fw_sel));
+
+-- The first member dragged down one row inside the panel.  It passes Port
+-- Jeuno, so the group row moves from 1 to 2.
+v, slot = fw.view();
+reorder(slot[1], v[1].slots[2]);
+open, gi = fw.group_open();
+check(gi == 2,
+      ('the group should follow its first member to row 2, is %s'):format(tostring(gi)));
+check(ui.fw_sel == 2,
+      ('the highlight should follow it, is %d'):format(ui.fw_sel));
+check(open ~= nil and open.members[1].label == 'Home Point #2',
+      'the panel should list the member that is now first');
+
+-- Removed down to one favorite in the zone: the panel shuts onto that row.
+table.remove(saved, 4);
+table.remove(saved, 3);
+open, gi = fw.group_open();
+check(open == nil and ui.fw_grp == nil, 'one member left should shut the group');
+check(ui.fw_sel == 2,
+      ('the highlight should land on the plain row, is %d'):format(ui.fw_sel));
+check(fw.view()[ui.fw_sel].key == 'Lower Jeuno',
+      'that row should be the Lower Jeuno that is left');
+
+-- Nothing of the zone left: the group shuts, and the draw's clamp is what
+-- pulls a dangling index back onto the list.
+table.remove(saved, 2);
+ui.fw_grp, ui.fw_sel = 'Lower Jeuno', 2;
+open = fw.group_open();
+check(open == nil and ui.fw_grp == nil, 'a zone with nothing left should shut');
+check(ui.fw_sel == 2,
+      ('a missing zone should leave the index for the clamp, is %d'):format(ui.fw_sel));
+
+-- The panel is drawn at the group's row, which moves when its first member
+-- does.  A drag holds the panel where it started so the next frame cannot
+-- reorder a different row.  ImGui is what places it; this only checks the
+-- hold is still there.
+check(src:find('held.anchor_y', 1, true) ~= nil,
+      'a group drag no longer holds the panel where it started');
+
 if (fails == 0) then
     print(('ok: the D-pad wrap, the A-button gate and the widget\'s list all hold'));
 else

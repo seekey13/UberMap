@@ -336,7 +336,15 @@ function M.press(ui, act, down, h)
                     ui.fw_sel = 1;
                     n = h.fw_count();
                 end
-                ui.fw_sel = math.max(1, math.min(ui.fw_sel, n));
+                -- n is whichever list the arrows will walk.  With a group open
+                -- that is the panel, and clamping fw_sel to it pulls the zone's
+                -- row down to the member count: Esc then returns to the wrong
+                -- zone.  The panel's own row is what gets clamped instead.
+                if (ui.fw_grp ~= nil) then
+                    ui.fw_sub = math.max(1, math.min(ui.fw_sub or 1, n));
+                else
+                    ui.fw_sel = math.max(1, math.min(ui.fw_sel, n));
+                end
                 -- Lights the row on the way in, so the first arrow steps it
                 -- rather than being spent turning the highlight back on.
                 wake(ui);
