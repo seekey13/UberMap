@@ -1,5 +1,6 @@
 --[[
-* Vanacore look for UberMap's search box, config panel and favorites widget.
+* Vanacore look for UberMap's search box, config panel, favorites widget
+* and the warp list hung off a zone point.
 *
 * The palette and the type are the /vana window's: a dark navy ground, one
 * blue accent, and Segoe UI. Sizes for the panel go through S(), which follows

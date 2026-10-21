@@ -770,6 +770,7 @@ local ui = T{
     -- clamping that decided where the panel went.
     warp_px     = 0,
     warp_py     = 0,
+    warp_pitch  = POPUP_ROW, -- row pitch the last draw used, so Y hangs the menu off the lit row
     favs_open   = false,     -- favorites panel is up
     -- The gamepad widget.  fw_on is what the xinput handler reads to decide
     -- whether a button is its to take, and is written by the draw each frame,
@@ -2524,7 +2525,8 @@ function nav.act(act, view_w, view_h)
             local r = (ui.gp_row ~= nil) and rows[ui.gp_row] or nil;
             if (r ~= nil) then
                 ui.ctx = { x = ui.warp_px + POPUP_PAD * 2,
-                           ry = ui.warp_py + POPUP_ROW * (ui.gp_row - 1),
+                           ry = ui.warp_py + ui.warp_pitch * (ui.gp_row - 1),
+                           row_h = ui.warp_pitch,
                            fresh = true, key = ui.warp.label, row = r };
             end
             return;
@@ -3437,8 +3439,15 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
             ui.warp   = nil;
             ui.gp_row = nil;
         else
-            local pdl    = imgui.GetWindowDrawList();
-            local _, th  = imgui.CalcTextSize(ui.warp.label);
+            local st      = ui.style;
+            local pdl     = imgui.GetWindowDrawList();
+            -- Segoe at the body size, same as the favorites widget. Popped
+            -- before the button below, so the menu drawn after this panel
+            -- is not left on it. The row grows with the face.
+            local font_px = st.S(st.BODY);
+            local pitch   = math.max(POPUP_ROW, font_px + st.S(8));
+            local face_on = st.push('text', font_px);
+            local _, th   = imgui.CalcTextSize(ui.warp.label);
             -- The grid reference is a column of its own, so every row's
             -- label starts at one x and every '(F-11)' at another.
             local labw, posw = 0, 0;
@@ -3455,7 +3464,7 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
             local pos_x = lab_x + labw + POPUP_PAD;
             local w     = ((posw > 0) and (pos_x + posw) or (lab_x + labw))
                           + POPUP_PAD;
-            local h = POPUP_ROW * #rows;
+            local h = pitch * #rows;
 
             -- Hung under the marker and clamped both ways, so a point near
             -- an edge does not push the panel off the viewport.
@@ -3468,21 +3477,20 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                 h, origin_y, view_h);
             -- Kept for the pad: Y hangs the favorites menu off the lit row,
             -- and the row's place on screen is this corner plus its pitch.
-            ui.warp_px, ui.warp_py = px, py;
+            ui.warp_px, ui.warp_py, ui.warp_pitch = px, py, pitch;
 
-            pdl:AddRectFilled({ px, py }, { px + w, py + h }, COL_POPUP_BG,
-                              0, ImDrawCornerFlags_All);
-            pdl:AddRect({ px, py }, { px + w, py + h }, COL_OUTLINE,
-                        0, ImDrawCornerFlags_All, ICON_BORDER);
+            st.plate(pdl, px, py, w, h);
             -- Kept inside the outline at both ends, so a lit first or last row
-            -- does not paint over the border it sits against.  The same fill
-            -- the favorites list lights its own rows with.
-            local function light(ry)
-                pdl:AddRectFilled(
-                    { px + ICON_BORDER, math.max(ry, py + ICON_BORDER) },
-                    { px + w - ICON_BORDER,
-                      math.min(ry + POPUP_ROW, py + h - ICON_BORDER) },
-                    COL_HOVER, 0, ImDrawCornerFlags_All);
+            -- does not paint over the border it sits against. bar is the
+            -- accent stripe the pad's row carries.
+            local function light(ry, hex, bar)
+                local inset = st.S(3);
+                st.fill(pdl, px + inset, ry + 1, w - inset * 2, pitch - 2,
+                        hex, st.S(3), 1);
+                if (bar) then
+                    st.fill(pdl, px + st.S(2), ry + st.S(4), st.S(2),
+                            pitch - st.S(8), st.P.accent, st.S(1), 1);
+                end
             end
             -- hot_row is the row a left-click would send, so it is only
             -- ever a live one; hot_any is the row under the cursor whether
@@ -3495,7 +3503,7 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
             -- can be hung under it rather than over it.
             local hot_row, hot_any, hot_lock, hot_ry = nil, nil, nil, nil;
             for i, r in ipairs(rows) do
-                local ry = py + POPUP_ROW * (i - 1);
+                local ry = py + pitch * (i - 1);
                 -- A row only travels from the kind of NPC the player is
                 -- stood at, so one of another kind is drawn dim and takes
                 -- no hover or press.  Listed rather than dropped: the row
@@ -3522,7 +3530,7 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                 -- hover nor either button: the menu is what the cursor is on.
                 local over = not ui.ctx_hot
                              and mouse_x >= px and mouse_x <= px + w
-                             and mouse_y >= ry and mouse_y < ry + POPUP_ROW;
+                             and mouse_y >= ry and mouse_y < ry + pitch;
                 if (over) then
                     hot_any  = r;
                     hot_ry   = ry;
@@ -3531,43 +3539,48 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                 -- The gamepad's landing, lit while the pad is what is
                 -- driving the map, the way the favorites widget lights its own
                 -- selection.  Out while the mouse has it, which lights the row
-                -- under the cursor and nothing else.  A row that is both reads
-                -- brighter, the two fills stacking.
+                -- under the cursor and nothing else.  The pad's row takes the
+                -- accent stripe and does not stack with the hover.
+                local pointed = live and known and over;
                 if (ui.gp_active and i == ui.gp_row) then
-                    light(ry);
+                    light(ry, st.P.accent_bg, true);
+                elseif (pointed) then
+                    light(ry, st.P.hover, false);
                 end
-                if (live and known and over) then
+                if (pointed) then
                     hot_row = r;
-                    light(ry);
                 end
                 local tex, iw, ih = icon_texture(WARP_ICON[r.type]);
                 if (tex ~= nil) then
                     -- The art is not square, so fit it into the icon column
                     -- by its own aspect and centre the slack.
-                    local sc = math.min(POPUP_ICON / iw, POPUP_ROW / ih);
+                    local sc = math.min(POPUP_ICON / iw, pitch / ih);
                     local ix = px + POPUP_PAD + (POPUP_ICON - iw * sc) / 2;
-                    local iy = ry + (POPUP_ROW - ih * sc) / 2;
+                    local iy = ry + (pitch - ih * sc) / 2;
                     pdl:AddImage(tonumber(ffi.cast('uint32_t', tex)),
                                  { ix, iy }, { ix + iw * sc, iy + ih * sc },
                                  { 0, 0 }, { 1, 1 },
                                  live and COL_ICON or COL_ICON_OFF);
                 end
-                local ty  = ry + (POPUP_ROW - th) / 2;
-                -- Red first: a destination nobody has registered will not
+                local ty  = ry + (pitch - th) / 2;
+                -- Rose first: a destination nobody has registered will not
                 -- travel whether or not it was saved, and that is the thing
-                -- worth knowing.  Then green for a row already on the list, so
+                -- worth knowing.  Then teal for a row already on the list, so
                 -- the panel says what is saved without opening the heart.
                 -- Asked per row per frame like the two tests above it, since a
                 -- Y press on the row underneath can save one while this panel
                 -- is on screen.
-                local col = (not known) and COL_POPUP_LOCK
+                local col = (not known) and st.u32(st.P.rose)
                             or (fav_index(ui.warp.label, r) ~= nil)
-                               and COL_POPUP_FAV
-                            or live and COL_POPUP_TEXT or COL_POPUP_OFF;
+                               and st.u32(st.P.teal)
+                            or live and st.u32(st.P.text) or st.u32(st.P.dim);
                 pdl:AddText({ px + lab_x, ty }, col, r.label);
                 if (r.pos ~= nil) then
                     pdl:AddText({ px + pos_x, ty }, col, r.pos);
                 end
+            end
+            if (face_on) then
+                st.pop();
             end
 
             -- An InvisibleButton over the panel takes the press, so it
@@ -3607,7 +3620,7 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
             -- so the menu's item and the row it came from are never both under
             -- the same click.
             if (imgui.IsMouseClicked(1) and hot_any ~= nil) then
-                ui.ctx = { x = mouse_x, ry = hot_ry, fresh = true,
+                ui.ctx = { x = mouse_x, ry = hot_ry, row_h = pitch, fresh = true,
                            key = ui.warp.label, row = hot_any };
             end
         end
@@ -3642,9 +3655,12 @@ local function draw_ctx_menu(origin_x, origin_y, view_w, view_h, mouse_x, mouse_
         -- under the one click, which reads as picking both.  ui.ctx.ry is the
         -- row's top, so the two placements are its own pitch either side --
         -- plus POPUP_GAP, the same gap a panel keeps off its marker, so the
-        -- two edges are apart rather than merely not overlapping.
+        -- two edges are apart rather than merely not overlapping.  row_h is
+        -- the warp list's pitch when that list opened it; the heart's rows
+        -- are POPUP_ROW and leave it unset.
+        local row_h = ui.ctx.row_h or POPUP_ROW;
         local px = mm.clamp_box(ui.ctx.x, w, origin_x, view_w);
-        local py = ui.ctx.ry + POPUP_ROW + POPUP_GAP;
+        local py = ui.ctx.ry + row_h + POPUP_GAP;
         if (py + h > origin_y + view_h) then
             py = ui.ctx.ry - h - POPUP_GAP;
         end

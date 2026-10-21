@@ -63,6 +63,9 @@ for _, needle in ipairs({
     'st.switch(',
     'ui.style.push(\'text\', font_px);',
     'vana  = true,',
+    'st.P.rose',
+    'st.P.teal',
+    'ui.warp_pitch',
 }) do
     assert(src:find(needle, 1, true), 'ubermap.lua is missing ' .. needle);
 end

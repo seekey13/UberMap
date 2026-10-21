@@ -65,9 +65,9 @@ They go live at the **Runic Portal** in the Chamber of Passage, Aht Urhgan White
 | Look | Meaning |
 | --- | --- |
 | Normal | Travels now |
-| **Green** | Already on your favorites list. Map's warp panel only — the favorites list is nothing but favorites |
+| **Teal** | Already on your favorites list. Map's warp panel only — the favorites list is nothing but favorites |
 | Grey | Wrong kind of NPC for where you stand, or a conflux in another Abyssea area; the icon says what to walk up to |
-| **Red** | Never registered, or a Runic Portal while you hold assault orders; takes no click from anywhere, hover says why. Outranks the green, so a saved row you cannot reach still reads red |
+| **Red** | Never registered, or a Runic Portal while you hold assault orders; takes no click from anywhere, hover says why. Outranks the teal, so a saved row you cannot reach still reads red |
 
 ## Toolbar
 
@@ -103,7 +103,7 @@ A character who has never saved one starts with 36, so the widget has something 
 | Text | The map's text itself. Black by default |
 | Outline | The stamp behind that text that keeps it readable over the art. White, half alpha |
 | Background | A plate drawn under it. Fully transparent by default, i.e. off -- raise its alpha for a solid label instead of an outlined one |
-| Hover | Fill under the row the cursor is on: warp rows, the heart's favorites list and the map's right-click menu. White, near-transparent |
+| Hover | Fill under the row the cursor is on: the heart's favorites list and the map's right-click menu. White, near-transparent |
 | Warp NPC Opens Map | Walking up to a Home Point, Survival Guide, Unity Concord, Abyssea teleporter or Whitegate's Runic Portal puts the map on screen by itself. A Cavernous Maw never does, since it has no rows on the map. On by default; off leaves `/um` and **Y** at the favorites widget as the ways in |
 | Favorites Widget | The controller window below. On by default; ticking it back on also undoes a **B** press that put it away for this visit |
 | Widget Cancel Button | Puts a **Cancel** row at the top of the widget, where the selection starts, see below. Off by default |
@@ -116,7 +116,7 @@ The switches save the moment they are clicked, rather than on the mouse coming u
 
 The four scale rows are whole percents, 25 to 400, typed or stepped (±5 by the arrows, ±25 by ctrl-click). 100 is what the map has always drawn at, which is what a settings file that has never been near them carries.
 
-The search box, the config panel and the favorites widget are drawn in Segoe UI. The warp list, the heart's favorites panel and the map's right-click menu keep Ashita's own font and size. **Font** and **Size** move the text drawn onto the map itself.
+The search box, the config panel, the favorites widget and the warp list are drawn in Segoe UI. The heart's favorites panel and the map's right-click menu keep Ashita's own font and size. **Font** and **Size** move the text drawn onto the map itself.
 
 Each picker has an alpha bar, so a colour can be faded rather than only changed; click a swatch to open the picker, and drag inside it to watch the map change under it. Dragging anywhere on the panel does not pan the map underneath.
 
