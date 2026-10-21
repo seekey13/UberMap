@@ -1,13 +1,13 @@
 --[[
-* Self-check for the config panel's checkbox rows.  Run with any Lua
+* Self-check for the config panel's switch rows.  Run with any Lua
 * 5.1+ / LuaJIT:
 *     lua test/test_config.lua
 *
-* The rows are placed by hand under the pickers, and the plate behind them is
-* sized from the same counts, so a row added to the list without the height
-* following it draws off the bottom of the panel.  Source is read rather than
-* run: the panel needs ImGui and a frame, and what breaks here is the
-* arithmetic around it.
+* The rows are placed by hand under the Options heading, and the plate behind
+* them is sized from the same counts, so a row added to the list without the
+* height following it draws off the bottom of the panel.  Source is read
+* rather than run: the panel needs ImGui and a frame, and what breaks here is
+* the arithmetic around it.
 --]]
 
 local src = assert(io.open('ubermap.lua')):read('*a');
@@ -51,20 +51,26 @@ for _, row in ipairs(rows) do
            ('%s has no entry in default_settings'):format(row.key));
 end
 
--- The plate and the rows are placed off the same counts: the pulldown, the
--- numeric rows, the pickers, then one row per checkbox.
-assert(src:find('pitch * (#picks + #nums + #checks + 1) - TOGGLE_GAP', 1, true),
-       'the panel height no longer follows the number of checkbox rows');
-assert(src:find('row_y + pitch * (#nums + #picks + i) });', 1, true),
-       'the checkbox rows are no longer stacked under the pickers');
+-- The plate, the Options heading and one switch per row. The height is the
+-- title, the two headings and a row for the font, each stepper, each swatch
+-- and each switch, so a row added to the list without the height following
+-- it draws off the bottom of the panel.
+assert(src:find('st.plate(', 1, true),
+       'the config panel no longer draws its plate');
+assert(src:find("st.heading(dl, lx, y + head_h / 2, 'Options', inner);", 1, true),
+       'the switches are no longer under an Options heading');
+assert(src:find('st.switch(', 1, true),
+       'the checkbox rows are no longer switches');
+assert(src:find('row_h * (1 + #nums + #picks + #checks)', 1, true),
+       'the panel height no longer follows the number of switch rows');
 -- The width has to follow the names too: these are the longest text on the
 -- panel, and a name wider than the plate runs off it.
-assert(src:match('for _, chk in ipairs%(checks%) do%s*\n%s*panel_w = math%.max'),
-       'the panel width no longer measures the checkbox names');
+assert(src:match('for _, chk in ipairs%(checks%) do%s*\n%s*label_w = math%.max'),
+       'the panel width no longer measures the switch names');
 
 -- Ticking the widget back on has to clear a B press taken earlier in the
 -- visit, or the box reads on with nothing on screen.
 assert(src:match("if %(chk%[3%] == 'widget'%) then%s*\n%s*ui%.fw_hide = false;"),
-       'the widget checkbox no longer clears ui.fw_hide');
+       'the widget switch no longer clears ui.fw_hide');
 
-print('ok: 7 checkbox rows, all live off cfg, panel sized to fit them');
+print('ok: 7 switch rows, all live off cfg, panel sized to fit them');

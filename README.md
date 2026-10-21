@@ -12,7 +12,7 @@ Drop the `UberMap` folder into `Ashita/addons/`, then `/addon load ubermap`.
 | --- | --- |
 | `/ubermap`, `/um` | Toggle the map |
 | `/ubermap edit` | Toggle the point editor |
-| `/ubermap config` | Toggle the config panel: map font and size, text, outline, background and row hover colours, and five checkboxes |
+| `/ubermap config` | Toggle the config panel: map font and size, text, outline, background and row hover colours, and seven switches |
 
 ## The map
 
@@ -90,7 +90,7 @@ A character who has never saved one starts with 36, so the widget has something 
 
 ## Config panel
 
-`/um config` opens a small panel in the map's top-right corner: a font pulldown, a **Size** box, four scale boxes, four colour pickers and five checkboxes, one to a row. Everything on it changes the map as you drag, and writes to your settings once you let go of the mouse or leave the box you are typing in — one write per edit rather than one per frame of it.
+`/um config` opens a small panel in the map's top-right corner: a font pulldown, a **Size** box, four scale boxes, four colour pickers and seven switches, one to a row. Everything on it changes the map as you drag, and writes to your settings once you let go of the mouse or leave the box you are typing in — one write per edit rather than one per frame of it.
 
 | Row | Edits |
 | --- | --- |
@@ -103,7 +103,7 @@ A character who has never saved one starts with 36, so the widget has something 
 | Text | The map's text itself. Black by default |
 | Outline | The stamp behind that text that keeps it readable over the art. White, half alpha |
 | Background | A plate drawn under it. Fully transparent by default, i.e. off -- raise its alpha for a solid label instead of an outlined one |
-| Hover | Fill under the row the cursor is on: warp rows, favorites and the right-click menu. White, near-transparent |
+| Hover | Fill under the row the cursor is on: warp rows, the heart's favorites list and the map's right-click menu. White, near-transparent |
 | Warp NPC Opens Map | Walking up to a Home Point, Survival Guide, Unity Concord, Abyssea teleporter or Whitegate's Runic Portal puts the map on screen by itself. A Cavernous Maw never does, since it has no rows on the map. On by default; off leaves `/um` and **Y** at the favorites widget as the ways in |
 | Favorites Widget | The controller window below. On by default; ticking it back on also undoes a **B** press that put it away for this visit |
 | Widget Cancel Button | Puts a **Cancel** row at the top of the widget, where the selection starts, see below. Off by default |
@@ -112,11 +112,11 @@ A character who has never saved one starts with 36, so the widget has something 
 | Search Focus On Open | The search box takes the keyboard the frame the map opens, so you can type straight away. Off by default: while it holds the caret the map takes no clicks to pan or zoom |
 | Hide Uberwarp Chat | Drop Uberwarp's `[Uberwarp:<module>]` lines from the log, errors included. On by default; untick it when a warp misbehaves and you want the reason |
 
-The five checkboxes save the moment they are clicked, rather than on the mouse coming up like the pickers and boxes.
+The switches save the moment they are clicked, rather than on the mouse coming up like the pickers and boxes.
 
 The four scale rows are whole percents, 25 to 400, typed or stepped (±5 by the arrows, ±25 by ctrl-click). 100 is what the map has always drawn at, which is what a settings file that has never been near them carries.
 
-The warp, favorites and right-click panels are ImGui widgets rather than map text, so they keep Ashita's own font and size; **Font** and **Size** move the text drawn onto the map itself.
+The search box, the config panel and the favorites widget are drawn in Segoe UI. The warp list, the heart's favorites panel and the map's right-click menu keep Ashita's own font and size. **Font** and **Size** move the text drawn onto the map itself.
 
 Each picker has an alpha bar, so a colour can be faded rather than only changed; click a swatch to open the picker, and drag inside it to watch the map change under it. Dragging anywhere on the panel does not pan the map underneath.
 
@@ -146,7 +146,7 @@ A small window listing the same favorites, built for a controller. It comes up o
 
 The widget and the map's panel are one list drawn twice, so the mouse works the same in either: click a row to warp, drag it up or down to reorder, right-click for *Remove point from favorites list*. Turning the widget on hides the heart and its panel, so the list is on screen in one place, not two.
 
-The list is narrowed the same way the panel's is, so every row on it is one the NPC holding it up can send; a destination you have not registered still reads red, and A refuses it. With nothing saved for that kind of NPC the widget stays down. The window has no title bar and sizes itself to the list; like the map, hold shift to drag it somewhere else. On by default -- untick **Favorites Widget** on the `/um config` panel to turn it off -- and saved per character with the rest of the settings. A character who already turned it off keeps it off: the setting is written to their file, and the checkbox is the only way back on.
+The list is narrowed the same way the panel's is, so every row on it is one the NPC holding it up can send; a destination you have not registered still reads red, and A refuses it. With nothing saved for that kind of NPC the widget stays down. The window has no title bar and sizes itself to the list; like the map, hold shift to drag it somewhere else. On by default -- untick **Favorites Widget** on the `/um config` panel to turn it off -- and saved per character with the rest of the settings. A character who already turned it off keeps it off: the setting is written to their file, and the **Favorites Widget** switch is the only way back on.
 
 ### Cancel button
 

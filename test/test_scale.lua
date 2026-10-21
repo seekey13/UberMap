@@ -72,18 +72,15 @@ for _, want in ipairs({ 'ROW_H_MULT %* cfg%.scale_tool / 100',
     assert(src:find(want), ('nothing reads ' .. want));
 end
 
--- Scaling the search box's font is a window property, so it has to be put back
--- or the toggles sharing that row go with it.
--- Counted inside the toolbar row alone: text_size and outlined_text put the
--- scale back too, so a whole-file count would stay green with the box's own
--- restore deleted.
+-- The search box draws its own face. Scaling the window font would take the
+-- toggles that share the row with it, so that span must not touch it.
 local row = assert(src:match('local search_h(.-)%-%- Config panel'),
                    'the toolbar row no longer runs from the search box to the'
                    .. ' config panel');
-local ups   = select(2, row:gsub('SetWindowFontScale%(cfg%.scale_tool / 100%)', ''));
-local downs = select(2, row:gsub('SetWindowFontScale%(1%.0%)', ''));
-assert(ups == 1, 'the search box font scale is set more than once');
-assert(downs == ups, 'the search box font scale is not put back');
+assert(not row:find('SetWindowFontScale', 1, true),
+       'the search box still scales the window font the toggles share');
+assert(row:find('ui.style.field(', 1, true),
+       'the search box is no longer drawn by the style field');
 
 -- The boxes are filled from cfg once, at load.  Logging in swaps cfg for that
 -- character's file, so the callback has to fill them again -- or the panel shows
