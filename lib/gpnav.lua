@@ -11,12 +11,41 @@
 *
 * Kept free of Ashita and ImGui so it can be exercised outside the game, the
 * same way lib/mapmath.lua is.  The dispatch reaches back into the addon
-* through a table of four callbacks -- show, fw_confirm, fav_view, chat_open
-* -- handed in at each call, and touches nothing else of it but the ui table
-* whose fields it is reading and setting anyway.
+* through a table of five callbacks -- show, fw_confirm, fw_count, fw_cancel,
+* chat_open -- handed in at each call, and touches nothing else of it but the
+* ui table whose fields it is reading and setting anyway.
 --]]
 
 local M = { };
+
+--[[
+* One D-pad step inside the widget.  With a zone's group opened out beside the
+* list, the step walks that panel's rows rather than the list's, since the
+* panel is where the cursor was moved to; either way it wraps at both ends,
+* the way the game's own menus do.  n is the length of whichever is live.
+--]]
+local function fw_step(ui, act, n)
+    local key = (ui.fw_grp ~= nil) and 'fw_sub' or 'fw_sel';
+    if (act == 'up') then
+        ui[key] = (ui[key] - 2) % n + 1;
+    else
+        ui[key] = ui[key] % n + 1;
+    end
+end
+
+--[[
+* The widget's B, or Escape with the arrows handed to it: a zone's group opened
+* out beside the list is shut first, leaving the cursor on the zone it was
+* opened from.  Answers whether that is what the press did, so the caller
+* knows to stop there rather than go on to put the widget away.
+--]]
+local function fw_back(ui)
+    if (ui.fw_grp == nil) then
+        return false;
+    end
+    ui.fw_grp = nil;
+    return true;
+end
 
 -- How far off to the side of the pressed direction a marker is allowed to be,
 -- priced as a multiple of how far off it is.  Anything above 1 prefers the
@@ -243,7 +272,7 @@ function M.press(ui, act, down, h)
     -- The widget first, and outright: it is only ever up stood at a warp NPC,
     -- and there a press is for it.
     if (ui.fw_on) then
-        local n = #h.fav_view();
+        local n = h.fw_count();
         if (n == 0) then
             return false;
         end
@@ -280,14 +309,11 @@ function M.press(ui, act, down, h)
             if (wake(ui) and act ~= 'b') then
                 return true;
             end
-            if (act == 'up') then
-                -- Wraps at both ends, the way the game's own menus do.
-                ui.fw_sel = (ui.fw_sel - 2) % n + 1;
-            elseif (act == 'down') then
-                ui.fw_sel = ui.fw_sel % n + 1;
+            if (act == 'up' or act == 'down') then
+                fw_step(ui, act, n);
             elseif (act == 'a') then
                 h.fw_confirm();
-            else
+            elseif (not fw_back(ui)) then
                 -- Out of focus mode and no further: the widget stays up, so
                 -- the F that got here is one press away again.
                 ui.fw_key = false;
@@ -300,7 +326,25 @@ function M.press(ui, act, down, h)
         if (act == 'f') then
             if (down) then
                 ui.fw_key = true;
-                ui.fw_sel = math.max(1, math.min(ui.fw_sel, n));
+                -- With a Cancel row on the list, F lands on it, the same as
+                -- the widget coming up does: an Enter pressed out of habit
+                -- straight after then shuts the widget rather than warping.
+                -- Any group opened out beside the list goes with it, or the
+                -- arrows would walk that instead of the list F lit.
+                if (h.fw_cancel()) then
+                    ui.fw_grp = nil;
+                    ui.fw_sel = 1;
+                    n = h.fw_count();
+                end
+                -- n is whichever list the arrows will walk.  With a group open
+                -- that is the panel, and clamping fw_sel to it pulls the zone's
+                -- row down to the member count: Esc then returns to the wrong
+                -- zone.  The panel's own row is what gets clamped instead.
+                if (ui.fw_grp ~= nil) then
+                    ui.fw_sub = math.max(1, math.min(ui.fw_sub or 1, n));
+                else
+                    ui.fw_sel = math.max(1, math.min(ui.fw_sel, n));
+                end
                 -- Lights the row on the way in, so the first arrow steps it
                 -- rather than being spent turning the highlight back on.
                 wake(ui);
@@ -408,7 +452,7 @@ function M.pad(ui, index, state, h)
     -- go to the client rather than to the map behind it, or dismissing it
     -- would be the only way to reach the NPC's own menu.
     if (ui.fw_on) then
-        local n = #h.fav_view();
+        local n = h.fw_count();
         -- Left and right stay the client's: the widget is a single column, and
         -- taking them would leave no way to work the menu behind it short of
         -- dismissing it.
@@ -427,13 +471,10 @@ function M.pad(ui, index, state, h)
             return true;
         end
 
-        if (act == 'up') then
-            -- Wraps at both ends, the way the game's own menus do.  ponytail:
-            -- one step a press; a held-D-pad repeat if a list ever gets long
-            -- enough to want one.
-            ui.fw_sel = (ui.fw_sel - 2) % n + 1;
-        elseif (act == 'down') then
-            ui.fw_sel = ui.fw_sel % n + 1;
+        if (act == 'up' or act == 'down') then
+            -- ponytail: one step a press; a held-D-pad repeat if a list ever
+            -- gets long enough to want one.
+            fw_step(ui, act, n);
         elseif (act == 'a') then
             h.fw_confirm();
         elseif (act == 'y') then
@@ -443,7 +484,7 @@ function M.pad(ui, index, state, h)
             -- otherwise keep taking the D-pad and A that the map now wants.
             ui.fw_hide = true;
             h.show();
-        else
+        elseif (not fw_back(ui)) then
             -- The way back to the NPC's own menu: with A swallowed there would
             -- otherwise be no reaching it from a controller while stood here.
             ui.fw_hide = true;
