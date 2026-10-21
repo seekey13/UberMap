@@ -71,7 +71,8 @@ local TEX_W, TEX_H = 4096, 2048;
 -- Home Point entities are named 'Home Point #1', 'Home Point #2' and so on,
 -- and Survival Guides carry their own name; the Unity Concord and the Abyssea
 -- teleporters are people, so those are named one by one.  A server that renames
--- them is fixed here.
+-- them is fixed here.  A third field is the set of zone ids the NPC only counts
+-- in, for a name shared with NPCs elsewhere that do something else.
 local WARP_NPC = T{
     { '^Home Point',        'home'    },
     { '^Survival Guide',    'guide'   },
@@ -91,6 +92,17 @@ local WARP_NPC = T{
     -- to any other in its own zone, so the zone is the whole of the question,
     -- and the row's own 'zid' is what answers it.
     { '^Veridical Conflux', 'conflux' },
+    -- A Cavernous Maw enters the Abyssea area behind it and nowhere else, so
+    -- it has no rows on the map: it lists in the widget alone, as the one
+    -- row '/uw ae' is.  Only in the zones whose maw leads into one of the
+    -- map's Abyssea areas: La Theine Plateau, Konschtat Highlands and Tahrongi
+    -- Canyon.  The Wings of the Goddess maws carry the same name and travel
+    -- through time instead, where '/uw ae' has nothing to enter.
+    { '^Cavernous Maw',     'maw',    T{ [102] = true, [108] = true, [117] = true } },
+    -- Only the Chamber of Passage in Aht Urhgan Whitegate sends: each assault
+    -- staging point has a Runic Portal of its own, but that one only leads
+    -- back, and '/uw rp' does not drive it.
+    { '^Runic Portal$',     'runic',  T{ [50] = true } },
 };
 
 -- The NPC interaction packets, and the offset each carries the NPC's target
@@ -261,13 +273,14 @@ local SEARCH_H_MULT = 1.5;
 -- Layer toggles, drawn on the toolbar row.  Clicking one dims its icon;
 -- the state is kept per file name in cfg.toggle (nil = lit).
 local TOGGLES      = T{ 'Crystal.png', 'Guide.png', 'Unity.png', 'Abyssea.png',
-                        'Conflux.png' };
+                        'Conflux.png', 'Runic.png' };
 -- What each toggle is called on its tooltip, keyed the way cfg.toggle is.
 local TOGGLE_NAME  = T{ ['Crystal.png'] = 'Home Points',
                         ['Guide.png']   = 'Survival Guides',
                         ['Unity.png']   = 'Unity Concords',
                         ['Abyssea.png'] = 'Abyssea Warps',
-                        ['Conflux.png'] = 'Abyssea Confluxes' };
+                        ['Conflux.png'] = 'Abyssea Confluxes',
+                        ['Runic.png']   = 'Runic Portals' };
 local TOGGLE_GAP   = 6;   -- screen pixels between toggles
 
 -- What the Size box will take, in screen pixels, and what it means by "leave it
@@ -305,7 +318,8 @@ local COL_ICON_OFF = 0x40FFFFFF;  -- 25% opacity, i.e. 75% transparent
 -- Warp type -> the toggle that lists it, so dimming a toggle drops those rows
 -- from the popup.  A type no toggle names never shows.
 local WARP_ICON = T{ home = 'Crystal.png', guide = 'Guide.png', unity = 'Unity.png',
-                     abyssea = 'Abyssea.png', conflux = 'Conflux.png' };
+                     abyssea = 'Abyssea.png', conflux = 'Conflux.png',
+                     runic = 'Runic.png' };
 
 -- The Instant Warp scroll, drawn on the toggles' line after them.  Not a layer:
 -- it warps out of the bag rather than from an NPC, so it filters nothing and is
@@ -363,6 +377,7 @@ local COL_POPUP_LOCK = 0xFFB3B3FF;
 local LOCK_TIP = T{
     home  = 'Not registered - interact with this Home Point once to unlock it',
     guide = 'Not registered - interact with this Survival Guide once to unlock it',
+    runic = 'Assault orders held - the Runic Portal only offers their staging point; talk to it to go',
 };
 
 -- Multisend, in the viewport's bottom-right corner.  While it is lit every
@@ -387,8 +402,8 @@ local FAV_NONE     = 'No favorites for this warp';
 
 -- The favorites widget: the same saved list, drawn as a small window of its own
 -- and driven from the gamepad.  It comes up only where it can be used -- stood
--- at a Home Point, Survival Guide, Unity Concord or Abyssea teleporter --
--- because it swallows the buttons it reads, and the D-pad belongs to the
+-- at a Home Point, Survival Guide, Unity Concord, Abyssea teleporter,
+-- Whitegate's Runic Portal or Cavernous Maw -- because it swallows the buttons it reads, and the D-pad belongs to the
 -- game's own menus everywhere else.  On by default, and turned off from the
 -- '/um config' panel: the buttons it takes are ones the client has nothing to
 -- do with while a warp menu is up.  Which buttons those are, and which the map
@@ -439,6 +454,9 @@ local default_settings = T{
     -- empty favorites list is one that has never been used or one the player
     -- emptied on purpose; both look the same on disk.
     seeded = false,
+    -- The same, for the Runic Portal rows alone: they came after 'seeded', so
+    -- a file that already has it gets them once under this marker instead.
+    seeded_rp = false,
     widget = true,   -- the gamepad favorites widget is on
     -- A Cancel row at the top of the widget, where the selection starts.  Off
     -- by default.  For the player who walks up to a warp NPC and presses A out
@@ -479,7 +497,8 @@ local default_settings = T{
     -- box turns it back on when a warp is misbehaving and the reason matters.
     quiet  = true,
     -- Whether walking up to a warp NPC -- Home Point, Survival Guide, Unity
-    -- Concord or Abyssea teleporter -- puts the map on screen by itself.  On
+    -- Concord, Abyssea teleporter or Whitegate's Runic Portal -- puts the map
+    -- on screen by itself.  On
     -- by default: that is what the map has always done, and the reason it
     -- exists.  Off leaves '/um' and Y at the favorites widget as the ways in.
     autoopen = true,
@@ -604,6 +623,30 @@ local function fill_defaults()
         end
         settings.save();
     end
+    -- All six Runic Portal destinations, the Whitegate portal's whole menu.
+    -- A marker of their own, so a character seeded before they existed gets
+    -- them too -- once, like the rest, so deleting them sticks.  Whatever the
+    -- list already holds is left alone and not doubled.
+    if (cfg.seeded_rp ~= true) then
+        cfg.seeded_rp = true;
+        for _, f in ipairs({
+            { key = 'Caedarva Mire',           type = 'runic', label = 'Azouph Isle Staging Point',  zone = 'Azouph Isle' },
+            { key = 'Caedarva Mire',           type = 'runic', label = 'Dvucca Isle Staging Point',  zone = 'Dvucca Isle' },
+            { key = 'Bhaflau Thickets',        type = 'runic', label = 'Mamool Ja Staging Point',    zone = 'Mamool Ja' },
+            { key = 'Mount Zhayolm',           type = 'runic', label = 'Halvung Staging Point',      zone = 'Halvung' },
+            { key = 'Arrapago Reef',           type = 'runic', label = 'Ilrusi Atoll Staging Point', zone = 'Ilrusi Atoll' },
+            { key = 'Alzadaal Undersea Ruins', type = 'runic', label = 'Nyzul Isle Staging Point',   zone = 'Nyzul Isle' },
+        }) do
+            local have = false;
+            for _, g in ipairs(cfg.favs) do
+                have = have or (g.key == f.key and g.type == f.type and g.label == f.label);
+            end
+            if (not have) then
+                table.insert(cfg.favs, f);
+            end
+        end
+        settings.save();
+    end
     -- A settings file written before the pickers existed carries no colours,
     -- and a picker handed a nil table would index it on the first frame.  The
     -- shape is checked rather than only the nil, for the same reason cfg.font is
@@ -696,6 +739,7 @@ local ui = T{
     -- inside one Abyssea area, so being stood at one says nothing about which
     -- eight are in reach; 0 is no zone, which no row's 'zid' is.
     near_zid    = 0,
+    orders      = false,     -- assault orders held as of last poll: no Runic Portal
     -- The EXP Guide errand's whole state, shaped and stepped by lib/guide.lua.
     -- Kept out here rather than inside that file so the map can read
     -- errand.has_warp for the Instant Warp icon it draws.
@@ -991,12 +1035,13 @@ local function warps_lit(label)
 end
 
 --[[
-* The warp type an NPC's name begins, or nil when it begins none.
+* The warp type an NPC's name begins, or nil when it begins none -- or when
+* WARP_NPC limits it to zones and zid, the player's own, is not one of them.
 --]]
-local function warp_npc_type(name)
+local function warp_npc_type(name, zid)
     for _, v in ipairs(WARP_NPC) do
         if (name:match(v[1])) then
-            return v[2];
+            return (v[3] == nil or v[3][zid]) and v[2] or nil;
         end
     end
     return nil;
@@ -1005,9 +1050,10 @@ end
 --[[
 * The warp type of the nearest such NPC within WARP_NPC_NEAR, or nil when none
 * is in reach.  Nearest rather than first found: a zone can hold two kinds
-* within the radius, and the one being stood at is the one meant.
+* within the radius, and the one being stood at is the one meant.  zid is the
+* zone the player is in, which is what says a maw or a Runic Portal counts.
 --]]
-local function near_warp_type()
+local function near_warp_type(zid)
     local ent = AshitaCore:GetMemoryManager():GetEntity();
     if (ent == nil) then
         return nil;
@@ -1019,7 +1065,7 @@ local function near_warp_type()
         -- slot keeps the name of whatever last held it after that despawns.
         local d = ent:GetDistance(i);
         if (d < near and bit.band(ent:GetRenderFlags0(i), 0x200) == 0x200) then
-            local t = warp_npc_type(ent:GetName(i) or '');
+            local t = warp_npc_type(ent:GetName(i) or '', zid);
             if (t ~= nil) then
                 kind, near = t, d;
             end
@@ -1084,11 +1130,12 @@ local function poke_npc(id, index)
 end
 
 --[[
-* Narrow the map to one kind of warp, or light every kind again when given nil.
+* Narrow the map to one kind of warp, or light every kind again when given nil
+* or a kind no toggle names -- a maw has no rows to narrow to.
 --]]
 local function filter_to(kind)
     for t, file in pairs(WARP_ICON) do
-        cfg.toggle[file] = (kind ~= nil and t ~= kind) or nil;
+        cfg.toggle[file] = (WARP_ICON[kind] ~= nil and t ~= kind) or nil;
     end
 end
 
@@ -1202,7 +1249,12 @@ local function poll_near(now)
     ui.ring_bag = ring_bag();
     ui.ring     = ring_step(ui.ring_bag ~= nil, ring_worn(),
                             now - ui.ring_at < RING_EQUIP_WAIT);
-    local kind = near_warp_type();
+    local player = AshitaCore:GetMemoryManager():GetPlayer();
+    ui.orders = false;
+    for _, id in ipairs(unlocks.ORDERS) do
+        ui.orders = ui.orders or (player ~= nil and player:HasKeyItem(id));
+    end
+    local kind = near_warp_type(ui.near_zid);
     if (kind ~= ui.near_kind) then
         ui.near_kind = kind;
         filter_to(kind);
@@ -1621,7 +1673,7 @@ end
 * authority on which is which.
 --]]
 local UW_TYPE = T{ home = 'hp', guide = 'sg', unity = 'uc', abyssea = 'aw',
-                   conflux = 'ab' };
+                   conflux = 'ab', maw = 'ae', runic = 'rp' };
 
 --[[
 * The destination half of that line, which is also the name Uberwarp files its
@@ -1648,6 +1700,10 @@ local function warp_cmd(label, row)
     if (kind == nil) then
         return nil;
     end
+    -- A maw names no destination: it only enters the area behind it.
+    if (row.type == 'maw') then
+        return '/uw ' .. kind;
+    end
     -- Rows out of lib/warps.lua are checked by test_warps, but a favorite is
     -- read back off the settings file, which is hand-editable: a conflux label
     -- with no number left in it would build a bare '/uw ab ' that reads as a
@@ -1663,8 +1719,12 @@ end
 * Whether the row's destination is one the player has stood at.  One that is
 * not draws red and takes no press: the /uw for it would be turned down at
 * the NPC, and a row that looks live but does nothing reads as a broken map.
+* A Runic Portal is turned down the same way while assault orders are held.
 --]]
 local function warp_known(label, row)
+    if (row.type == 'runic' and ui.orders) then
+        return false;
+    end
     return unlocks.known(row.type, warp_alias(label, row), ui.masks);
 end
 
@@ -1733,11 +1793,21 @@ end
 * cfg.favs, so a drag inside the narrowed list reorders the saved list: the
 * row is pulled out of its own slot and put back in the one the row it was
 * dragged onto holds, which lands it on that side of it in both lists.
+*
+* A maw lists MAW_FAV and nothing else.  It is made here rather than saved, so
+* no misclick can take it off the list for good -- it has no map row to be put
+* back from -- and it stays out of the whole list, where it could never be
+* pressed.  One row with no slot in cfg.favs, so no drag can reorder it.
 --]]
+local MAW_FAV = T{ key = 'Cavernous Maw', type = 'maw', label = 'Enter Abyssea' };
+
 local function fav_view()
     local kind = ui.near_kind;
     if (not kind) then
         return cfg.favs, nil;
+    end
+    if (kind == 'maw') then
+        return T{ MAW_FAV }, nil;
     end
     local view, raw = T{ }, T{ };
     for i, f in ipairs(cfg.favs) do
@@ -2874,7 +2944,9 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
         -- Unlike a popup row, a favorite comes back off disk, so its type is
         -- only as good as the settings file: one no toggle names draws no icon
         -- rather than looking one up under a nil.  Cancel has no type at all.
-        local art = (f.type ~= nil) and WARP_ICON[f.type] or nil;
+        -- A maw names no toggle, having no map rows, but reads as Abyssea.
+        local art = (f.type == 'maw') and WARP_ICON.abyssea
+                    or (f.type ~= nil) and WARP_ICON[f.type] or nil;
         local tex, iw, ih;
         if (art ~= nil) then tex, iw, ih = icon_texture(art); end
         if (tex ~= nil) then
@@ -2981,8 +3053,9 @@ end
 
 --[[
 * The gamepad favorites widget.  It rides with the NPC, not the map: up the
-* moment a Home Point, Survival Guide, Unity Concord or Abyssea teleporter is
-* in reach, gone the moment it is not, whether or not the map is open.
+* moment a Home Point, Survival Guide, Unity Concord, Abyssea teleporter,
+* Whitegate's Runic Portal or Cavernous Maw is in reach, gone the moment it is not, whether or not the map
+* is open.
 *
 * That is also the only time the xinput handler takes a button -- one
 * condition, written here and read there, so the two cannot come apart and
@@ -3069,8 +3142,10 @@ local function draw_fav_widget()
     * one is drawn into the map window, which this window stands in front of.
     * It hangs off the InvisibleButton the list just drawn left behind, so it
     * is asked for straight after each list, and acts on f -- the row the
-    * right-click just moved that list's selection to.  Neither Cancel nor a
-    * zone group is a favorite to remove, so neither offers it.
+    * right-click just moved that list's selection to.  Neither Cancel, a
+    * zone group, nor a maw offers it: the first two are not favorites, and
+    * a maw's row is MAW_FAV, made for the visit rather than saved, so the
+    * menu would put it onto the list.
     *
     * Placed under that row rather than at the cursor, the same as the map's
     * menu and for the same reason: a menu lying over the row it came from
@@ -3084,7 +3159,8 @@ local function draw_fav_widget()
     * window Begins next in the frame.
     --]]
     local function menu(pid, f, x, y)
-        if (shift or f == nil or f.cancel or f.members ~= nil) then
+        if (shift or f == nil or f.cancel or f.members ~= nil
+            or f.type == 'maw') then
             return;
         end
         imgui.SetNextWindowPos({ x, y });
@@ -3237,8 +3313,10 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
         -- cursor: a menu lying over the row it was opened on puts its item and
         -- that row under the one click, which reads as picking both.  Rows are
         -- POPUP_ROW apart from the panel's top, so the hot row's bottom edge is
-        -- its own index times the pitch.
-        if (imgui.IsMouseClicked(1) and hot_i ~= nil and not ui.warp_hot) then
+        -- its own index times the pitch.  None at a maw, whose one row is not
+        -- on the list: its menu would offer to add a second.
+        if (imgui.IsMouseClicked(1) and hot_i ~= nil and not ui.warp_hot
+            and ui.near_kind ~= 'maw') then
             local f = fav_view()[hot_i];
             ui.ctx = { x = mouse_x, ry = py + POPUP_ROW * (hot_i - 1),
                        fresh = true, key = f.key, row = f };
@@ -4288,7 +4366,9 @@ ashita.events.register('packet_in', 'ubermap_packet_in', function (e)
     -- send closed it on purpose.
     -- cfg.autoopen is the '/um config' checkbox: with it off the NPC is walked
     -- up to in peace, and Y at the favorites widget or '/um' puts the map up.
-    if (warp_npc_type(name) ~= nil and cfg.autoopen
+    -- Only NPCs with rows on the map open it: a maw has none.
+    local zid = AshitaCore:GetMemoryManager():GetParty():GetMemberZone(0);
+    if (WARP_ICON[warp_npc_type(name, zid)] ~= nil and cfg.autoopen
         and os.clock() - ui.sent_at > SEND_QUIET) then
         show();
     end
