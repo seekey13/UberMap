@@ -4125,11 +4125,12 @@ local function draw_map(view_w, view_h)
             local label_px = st.S(st.BODY);
             local ctrl_w = st.S(148);
             local pad = st.S(14);
-            local top = st.S(6);
             local row_h = st.S(28);
-            local title_px = st.S(18);
-            local title_h = st.S(22);
-            local close_s = st.S(18);
+            -- The name band and the close mark are Choco's: 19px semibold,
+            -- centred in a 36px band, and a 12px cross in a 22px hit.
+            local title_px = st.S(19);
+            local title_h = st.S(36);
+            local close_s = st.S(22);
             local head_h = st.S(24);
             local label_w = st.measure('Font', 'text', label_px);
             for _, num in ipairs(nums) do
@@ -4142,15 +4143,14 @@ local function draw_map(view_w, view_h)
                 label_w = math.max(label_w, st.measure(chk[1], 'text', label_px));
             end
             local inner = label_w + st.S(18) + ctrl_w;
-            local title_w = st.measure('UberMap Settings', 'semi', title_px);
+            local title_w = st.measure('UberMap', 'semi', title_px);
             if (title_w + st.S(8) + close_s > inner) then
                 inner = title_w + st.S(8) + close_s;
             end
             local panel_w = inner + pad * 2;
-            -- Title, two section rules, the font row, then every stepper, swatch
-            -- and switch. A short inset over the word: the band is the text,
-            -- not a tall slot with the word centred in it.
-            local panel_h = top + pad + title_h + head_h * 2
+            -- The name band, then two section rules, the font row, and every
+            -- stepper, swatch and switch. pad under the last row is the margin.
+            local panel_h = pad + title_h + head_h * 2
                             + row_h * (1 + #nums + #picks + #checks);
             local px = origin_x + view_w - UI_MARGIN - panel_w;
             -- Under the cog, so that corner control stays the one that toggles
@@ -4166,19 +4166,29 @@ local function draw_map(view_w, view_h)
 
             local lx = px + pad;
             local rx = px + panel_w - pad;
-            local y = py + top;
-            st.title(dl, lx, y + title_h / 2, 'UberMap Settings', title_px);
-            local x_at = rx - close_s;
-            local y_at = y + (title_h - close_s) / 2;
-            imgui.SetCursorScreenPos({ x_at, y_at });
+            local y = py;
+            local title_cy = y + title_h / 2;
+            st.title(dl, lx, title_cy, 'UberMap', title_px);
+            -- Right edge of the hit sits on the same inset as the labels.
+            local close_cx = rx - close_s / 2;
+            imgui.SetCursorScreenPos({
+                math.floor(close_cx - close_s / 2 + 0.5),
+                math.floor(title_cy - close_s / 2 + 0.5),
+            });
             imgui.InvisibleButton('##ubermap_cfg_x', { close_s, close_s });
+            -- IsItemClicked, not the button's return: that return stays false
+            -- on this build. A menu over the corner is not a close.
             local x_hot = imgui.IsItemHovered() and not ui.warp_hot and not ui.ctx_hot;
             if (imgui.IsItemClicked(0) and x_hot) then
                 ui.config = false;
             end
             ui.hot = ui.hot or imgui.IsItemHovered();
-            st.glyph(dl, 'close', x_at + close_s / 2, y + title_h / 2,
-                     x_hot and st.P.white or st.P.dim, st.S(11));
+            local close_t = st.ease('ubermap_cfg_x', x_hot and 1 or 0, 22);
+            st.glyph(dl, 'close', close_cx, title_cy,
+                     st.mix(st.P.dim, st.P.rose, close_t), st.S(12));
+            if (x_hot and not ui.gp_active) then
+                imgui.SetTooltip('Close');
+            end
             dl:AddLine({ px, y + title_h }, { px + panel_w, y + title_h },
                        st.u32(st.P.border), 1);
             y = y + title_h;

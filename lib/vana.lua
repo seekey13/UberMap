@@ -100,14 +100,15 @@ end
 
 --[[
 * id moves towards target. A new id starts there, so a control does not
-* animate in from zero the frame it first draws.
+* animate in from zero the frame it first draws. speed is how fast, and the
+* close mark uses a quicker one than a switch.
 --]]
-function vana.ease(id, target)
+function vana.ease(id, target, speed)
     local v = anim[id];
     if (v == nil) then
         v = target;
     else
-        v = v + (target - v) * math.min(1, frame_dt * 18);
+        v = v + (target - v) * math.min(1, frame_dt * (speed or 18));
         if (math.abs(v - target) < 0.004) then
             v = target;
         end
