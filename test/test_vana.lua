@@ -66,13 +66,164 @@ for _, needle in ipairs({
     'st.P.rose',
     'st.P.teal',
     'ui.warp_pitch',
+    'st.close(',
+    'st.swatch(',
+    'st.row(',
+    'ui.style.tooltip(',
 }) do
     assert(src:find(needle, 1, true), 'ubermap.lua is missing ' .. needle);
 end
+-- Every tooltip goes through the palette's: a bare SetTooltip is ImGui's grey
+-- box in a window that is otherwise Sidekick3's.
+assert(not src:find('imgui.SetTooltip(', 1, true),
+       'ubermap.lua calls SetTooltip directly instead of through ui.style.tooltip');
 
 -- Segoe is baked from the style module, so the map file still has the one
 -- AddFontFromFileTTF the font picker is allowed.
 local adds = select(2, src:gsub('AddFontFromFileTTF', ''));
 same(adds, 1, 'AddFontFromFileTTF in ubermap.lua');
 
-print('ok: palette, scale clamps, and the search, config and widget draw with them');
+--[[
+* The controls, drawn against a stand-in ImGui.  What it records is what
+* matters in game: every style colour, style var and font pushed is popped
+* (ImGui asserts on an unbalanced stack), and the sizes and colours are
+* Sidekick3's.
+--]]
+local depth = { color = 0, var = 0, font = 0 };
+local seen = { };
+local hovered, click, open = false, false, { };
+local dl = { lines = { }, rects = { }, texts = { } };
+function dl:AddLine(a, b, col, t) self.lines[#self.lines + 1] = { a = a, b = b, col = col, t = t }; end
+function dl:AddRectFilled(a, b, col, r) self.rects[#self.rects + 1] = { a = a, b = b, col = col, r = r }; end
+function dl:AddRect() end
+function dl:AddCircleFilled() end
+function dl:AddText(p, col, s) self.texts[#self.texts + 1] = { p = p, col = col, s = s }; end
+local function reset()
+    dl.lines, dl.rects, dl.texts = { }, { }, { };
+    seen = { };
+end
+package.loaded['imgui'] = {
+    GetIO = function () return { DisplaySize = { x = 2560, y = 1440 } }; end,
+    PushStyleColor = function () depth.color = depth.color + 1; end,
+    PopStyleColor = function (n) depth.color = depth.color - (n or 1); end,
+    PushStyleVar = function () depth.var = depth.var + 1; end,
+    PopStyleVar = function (n) depth.var = depth.var - (n or 1); end,
+    PushFont = function () depth.font = depth.font + 1; end,
+    PopFont = function () depth.font = depth.font - 1; end,
+    CalcTextSize = function (s) return #s * 7, 16; end,
+    GetFontSize = function () return 16; end,
+    GetWindowDrawList = function () return dl; end,
+    SetCursorScreenPos = function (p) seen.cursor = p; end,
+    InvisibleButton = function (_, size) seen.button = size; return click; end,
+    IsItemHovered = function () return hovered; end,
+    IsPopupOpen = function (id) return open[id] == true; end,
+    OpenPopup = function (id) open[id] = true; end,
+    BeginPopup = function (id) return open[id] == true; end,
+    EndPopup = function () end,
+    SetNextWindowPos = function (p) seen.next_pos = p; end,
+    SetNextWindowSizeConstraints = function (a, b) seen.limits = { a, b }; end,
+    SetTooltip = function (s) seen.tip = s; end,
+};
+local function balanced(what)
+    same(depth.color, 0, what .. ': style colours left pushed');
+    same(depth.var, 0, what .. ': style vars left pushed');
+    same(depth.font, 0, what .. ': fonts left pushed');
+end
+
+vana.frame();  -- 1440 tall: S(n) is n * 1.1
+local S = vana.S;
+
+-- Sidekick3's popup style: ten colours and six vars, and they come back off.
+local nc, nv = vana.push_popup();
+same(nc, 10, 'popup colours');
+same(nv, 6, 'popup vars');
+vana.pop_popup(nc, nv);
+balanced('push_popup');
+
+-- A tooltip is wrapped, its '%' doubled for SetTooltip's printf, and balanced.
+reset();
+vana.tooltip('50% of the way there');
+same(seen.tip, '50%% of the way there', 'tooltip text');
+balanced('tooltip');
+vana.tooltip(('word '):rep(30));
+assert(seen.tip:find('\n', 1, true), 'a long tooltip is not wrapped');
+
+-- The close mark: an X 72% of its box, dim at rest and rose under the pointer,
+-- clicked only when nothing over it vetoes.
+reset();
+hovered, click = false, false;
+local clicked, hot = vana.close('x', 100, 100, S(21));
+assert(not clicked and not hot, 'an untouched close mark reports a click');
+same(#dl.lines, 2, 'close mark strokes');
+same(dl.lines[1].col, vana.u32(vana.P.dim), 'close mark at rest');
+same(seen.button[1], S(21), 'close box');
+local k = S(21) * 0.72 / 24;
+same(dl.lines[1].a[1], 100 + (6 - 12) * k, 'close mark size');
+reset();
+hovered, click = true, true;
+clicked, hot = vana.close('x', 100, 100, S(21));
+assert(clicked and hot, 'a pressed close mark is not clicked');
+same(dl.lines[1].col, vana.u32(vana.P.rose), 'close mark under the pointer');
+clicked, hot = vana.close('x', 100, 100, S(21), true);
+assert(not clicked and not hot, 'a vetoed close mark still takes the click');
+hovered, click = false, false;
+
+-- The group heading: teal capitals, then a teal rule at 0.35 from 10 after them.
+reset();
+vana.heading(dl, 10, 50, 'Look', 300);
+same(dl.texts[1].s, 'L', 'heading capitals');
+same(dl.lines[1].col, vana.u32(vana.P.teal, 0.35), 'heading rule colour');
+same(dl.lines[1].b[1], 310, 'heading rule end');
+local tw = vana.text_spaced(nil, 0, 0, 'LOOK', nil, 'semi_italic', S(vana.SMALL),
+                            math.max(1, S(1.2)));
+same(dl.lines[1].a[1], 10 + tw + S(10), 'heading rule start');
+
+-- The shadow: a pixel past the panel either side, two below, none above.
+reset();
+vana.shadow(10, 20, 100, 50, dl);
+same(dl.rects[1].a[1], 9, 'shadow left');
+same(dl.rects[1].a[2], 20, 'shadow top');
+same(dl.rects[1].b[1], 111, 'shadow right');
+same(dl.rects[1].b[2], 72, 'shadow bottom');
+
+-- The drop-down: no list size set while it is shut; once clicked, a list at
+-- least the box's width, and every push popped either way.
+reset();
+local list_open = vana.combo('##f', 0, 50, 150, 'Arial', function () end);
+assert(not list_open and seen.limits == nil, 'a shut drop-down sizes a list');
+balanced('combo shut');
+click = true;
+list_open = vana.combo('##f', 0, 50, 150, 'Arial', function () end);
+click = false;
+assert(list_open, 'a clicked drop-down does not open');
+same(seen.limits[1][1], 150, 'the list is narrower than its box');
+same(seen.limits[2][1], S(360), 'the list grows to 360');
+balanced('combo open');
+open = { };
+
+-- The swatch says its hex, and how opaque a colour that is not solid is.
+reset();
+vana.swatch('##s', 300, 50, { 1, 1, 1, 0.5 }, false);
+same(dl.texts[#dl.texts].s, '#FFFFFF  50%', 'half-alpha swatch label');
+reset();
+vana.swatch('##s', 300, 50, { 0, 0, 0, 1 }, false);
+same(dl.texts[#dl.texts].s, '#000000', 'solid swatch label');
+assert(vana.swatch_width() >= S(23) + #'#DDDDDD  100%' * 7, 'swatch room');
+
+-- A chosen row is the accent's ground at 0.9 with its bar; a hovered one the
+-- hover band at 0.8; neither, nothing.
+reset();
+vana.row(dl, 'r1', 0, 0, 200, 30, true, false);
+same(#dl.rects, 2, 'chosen row fills');
+same(dl.rects[1].col, vana.u32(vana.P.accent_bg, 0.9), 'chosen row ground');
+same(dl.rects[2].col, vana.u32(vana.P.accent), 'chosen row bar');
+reset();
+vana.row(dl, 'r2', 0, 0, 200, 30, false, true);
+same(#dl.rects, 1, 'hovered row fills');
+same(dl.rects[1].col, vana.u32(vana.P.hover, 0.8), 'hovered row band');
+reset();
+vana.row(dl, 'r3', 0, 0, 200, 30, false, false);
+same(#dl.rects, 0, 'a plain row draws a ground');
+
+print('ok: palette, scale clamps, the search, config and widget draw with them,'
+      .. ' and the controls are Sidekick3\'s and leave ImGui balanced');

@@ -77,6 +77,7 @@ They go live at the **Runic Portal** in the Chamber of Passage, Aht Urhgan White
 | **Crystal**, **Guide**, **Unity**, **Abyssea**, **Conflux**, **Runic** | Right of search | Dim one to drop that kind of row. A zone with nothing left opens no panel |
 | **Warp** | After them | `/item "Instant Warp" <me>` and closes the map. Lit only while the scroll (4181) is carried |
 | **Warp Ring** | After that | Two steps, see below |
+| **Settings** | Top right | The cog. Opens and closes the [config panel](#config-panel) under it, the same as `/um config` |
 | **Multisend** | Bottom right | Prefixes every command the map sends with `/mss ` |
 | **Heart** | Bottom left | Opens favorites. Hidden while the gamepad widget is on, since that lists the same rows.  Filters will completely hide results on this list |
 
@@ -90,7 +91,7 @@ A character who has never saved one starts with 36, so the widget has something 
 
 ## Config panel
 
-`/um config` opens a small panel in the map's top-right corner: a font pulldown, a **Size** box, four scale boxes, four colour pickers and seven switches, one to a row. Everything on it changes the map as you drag, and writes to your settings once you let go of the mouse or leave the box you are typing in — one write per edit rather than one per frame of it.
+The cog in the map's top-right corner, or `/um config`, opens **UberMap Settings** under it: a font pulldown, a **Size** box, four scale boxes, four colour swatches and seven switches, one to a row, under a **Look** and an **Options** heading. The **×** on its title bar closes it too. Everything on it changes the map as you drag, and writes to your settings once you let go of the mouse or leave the box you are typing in — one write per edit rather than one per frame of it.
 
 | Row | Edits |
 | --- | --- |
@@ -116,9 +117,9 @@ The switches save the moment they are clicked, rather than on the mouse coming u
 
 The four scale rows are whole percents, 25 to 400, typed or stepped (±5 by the arrows, ±25 by ctrl-click). 100 is what the map has always drawn at, which is what a settings file that has never been near them carries.
 
-The search box, the config panel, the favorites widget and the warp list are drawn in Segoe UI. The heart's favorites panel and the map's right-click menu keep Ashita's own font and size. **Font** and **Size** move the text drawn onto the map itself.
+The search box, the config panel, the favorites widget and the warp list are drawn the way Sidekick3 draws its settings window: VanaCore's palette, Segoe UI, and the same title bar, close mark, headings, rows, drop-down and switches. Every tooltip uses that palette too. The heart's favorites panel and the map's right-click menu keep Ashita's own font and size. **Font** and **Size** move the text drawn onto the map itself.
 
-Each picker has an alpha bar, so a colour can be faded rather than only changed; click a swatch to open the picker, and drag inside it to watch the map change under it. Dragging anywhere on the panel does not pan the map underneath.
+Each swatch shows its colour's hex, and how opaque it is when it is not solid. Click one to open its picker beside the panel, over the map: it has an alpha bar, so a colour can be faded rather than only changed, and dragging inside it recolours the map as you go. Dragging anywhere on the panel or a picker does not pan the map underneath.
 
 Everything on the panel is yours alone and is saved with the rest of the per-character settings, so recolouring or resizing your map changes nothing anyone else sees.
 

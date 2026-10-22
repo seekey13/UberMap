@@ -370,16 +370,12 @@ local POPUP_GAP      = 6;   -- screen pixels between the marker and the panel
 local COL_POPUP_BG   = 0xE0101010;  -- near black, a little of the map showing through
 local COL_POPUP_TEXT = 0xFFFFFFFF;  -- the panel has its own ground, so white reads
 local COL_POPUP_OFF  = 0x60FFFFFF;  -- a row whose kind of NPC is not in reach
--- Light green, { 0.7, 1.0, 0.7, 1.0 }: a warp row already on the favorites
--- list.  On the map's warp panel only -- the favorites list itself is nothing
--- but favorites, and colouring every row of it green says nothing.
-local COL_POPUP_FAV  = 0xFFB3FFB3;
 -- Light red, { 1.0, 0.7, 0.7, 1.0 }, held apart from the grey above: not being
 -- in front of the right NPC is a thing the player can walk off and fix, while a
 -- destination they have never stood at is not, so the two do not read the same.
--- It also outranks the green: a favorite that will not travel is worth knowing
--- about whether or not it was saved.  Text only - the icon still says which kind
--- of NPC the row travels from, which is worth reading either way.
+-- Text only - the icon still says which kind of NPC the row travels from,
+-- which is worth reading either way.  The warp list and the widget draw the
+-- same three states in the Vanacore palette instead: rose, dim and text.
 local COL_POPUP_LOCK = 0xFFB3B3FF;
 -- What a red row says when the cursor stops on it.
 local LOCK_TIP = T{
@@ -925,7 +921,7 @@ local function item_tip(text)
         return;
     end
     if (imgui.IsItemHovered() and not ui.warp_hot and not ui.ctx_hot) then
-        imgui.SetTooltip(text);
+        ui.style.tooltip(text);
     end
 end
 
@@ -2932,19 +2928,8 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
                    0, ImDrawCornerFlags_All, ICON_BORDER);
     end
     -- Kept inside the outline at both ends, so a lit first or last row does
-    -- not paint over the border it sits against.  bar draws the accent stripe
-    -- a selected widget row carries.
-    local function light(ry, hex, bar)
-        if (look) then
-            local inset = look.S(3);
-            look.fill(dl, px + inset, ry + 1, w - inset * 2, pitch - 2,
-                      hex, look.S(3), 1);
-            if (bar) then
-                look.fill(dl, px + look.S(2), ry + look.S(4), look.S(2),
-                          pitch - look.S(8), look.P.accent, look.S(1), 1);
-            end
-            return;
-        end
+    -- not paint over the border it sits against.
+    local function light(ry)
         dl:AddRectFilled(
             { px + ICON_BORDER, math.max(ry, py + ICON_BORDER) },
             { px + w - ICON_BORDER,
@@ -3002,15 +2987,11 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
         -- The selection, and over it the row under the cursor -- or while one
         -- is being dragged, the slot the cursor has carried it to rather than
         -- the one it was picked up from.  A row that is both reads brighter,
-        -- since the two fills stack.  The widget's selection takes the accent
-        -- stripe instead, and does not stack.
+        -- since the two fills stack.  The widget's selection eases in the
+        -- accent's ground and bar instead, and takes no hover on top.
         local pointed = (drag ~= nil and drag.i == i) or (drag == nil and over);
         if (look) then
-            if (i == sel) then
-                light(ry, look.P.accent_bg, true);
-            elseif (pointed) then
-                light(ry, look.P.hover, false);
-            end
+            look.row(dl, id .. '.' .. i, px, ry, w, pitch, i == sel, pointed);
         else
             if (i == sel) then
                 light(ry);
@@ -3019,7 +3000,7 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
                 light(ry);
             end
         end
-        local ty = ry + (pitch - m.th) / 2;
+        local ty = ry + (pitch - m.th) / 2 - (look and look.lift(m.th) or 0);
 
         -- Unlike a popup row, a favorite comes back off disk, so its type is
         -- only as good as the settings file: one no toggle names draws no icon
@@ -3041,7 +3022,8 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
         local col, pos_col;
         if (look) then
             col = (not known) and look.u32(look.P.rose)
-                  or live and look.u32(look.P.text) or look.u32(look.P.dim);
+                  or live and look.u32((i == sel) and look.P.white or look.P.text)
+                  or look.u32(look.P.dim);
             pos_col = (known and live) and look.u32(look.P.text2) or col;
         else
             col = (not known) and COL_POPUP_LOCK
@@ -3056,7 +3038,8 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
     end
     if (n == 0) then
         local empty = look and look.u32(look.P.faint) or COL_POPUP_OFF;
-        dl:AddText({ px + m.lab_x, py + (pitch - m.th) / 2 },
+        dl:AddText({ px + m.lab_x,
+                     py + (pitch - m.th) / 2 - (look and look.lift(m.th) or 0) },
                    empty, ui.near_kind and FAV_NONE or FAV_EMPTY);
     end
 
@@ -3093,7 +3076,7 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
     -- Why a red favorite does not travel.  Not while the pad or the keys are
     -- driving: the cursor is not what a press would land on then.
     if (hot_lock ~= nil and not veto and not ui.gp_active) then
-        imgui.SetTooltip(hot_lock);
+        ui.style.tooltip(hot_lock);
     end
 
     if (drag ~= nil) then
@@ -3273,11 +3256,16 @@ local function draw_fav_widget()
         imgui.SetNextWindowPos({ x, y });
         if (imgui.BeginPopupContextItem(pid)) then
             ui.fw_ctx = true;
+            -- A popup list's size, a step under the rows it hangs off.
+            local face_on = ui.style.push('text', ui.style.S(ui.style.BODY - 1));
             if (imgui.MenuItem('Remove point from favorites list')) then
                 -- One shorter from here: the selection is clamped back onto
                 -- the list at the top of the next draw, and an emptied list
                 -- takes the widget down with it.
                 fav_toggle(f.key, f);
+            end
+            if (face_on) then
+                ui.style.pop();
             end
             imgui.EndPopup();
         end
@@ -3505,18 +3493,6 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
             ui.warp_px, ui.warp_py, ui.warp_pitch = px, py, pitch;
 
             st.plate(pdl, px, py, w, h);
-            -- Kept inside the outline at both ends, so a lit first or last row
-            -- does not paint over the border it sits against. bar is the
-            -- accent stripe the pad's row carries.
-            local function light(ry, hex, bar)
-                local inset = st.S(3);
-                st.fill(pdl, px + inset, ry + 1, w - inset * 2, pitch - 2,
-                        hex, st.S(3), 1);
-                if (bar) then
-                    st.fill(pdl, px + st.S(2), ry + st.S(4), st.S(2),
-                            pitch - st.S(8), st.P.accent, st.S(1), 1);
-                end
-            end
             -- hot_row is the row a left-click would send, so it is only
             -- ever a live one; hot_any is the row under the cursor whether
             -- it is live or not, which is what the right-click menu goes
@@ -3564,14 +3540,11 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                 -- The gamepad's landing, lit while the pad is what is
                 -- driving the map, the way the favorites widget lights its own
                 -- selection.  Out while the mouse has it, which lights the row
-                -- under the cursor and nothing else.  The pad's row takes the
-                -- accent stripe and does not stack with the hover.
+                -- under the cursor and nothing else.  The pad's row eases in
+                -- the accent's ground and bar and takes no hover on top.
                 local pointed = live and known and over;
-                if (ui.gp_active and i == ui.gp_row) then
-                    light(ry, st.P.accent_bg, true);
-                elseif (pointed) then
-                    light(ry, st.P.hover, false);
-                end
+                local chosen  = ui.gp_active and i == ui.gp_row;
+                st.row(pdl, '##ubermap_warps.' .. i, px, ry, w, pitch, chosen, pointed);
                 if (pointed) then
                     hot_row = r;
                 end
@@ -3587,7 +3560,7 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                                  { 0, 0 }, { 1, 1 },
                                  live and COL_ICON or COL_ICON_OFF);
                 end
-                local ty  = ry + (pitch - th) / 2;
+                local ty  = ry + (pitch - th) / 2 - st.lift(th);
                 -- Rose first: a destination nobody has registered will not
                 -- travel whether or not it was saved, and that is the thing
                 -- worth knowing.  Then teal for a row already on the list, so
@@ -3598,7 +3571,8 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                 local col = (not known) and st.u32(st.P.rose)
                             or (fav_index(ui.warp.label, r) ~= nil)
                                and st.u32(st.P.teal)
-                            or live and st.u32(st.P.text) or st.u32(st.P.dim);
+                            or live and st.u32(chosen and st.P.white or st.P.text)
+                            or st.u32(st.P.dim);
                 pdl:AddText({ px + lab_x, ty }, col, r.label);
                 if (r.pos ~= nil) then
                     pdl:AddText({ px + pos_x, ty }, col, r.pos);
@@ -3624,7 +3598,7 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
             -- Straight from the panel's own button rather than through
             -- item_tip, which vetoes on this very panel lying over things.
             if (hot_lock ~= nil and not ui.gp_active) then
-                imgui.SetTooltip(hot_lock);
+                st.tooltip(hot_lock);
             end
             -- A click while the right-click menu is up belongs to the menu,
             -- which is drawn after this and reads the same press.  Without
@@ -3933,8 +3907,7 @@ local function draw_map(view_w, view_h)
         -- The cog sits in the top-right corner, past the warp icons.  Same
         -- height as the past/present switch and Multisend: Tools sizes all
         -- three, and the art's own aspect sets the width.
-        local cog_h = row_h;
-        local cog_w = icon_width('cog.png', cog_h);
+        local cog_w = icon_width('cog.png', row_h);
         local search_w = math.min(base * cfg.scale_searchw / 100,
                                   math.max(base, view_w - search_x
                                                  - tools_w - cog_w - TOGGLE_GAP
@@ -4046,49 +4019,34 @@ local function draw_map(view_w, view_h)
         -- Settings cog, top-right of the map. The same panel '/um config'
         -- opens. assets/cog.png, fitted to the toolbar row the way the
         -- past/present switch and Multisend are, at Multisend's lit opacity
-        -- whether the panel is open or shut.
-        local cog_hit = false;
-        if (cog_w > 0) then
-            local cog_x = view_w - UI_MARGIN - cog_w;
-            imgui.SetCursorPos({ cog_x, UI_MARGIN });
-            local cog_sx, cog_sy = imgui.GetCursorScreenPos();
-            imgui.InvisibleButton('##ubermap_cog', { cog_w, cog_h });
-            -- Read the click off this item before anything else is submitted.
-            -- InvisibleButton's own return stays false here; IsItemClicked does not.
-            local cog_hot = imgui.IsItemHovered() and not ui.warp_hot and not ui.ctx_hot;
-            cog_hit = imgui.IsItemClicked(0) and cog_hot;
-            ui.hot = ui.hot or imgui.IsItemHovered();
-            local cog_tex = icon_texture('cog.png');
-            if (cog_tex ~= nil) then
-                imgui.GetWindowDrawList():AddImage(
-                    tonumber(ffi.cast('uint32_t', cog_tex)),
-                    { cog_sx, cog_sy }, { cog_sx + cog_w, cog_sy + cog_h },
-                    { 0, 0 }, { 1, 1 },
-                    COL_MSS_ON);
-            end
-            if (cog_hot and not ui.gp_active) then
-                imgui.SetTooltip('UberMap Settings');
-            end
-        end
-        if (cog_hit) then
+        -- whether the panel is open or shut.  Missing art draws nothing and
+        -- leaves '/um config' as the way in.
+        if (icon_button('cog', 'cog.png', view_w - UI_MARGIN - cog_w, UI_MARGIN,
+                        row_h, COL_MSS_ON, 'UberMap Settings')) then
             ui.config = not ui.config;
         end
 
-        -- Config panel, pinned to the viewport's top-right corner.  The plate,
-        -- the type and the controls are the Vanacore window's: Segoe labels, a
-        -- drop-down, steppers, swatches and switches.  The map's own labels
-        -- stay on the face this panel picks.  ImGui writes into the tables cfg
-        -- keeps and repack_cols turns those back into the words the draw lists
-        -- take, so the map retints as a picker moves; the scales are read
-        -- straight off cfg, so it resizes as a chevron is held.  Behind
-        -- '/um config' rather than the point editor: recolouring is something a
-        -- player does to their own map, while the editor moves the markers
-        -- everybody gets.
+        -- Config panel, pinned to the viewport's top-right corner, under the
+        -- cog.  The plate, the type and the controls are Sidekick3's settings
+        -- window's: a title bar with its close mark, teal group headings,
+        -- Segoe labels, a drop-down, steppers, swatches and switches.  The
+        -- map's own labels stay on the face this panel picks.  ImGui writes
+        -- into the tables cfg keeps and repack_cols turns those back into the
+        -- words the draw lists take, so the map retints as a picker moves; the
+        -- scales are read straight off cfg, so it resizes as a chevron is
+        -- held.  Behind '/um config' rather than the point editor: recolouring
+        -- is something a player does to their own map, while the editor moves
+        -- the markers everybody gets.
         if (ui.config) then
             local st = ui.style;
-            local pick_flags = bit.bor(ImGuiColorEditFlags_NoInputs,
-                                       ImGuiColorEditFlags_AlphaBar,
-                                       ImGuiColorEditFlags_AlphaPreview);
+            -- The picker's square and hue bar, its alpha bar, and the RGB and
+            -- hex rows under them.  AlphaPreview is ImGui 1.81's; 1.92 shows
+            -- the alpha by default and dropped the name.
+            local pick_flags = bit.bor(ImGuiColorEditFlags_AlphaBar,
+                                       ImGuiColorEditFlags_PickerHueBar,
+                                       ImGuiColorEditFlags_DisplayRGB,
+                                       ImGuiColorEditFlags_DisplayHex,
+                                       rawget(_G, 'ImGuiColorEditFlags_AlphaPreview') or 0);
             local picks = { { 'Text',       cfg.col_text },
                             { 'Outline',    cfg.col_outline },
                             { 'Background', cfg.col_bg },
@@ -4122,16 +4080,30 @@ local function draw_map(view_w, view_h)
                                      SCALE.min, SCALE.max, SCALE.step, SCALE.fast });
             end
 
-            local label_px = st.S(st.BODY);
-            local ctrl_w = st.S(148);
-            local pad = st.S(14);
-            local row_h = st.S(28);
-            -- The name band and the close mark are Choco's: 19px semibold,
-            -- centred in a 36px band, and a 12px cross in a 22px hit.
-            local title_px = st.S(19);
-            local title_h = st.S(36);
-            local close_s = st.S(22);
-            local head_h = st.S(24);
+            -- Sidekick3's settings window, in its unscaled pixels: a 44 title
+            -- bar with the name in semibold at the body size and a 21 close
+            -- box, labels 24 in from the left, controls 18 in from the right,
+            -- rows of 30, and each group's heading 8 under the row before it
+            -- and 26 tall.
+            local title     = 'UberMap Settings';
+            local label_px  = st.S(st.BODY);
+            local title_px  = st.S(st.BODY);
+            local margin_l  = st.S(24);
+            local margin_r  = st.S(18);
+            local line_h    = st.S(30);
+            local title_h   = st.S(44);
+            local close_box = st.S(21);
+            -- The face drop-down fits its longest name the way Sidekick3's
+            -- widget fits its profile's; the steppers are the /vana window's
+            -- 110; a swatch takes the room its widest label could need.
+            local font_w = 0;
+            for _, name in ipairs(FONT_PX.list) do
+                font_w = math.max(font_w, st.measure((name ~= '') and name or FONT_PX.own_name,
+                                                     'text', st.S(st.SMALL + 0.5)));
+            end
+            local pick_w = math.min(st.S(200), math.max(st.S(110), font_w + st.S(40)));
+            local step_w = st.S(110);
+            local ctrl_w = math.max(pick_w, step_w, st.swatch_width());
             local label_w = st.measure('Font', 'text', label_px);
             for _, num in ipairs(nums) do
                 label_w = math.max(label_w, st.measure(num[1], 'text', label_px));
@@ -4142,20 +4114,19 @@ local function draw_map(view_w, view_h)
             for _, chk in ipairs(checks) do
                 label_w = math.max(label_w, st.measure(chk[1], 'text', label_px));
             end
-            local inner = label_w + st.S(18) + ctrl_w;
-            local title_w = st.measure('UberMap', 'semi', title_px);
-            if (title_w + st.S(8) + close_s > inner) then
-                inner = title_w + st.S(8) + close_s;
-            end
-            local panel_w = inner + pad * 2;
-            -- The name band, then two section rules, the font row, and every
-            -- stepper, swatch and switch. pad under the last row is the margin.
-            local panel_h = pad + title_h + head_h * 2
-                            + row_h * (1 + #nums + #picks + #checks);
+            local panel_w = math.max(margin_l + label_w + st.S(18) + ctrl_w + margin_r,
+                                     margin_l + st.measure(title, 'semi', title_px) + st.S(10)
+                                     + close_box + margin_r);
+            -- The title bar and its rule, 10 down to the first heading, the two
+            -- headings, a row each for the face and every stepper, swatch and
+            -- switch, and 14 under the last.
+            local head_h  = st.S(8) + st.S(26);
+            local panel_h = title_h + 1 + st.S(10) + head_h * 2
+                            + line_h * (1 + #nums + #picks + #checks) + st.S(14);
             local px = origin_x + view_w - UI_MARGIN - panel_w;
             -- Under the cog, so that corner control stays the one that toggles
-            -- the panel. The X on the title row is the other way to close it.
-            local py = origin_y + UI_MARGIN + cog_h + st.S(4);
+            -- the panel. The X on the title bar is the other way to close it.
+            local py = origin_y + UI_MARGIN + row_h + st.S(4);
             local dl = imgui.GetWindowDrawList();
             st.plate(dl, px, py, panel_w, panel_h);
             -- The panel is a solid block over the map, so the gaps between its
@@ -4164,55 +4135,52 @@ local function draw_map(view_w, view_h)
                      or (mouse_x >= px and mouse_x <= px + panel_w
                          and mouse_y >= py and mouse_y <= py + panel_h);
 
-            local lx = px + pad;
-            local rx = px + panel_w - pad;
-            local y = py;
-            local title_cy = y + title_h / 2;
-            st.title(dl, lx, title_cy, 'UberMap', title_px);
-            -- Right edge of the hit sits on the same inset as the labels.
-            local close_cx = rx - close_s / 2;
-            imgui.SetCursorScreenPos({
-                math.floor(close_cx - close_s / 2 + 0.5),
-                math.floor(title_cy - close_s / 2 + 0.5),
-            });
-            imgui.InvisibleButton('##ubermap_cfg_x', { close_s, close_s });
-            -- IsItemClicked, not the button's return: that return stays false
-            -- on this build. A menu over the corner is not a close.
-            local x_hot = imgui.IsItemHovered() and not ui.warp_hot and not ui.ctx_hot;
-            if (imgui.IsItemClicked(0) and x_hot) then
+            -- A warp list or the right-click menu lying over the panel owns
+            -- the cursor, as it does over a toolbar icon: no close, no band.
+            local veto = ui.warp_hot or ui.ctx_hot;
+            local lx = px + margin_l;
+            local rx = px + panel_w - margin_r;
+            local title_cy = py + title_h / 2;
+            st.title(dl, lx, title_cy, title, title_px);
+            local closed, close_hot = st.close('##ubermap_cfg_x', rx - close_box / 2,
+                                               title_cy, close_box, veto);
+            ui.hot = ui.hot or imgui.IsItemHovered();
+            if (close_hot and not ui.gp_active) then
+                st.tooltip('Close');
+            end
+            if (closed) then
                 ui.config = false;
             end
-            ui.hot = ui.hot or imgui.IsItemHovered();
-            local close_t = st.ease('ubermap_cfg_x', x_hot and 1 or 0, 22);
-            st.glyph(dl, 'close', close_cx, title_cy,
-                     st.mix(st.P.dim, st.P.rose, close_t), st.S(12));
-            if (x_hot and not ui.gp_active) then
-                imgui.SetTooltip('Close');
-            end
-            dl:AddLine({ px, y + title_h }, { px + panel_w, y + title_h },
+            dl:AddLine({ px, py + title_h }, { px + panel_w, py + title_h },
                        st.u32(st.P.border), 1);
-            y = y + title_h;
-            st.heading(dl, lx, y + head_h / 2, 'Look', inner);
-            y = y + head_h;
+            local y = py + title_h + 1 + st.S(10);
 
-            local function row_at()
-                local cy = y + row_h / 2;
-                local band = mouse_x >= px and mouse_x <= px + panel_w
-                             and mouse_y >= y and mouse_y < y + row_h;
-                if (band) then
-                    st.fill(dl, px + st.S(4), y + 1, panel_w - st.S(8), row_h - 2,
+            -- A group's heading: teal small capitals and a rule to the right.
+            local function heading(name)
+                y = y + st.S(8);
+                st.heading(dl, lx, y + st.S(12), name, rx - lx);
+                y = y + st.S(26);
+            end
+            -- A row: the hover band while the pointer is on it, and its middle.
+            local function line_at()
+                local top = y;
+                y = y + line_h;
+                if (not veto and imgui.IsWindowHovered()
+                    and mouse_x >= px + st.S(4) and mouse_x < px + panel_w - st.S(4)
+                    and mouse_y >= top and mouse_y < top + line_h) then
+                    st.fill(dl, px + st.S(4), top, panel_w - st.S(8), line_h,
                             st.P.hover, st.S(3), 0.8);
                 end
-                y = y + row_h;
-                return cy;
+                return top + line_h / 2;
             end
 
             -- Face drop-down.  The row is labelled; the closed face names the
             -- file, with ProggyClean standing in for ImGui's own.
-            local cy = row_at();
+            heading('Look');
+            local cy = line_at();
             st.label(dl, lx, cy, 'Font', label_px);
             local shown = (cfg.font ~= '') and cfg.font or FONT_PX.own_name;
-            local open, combo_hot = st.combo('##ubermap_font', rx - ctrl_w, cy, ctrl_w,
+            local open, combo_hot = st.combo('##ubermap_font', rx - pick_w, cy, pick_w,
                                               shown, function ()
                 for _, name in ipairs(FONT_PX.list) do
                     if (imgui.Selectable(((name ~= '') and name or FONT_PX.own_name)
@@ -4230,10 +4198,10 @@ local function draw_map(view_w, view_h)
             -- The Size box and the scale boxes.  The map reads cfg every frame,
             -- so a scale takes effect as its chevron is held.
             for _, num in ipairs(nums) do
-                cy = row_at();
+                cy = line_at();
                 st.label(dl, lx, cy, num[1], label_px);
                 local v, changed, typing, hot = st.stepper(
-                    '##ubermap_' .. num[3], rx - ctrl_w, cy, ctrl_w,
+                    '##ubermap_' .. num[3], rx - step_w, cy, step_w,
                     num[2][1], num[4], num[5], num[6], num[7]);
                 if (changed) then
                     -- Clamped rather than trusted: a box takes a typed
@@ -4254,38 +4222,61 @@ local function draw_map(view_w, view_h)
                 ui.hot = ui.hot or hot or typing;
             end
 
-            imgui.PushStyleColor(ImGuiCol_PopupBg, st.rgba(st.P.popup, 0.98));
-            imgui.PushStyleColor(ImGuiCol_Border, st.rgba(st.P.border));
-            imgui.PushStyleColor(ImGuiCol_Text, st.rgba(st.P.text));
-            imgui.PushStyleColor(ImGuiCol_FrameBg, st.rgba(st.P.well));
-            imgui.PushStyleColor(ImGuiCol_FrameBgHovered, st.rgba(st.P.hover));
-            imgui.PushStyleColor(ImGuiCol_FrameBgActive, st.rgba(st.P.well));
+            -- A swatch per colour, its hex beside it.  A click opens its
+            -- picker left of the panel, over the map it is recolouring, the
+            -- top level with the row.
             for _, pick in ipairs(picks) do
-                cy = row_at();
+                cy = line_at();
                 st.label(dl, lx, cy, pick[1], label_px);
-                local sw = st.S(18);
-                imgui.SetCursorScreenPos({ rx - sw, cy - sw / 2 });
-                if (imgui.ColorEdit4('##' .. pick[1], pick[2], pick_flags)) then
-                    -- Repacked on the frame it moved, so the map retints under
-                    -- the picker rather than at the end of the drag.
-                    repack_cols();
-                    ui.cfg_dirty = true;
+                local pid = '##ubermap_pick_' .. pick[1];
+                local picking = imgui.IsPopupOpen(pid) == true;
+                local tapped, swatch_hot = st.swatch(pid .. '_swatch', rx, cy, pick[2], picking);
+                ui.hot = ui.hot or swatch_hot;
+                if (tapped and not veto) then
+                    imgui.OpenPopup(pid);
+                    picking = true;
                 end
-                ui.hot = ui.hot or imgui.IsItemHovered() or imgui.IsItemActive();
+                if (picking) then
+                    -- Held inside the view: ImGui leaves a popup placed by
+                    -- hand where it is put, off the bottom or not.  380 is
+                    -- about the picker's height at 230 wide.
+                    local top = math.max(origin_y, math.min(cy - st.S(20),
+                                         origin_y + view_h - st.S(380)));
+                    imgui.SetNextWindowPos({ px - st.S(8), top }, ImGuiCond_Always, { 1, 0 });
+                end
+                local pop_c, pop_v = st.push_popup();
+                if (imgui.BeginPopup(pid)) then
+                    local face_on = st.push('text', st.S(st.SMALL + 1));
+                    imgui.SetNextItemWidth(st.S(230));
+                    if (imgui.ColorPicker4('##ubermap_picker_' .. pick[1],
+                                           pick[2], pick_flags)) then
+                        -- Repacked on the frame it moved, so the map retints
+                        -- under the picker rather than at the end of the drag.
+                        repack_cols();
+                        ui.cfg_dirty = true;
+                    end
+                    if (face_on) then
+                        st.pop();
+                    end
+                    imgui.EndPopup();
+                end
+                st.pop_popup(pop_c, pop_v);
+                -- The picker stands outside the panel's rect, and ImGui counts
+                -- a popup as part of the map window it was opened from, so a
+                -- drag across it would pan the map underneath without this.
+                ui.hot = ui.hot or picking;
             end
-            imgui.PopStyleColor(6);
 
-            st.heading(dl, lx, y + head_h / 2, 'Options', inner);
-            y = y + head_h;
             -- The switches, last rows of the panel.  Saved on the spot rather
             -- than deferred through cfg_dirty like the pickers and the boxes:
             -- a switch reports its change once, not once a frame for as long
             -- as the mouse is held.
+            heading('Options');
             for _, chk in ipairs(checks) do
-                cy = row_at();
+                cy = line_at();
                 st.label(dl, lx, cy, chk[1], label_px);
                 local on, changed, hot = st.switch(
-                    '##ubermap_' .. chk[3], rx - st.S(32), cy, chk[2][1]);
+                    '##ubermap_' .. chk[3], rx - st.S(32), cy, chk[2][1], veto);
                 ui.hot = ui.hot or hot;
                 if (changed) then
                     chk[2][1] = on;

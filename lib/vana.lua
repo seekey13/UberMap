@@ -9,6 +9,10 @@
 *
 * Controls are a hit target plus a drawing. ImGui still owns the text field,
 * the colour picker and popup lists, with the palette pushed onto them.
+*
+* Sizes and colours follow Sidekick3's ui/kit.lua and ui/window.lua, which
+* are the /vana window as an Ashita addon draws it: its title bar, close mark,
+* group headings, rows, drop-down, popups and tooltips.
 --]]
 
 local vana = { };
@@ -241,12 +245,18 @@ function vana.measure(str, which, px)
     return w, h;
 end
 
+--[[
+* Segoe's line holds a tall ascent and a descent, so text centred by its box
+* sits low. This is how far to raise it. Text a caller places by hand, off
+* CalcTextSize, takes it too.
+--]]
 local function lift(h)
     if (DYNAMIC and fonts.ready) then
         return math.floor(h * 0.06 + 0.5);
     end
     return 0;
 end
+vana.lift = lift;
 
 --[[
 * str with its middle on cy. which is a face name ('text', 'semi', ...).
@@ -312,9 +322,10 @@ function vana.outline(dl, x, y, w, h, hex, radius, alpha)
 end
 
 --[[
-* A soft shadow just outside a panel. dl nil uses the background list, so a
-* window clipped to its own plate still throws a shadow. A plate drawn inside
-* another window passes that window's list, or the shadow lands behind it.
+* A soft shadow just outside a panel: a pixel past it either side and two
+* below. dl nil uses the background list, so a window clipped to its own
+* plate still throws a shadow. A plate drawn inside another window passes that
+* window's list, or the shadow lands behind it.
 --]]
 function vana.shadow(x, y, w, h, dl)
     if (dl == nil) then
@@ -326,8 +337,7 @@ function vana.shadow(x, y, w, h, dl)
             dl = im.GetWindowDrawList();
         end
     end
-    local s = vana.S(1);
-    vana.fill(dl, x - s, y + s, w + s * 2, h + s * 2, '#000000', vana.S(6), 0.35);
+    vana.fill(dl, x - 1, y, w + 2, h + 2, '#000000', vana.S(6), 0.35);
 end
 
 --[[
@@ -341,25 +351,24 @@ function vana.plate(dl, x, y, w, h)
     vana.outline(dl, x, y, w, h, vana.P.border, r, 1);
 end
 
+-- A window's name on its title bar: semibold, white, at the body size.
 function vana.title(dl, x, cy, str, px)
-    vana.text_mid(dl, x, cy, str, vana.P.white, 'semi', px or vana.S(19));
+    vana.text_mid(dl, x, cy, str, vana.P.white, 'semi', px or vana.S(vana.BODY));
 end
 
 --[[
-* A small-cap section rule. span is the width the rule may run to.
+* A group's heading: spaced small capitals in teal, then a faint teal rule.
+* span is the width the rule may run to.
 --]]
 function vana.heading(dl, x, cy, str, span)
     local title = string.upper(str);
     local px = vana.S(vana.SMALL);
-    local spacing = vana.S(1.2);
-    if (spacing < 1) then
-        spacing = 1;
-    end
+    local spacing = math.max(1, vana.S(1.2));
     local tw = vana.text_spaced(dl, x, cy, title, vana.P.teal, 'semi_italic', px, spacing);
-    local line_x = x + tw + vana.S(8);
+    local line_x = x + tw + vana.S(10);
     local line_end = x + (span or 0);
-    if (line_end > line_x + vana.S(4)) then
-        dl:AddLine({ line_x, cy }, { line_end, cy }, vana.u32(vana.P.teal, 0.8), 1);
+    if (line_end > line_x) then
+        dl:AddLine({ line_x, cy }, { line_end, cy }, vana.u32(vana.P.teal, 0.35), 1);
     end
 end
 
@@ -395,12 +404,29 @@ function vana.glyph(dl, kind, cx, cy, hex, px, alpha)
     end
 end
 
+--[[
+* A window's close mark: an X 72% of its box, dim until the pointer is on it
+* and then rose, with no disc behind it. box is the square that takes the
+* click, centred on cx, cy. veto stands it down while something drawn over it
+* owns the cursor. Returns clicked, hovered.
+--]]
+function vana.close(id, cx, cy, box, veto)
+    local im = gui();
+    im.SetCursorScreenPos({ cx - box / 2, cy - box / 2 });
+    local clicked = im.InvisibleButton(id, { box, box });
+    local hovered = im.IsItemHovered() and not veto;
+    vana.glyph(im.GetWindowDrawList(), 'close', cx, cy,
+               hovered and vana.P.rose or vana.P.dim, box * 0.72);
+    return (clicked and not veto) and true or false, hovered;
+end
+
 local CLEAR = { 0, 0, 0, 0 };
 
 --[[
 * The search box. A sunken field with two shadows under it, Segoe text, and a
-* rose cross that clears it once it has text. focus hands it the keyboard.
-* Returns edited, hovered, active (the caret is in it).
+* rose cross that clears it once it has text, lightening under the pointer.
+* focus hands it the keyboard. Returns edited, hovered, active (the caret is
+* in it).
 --]]
 function vana.field(id, x, y, w, h, buf, max, hint, font_px, focus)
     local im = gui();
@@ -452,79 +478,133 @@ function vana.field(id, x, y, w, h, buf, max, hint, font_px, focus)
         end
         local hot = im.IsItemHovered();
         hovered = hovered or hot;
+        local t = vana.ease(id .. '.x', hot and 1 or 0, 22);
         vana.glyph(dl, 'close', bx + xw / 2, y + h / 2,
-                   hot and vana.P.white or vana.P.rose, h * 0.42);
+                   vana.mix(vana.P.rose, '#FFA7AE', t), h * 0.42);
     end
     return edited == true, hovered, active;
 end
 
--- Popup lists and the widget's right-click menu, in the palette.
+-- Popup lists, colour pickers and the widget's right-click menu, in the
+-- palette.
 local POPUP_COLORS = {
-    { 'PopupBg', 'popup', 0.98 },
-    { 'Border', 'border', 1 },
-    { 'Text', 'text', 1 },
-    { 'Header', 'accent_bg', 1 },
-    { 'HeaderHovered', 'hover', 1 },
-    { 'HeaderActive', 'accent_lo', 1 },
-    { 'Separator', 'line', 1 },
+    { 'PopupBg', 'popup' },
+    { 'Border', 'border' },
+    { 'Text', 'text' },
+    { 'Header', 'accent_bg' },
+    { 'HeaderHovered', 'hover' },
+    { 'HeaderActive', 'accent_lo' },
+    { 'Separator', 'line' },
+    { 'FrameBg', 'well' },
+    { 'FrameBgHovered', 'well' },
+    { 'FrameBgActive', 'well' },
 };
 
+--[[
+* ImGui's own popups in the palette, with the padding the panels here take
+* away. Returns the counts pop_popup takes back off.
+--]]
 function vana.push_popup()
     local im = gui();
     for _, entry in ipairs(POPUP_COLORS) do
-        im.PushStyleColor(_G['ImGuiCol_' .. entry[1]], vana.rgba(vana.P[entry[2]], entry[3]));
+        im.PushStyleColor(_G['ImGuiCol_' .. entry[1]], vana.rgba(vana.P[entry[2]]));
     end
-    im.PushStyleVar(ImGuiStyleVar_WindowPadding, { vana.S(10), vana.S(6) });
+    im.PushStyleVar(ImGuiStyleVar_WindowPadding, { vana.S(10), vana.S(8) });
     im.PushStyleVar(ImGuiStyleVar_PopupRounding, vana.S(5));
     im.PushStyleVar(ImGuiStyleVar_PopupBorderSize, 1);
+    im.PushStyleVar(ImGuiStyleVar_FramePadding, { vana.S(8), vana.S(4) });
     im.PushStyleVar(ImGuiStyleVar_FrameRounding, vana.S(4));
-    im.PushStyleVar(ImGuiStyleVar_ItemSpacing, { vana.S(8), vana.S(4) });
-    return #POPUP_COLORS, 5;
+    im.PushStyleVar(ImGuiStyleVar_ItemSpacing, { vana.S(8), vana.S(6) });
+    return #POPUP_COLORS, 6;
 end
 
 function vana.pop_popup(colors, vars)
     local im = gui();
-    im.PopStyleVar(vars or 5);
+    im.PopStyleVar(vars or 6);
     im.PopStyleColor(colors or #POPUP_COLORS);
+end
+
+-- Lines past n characters broken at a space, so a tooltip stays narrow.
+local function wrap_chars(s, n)
+    local out = { };
+    for line in (s .. '\n'):gmatch('(.-)\n') do
+        while (#line > n) do
+            local cut = line:sub(1, n + 1):match('^.*() ');
+            if (not cut or cut < n / 2) then
+                break;
+            end
+            out[#out + 1], line = line:sub(1, cut - 1), line:sub(cut + 1);
+        end
+        out[#out + 1] = line;
+    end
+    return table.concat(out, '\n');
+end
+
+local TIP_COLORS = {
+    { 'PopupBg', 'popup', 0.97 },
+    { 'Border', 'border', 1 },
+    { 'Text', 'text', 1 },
+};
+
+--[[
+* A tooltip by the mouse, in the palette and Segoe, wrapped. SetTooltip takes
+* a printf format on Ashita 4.16's interface, so its '%' are doubled.
+--]]
+function vana.tooltip(s)
+    if (s == nil or s == '') then
+        return;
+    end
+    local im = gui();
+    for _, entry in ipairs(TIP_COLORS) do
+        im.PushStyleColor(_G['ImGuiCol_' .. entry[1]], vana.rgba(vana.P[entry[2]], entry[3]));
+    end
+    im.PushStyleVar(ImGuiStyleVar_WindowPadding, { vana.S(9), vana.S(6) });
+    im.PushStyleVar(ImGuiStyleVar_WindowRounding, vana.S(4));
+    im.PushStyleVar(ImGuiStyleVar_PopupRounding, vana.S(4));
+    im.PushStyleVar(ImGuiStyleVar_PopupBorderSize, 1);
+    local pushed = vana.push('text', vana.S(vana.SMALL + 0.5));
+    im.SetTooltip((wrap_chars(tostring(s), 72):gsub('%%', '%%%%')));
+    if (pushed) then
+        vana.pop();
+    end
+    im.PopStyleVar(4);
+    im.PopStyleColor(#TIP_COLORS);
 end
 
 --[[
 * A drop-down. shown is the closed face; body fills the list with Selectables.
-* Returns whether the list is open, and whether the box is hovered.
+* The list is at least as wide as the box. Returns whether the list is open,
+* and whether the box is hovered.
 --]]
 function vana.combo(id, x, cy, w, shown, body)
     local im = gui();
-    local h = vana.S(24);
+    local h, pad = vana.S(24), vana.S(8);
     local y = cy - h / 2;
     im.SetCursorScreenPos({ x, y });
     local clicked = im.InvisibleButton(id, { w, h });
     local hovered = im.IsItemHovered();
     local list = id .. '.list';
-    local open = false;
-    pcall(function ()
-        open = im.IsPopupOpen(list) and true or false;
-    end);
+    local open = im.IsPopupOpen(list) == true;
+    local dl = im.GetWindowDrawList();
+    local r = vana.S(4);
+    vana.fill(dl, x, y, w, h, vana.P.well, r, 1);
+    vana.outline(dl, x, y, w, h, (hovered or open) and vana.P.accent_lo or vana.P.well_edge, r, 1);
+    vana.text_mid(dl, x + pad, cy, shown, vana.P.text2, 'text', vana.S(vana.SMALL + 0.5));
+    vana.glyph(dl, open and 'right' or 'down', x + w - pad - vana.S(4), cy, vana.P.dim, vana.S(11));
     if (clicked) then
         im.OpenPopup(list);
         open = true;
     end
-    local t = vana.ease(id .. '.hot', ((hovered or open) and 1 or 0));
-    local dl = im.GetWindowDrawList();
-    local r = vana.S(4);
-    vana.fill(dl, x, y, w, h, vana.P.well, r, 1);
-    vana.outline(dl, x, y, w, h, vana.mix(vana.P.well_edge, vana.P.accent_lo, t), r, 1);
-    local px = vana.S(vana.SMALL + 0.5);
-    vana.text_mid(dl, x + vana.S(8), cy, shown, vana.P.text2, 'text', px);
-    vana.glyph(dl, open and 'up' or 'down', x + w - vana.S(14), cy, vana.P.dim, vana.S(8));
     -- Only while the list will actually Begin. A position nobody consumes
     -- lands on the next window in the frame.
     if (open) then
         im.SetNextWindowPos({ x, y + h + vana.S(2) });
+        im.SetNextWindowSizeConstraints({ w, 0 }, { math.max(w, vana.S(360)), vana.S(420) });
     end
     local nc, nv = vana.push_popup();
     if (im.BeginPopup(list)) then
         open = true;
-        local pushed = vana.push('text', vana.S(vana.BODY - 0.5));
+        local pushed = vana.push('text', vana.S(vana.BODY - 1));
         body();
         if (pushed) then
             vana.pop();
@@ -535,16 +615,94 @@ function vana.combo(id, x, cy, w, shown, body)
     return open, hovered;
 end
 
+-- '#RRGGBB' of the { r, g, b, a } floats a colour picker edits.
+local function hex_of(col)
+    local function byte(f)
+        return math.floor(math.max(0, math.min(1, tonumber(f) or 0)) * 255 + 0.5);
+    end
+    return string.format('#%02X%02X%02X', byte(col[1]), byte(col[2]), byte(col[3]));
+end
+
+-- What a swatch says beside its square: the hex, and how opaque when not solid.
+local function swatch_label(col)
+    local a = math.max(0, math.min(1, tonumber(col[4]) or 1));
+    if (a < 1) then
+        return string.format('%s  %d%%', hex_of(col), math.floor(a * 100 + 0.5)), a;
+    end
+    return hex_of(col), a;
+end
+
 --[[
-* A pill switch, 32 by 17. Returns the value, whether it changed, hovered.
+* The most room a swatch can take: its square, the gap, and the widest label
+* any colour gives it. A panel sized by this does not change width as an
+* alpha is dragged.
 --]]
-function vana.switch(id, x, cy, on)
+function vana.swatch_width()
+    return vana.S(16) + vana.S(7)
+           + vana.measure('#DDDDDD  100%', 'text', vana.S(vana.SMALL + 0.5));
+end
+
+--[[
+* A colour swatch and its hex, the pair ending at right: a 16px rounded square
+* of the colour at its own alpha, edged faint white, or in the accent while
+* hovered or while its picker is open. A colour that is not solid says how
+* opaque it is after its hex. col is the { r, g, b, a } floats the picker
+* edits. Returns clicked, hovered.
+--]]
+function vana.swatch(id, right, cy, col, open)
+    local im = gui();
+    local h, sq = vana.S(20), vana.S(16);
+    local y = cy - h / 2;
+    local px = vana.S(vana.SMALL + 0.5);
+    local hex = hex_of(col);
+    local label, a = swatch_label(col);
+    local tw = vana.measure(label, 'text', px);
+    local w = sq + vana.S(7) + tw;
+    local x = right - w;
+    im.SetCursorScreenPos({ x, y });
+    local clicked = im.InvisibleButton(id, { w, h });
+    local hovered = im.IsItemHovered();
+    local dl = im.GetWindowDrawList();
+    if (open) then
+        vana.fill(dl, x - vana.S(4), y, w + vana.S(8), h, vana.P.hover, vana.S(4), 1);
+    end
+    local lit = hovered or open;
+    vana.fill(dl, x, y + vana.S(2), sq, h - vana.S(4), hex, vana.S(3), a);
+    vana.outline(dl, x, y + vana.S(2), sq, h - vana.S(4),
+                 lit and vana.P.accent or '#FFFFFF', vana.S(3), lit and 0.8 or 0.15);
+    vana.text_mid(dl, right - tw, cy, label, vana.P.text2, 'text', px);
+    return clicked and true or false, hovered;
+end
+
+--[[
+* A list row's ground. The chosen row eases in the accent's ground and a 2px
+* accent bar down its left; a row under the pointer that is not the chosen
+* one takes the hover band. Inset a pixel top and bottom, so a lit first or
+* last row leaves the panel's edge showing.
+--]]
+function vana.row(dl, id, x, y, w, h, chosen, hovered)
+    local S = vana.S;
+    local t = vana.ease(id, chosen and 1 or 0, 20);
+    if (t > 0.01) then
+        vana.fill(dl, x + S(4), y + 1, w - S(8), h - 2, vana.P.accent_bg, S(3), 0.9 * t);
+        vana.fill(dl, x + S(4), y + S(5), S(2), h - S(10), vana.P.accent, S(1), t);
+    end
+    if (hovered and not chosen) then
+        vana.fill(dl, x + S(4), y + 1, w - S(8), h - 2, vana.P.hover, S(3), 0.8);
+    end
+end
+
+--[[
+* A pill switch, 32 by 17. veto stands it down while something drawn over it
+* owns the cursor. Returns the value, whether it changed, hovered.
+--]]
+function vana.switch(id, x, cy, on, veto)
     local w, h = vana.S(32), vana.S(17);
     local y = cy - h / 2;
     local im = gui();
     im.SetCursorScreenPos({ x, y });
-    local clicked = im.InvisibleButton(id, { w, h });
-    local hovered = im.IsItemHovered();
+    local clicked = im.InvisibleButton(id, { w, h }) and not veto;
+    local hovered = im.IsItemHovered() and not veto;
     if (clicked) then
         on = not on;
     end

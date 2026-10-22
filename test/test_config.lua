@@ -57,12 +57,18 @@ end
 -- it draws off the bottom of the panel.
 assert(src:find('st.plate(', 1, true),
        'the config panel no longer draws its plate');
-assert(src:find("st.heading(dl, lx, y + head_h / 2, 'Options', inner);", 1, true),
+assert(src:match("heading%('Options'%);%s*\n%s*for _, chk in ipairs%(checks%) do"),
        'the switches are no longer under an Options heading');
 assert(src:find('st.switch(', 1, true),
        'the checkbox rows are no longer switches');
-assert(src:find('row_h * (1 + #nums + #picks + #checks)', 1, true),
+assert(src:find('line_h * (1 + #nums + #picks + #checks)', 1, true),
        'the panel height no longer follows the number of switch rows');
+-- Every row the loops draw goes through line_at, which is what the height
+-- above counts: a row placed some other way would not be in the sum.
+local lines = select(2, src:gsub('cy = line_at%(%);', ''));
+assert(lines == 4, ('%d calls place a config row, not the 4 the height counts'
+                    .. ' (the face, then the stepper, swatch and switch loops)')
+                   :format(lines));
 -- The width has to follow the names too: these are the longest text on the
 -- panel, and a name wider than the plate runs off it.
 assert(src:match('for _, chk in ipairs%(checks%) do%s*\n%s*label_w = math%.max'),
