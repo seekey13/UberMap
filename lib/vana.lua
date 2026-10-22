@@ -340,8 +340,8 @@ function vana.plate(dl, x, y, w, h)
     vana.outline(dl, x, y, w, h, vana.P.border, r, 1);
 end
 
-function vana.title(dl, x, cy, str)
-    vana.text_mid(dl, x, cy, str, vana.P.white, 'semi', vana.S(19));
+function vana.title(dl, x, cy, str, px)
+    vana.text_mid(dl, x, cy, str, vana.P.white, 'semi', px or vana.S(19));
 end
 
 --[[
@@ -599,50 +599,8 @@ function vana.stepper(id, x, cy, w, value, minv, maxv, step, fast)
         end
     end
 
-    local held_any, hot_any = false, false;
-    local function endcap(side, dx, dir)
-        im.SetCursorScreenPos({ x + dx, y });
-        local clicked = im.InvisibleButton(id .. side, { cap, h });
-        local held = im.IsItemActive();
-        local hot = im.IsItemHovered();
-        held_any = held_any or held;
-        hot_any = hot_any or hot;
-        if (hot) then
-            local corners = (dir < 0)
-                and (rawget(_G, 'ImDrawFlags_RoundCornersLeft')
-                     or rawget(_G, 'ImDrawCornerFlags_Left'))
-                or (rawget(_G, 'ImDrawFlags_RoundCornersRight')
-                    or rawget(_G, 'ImDrawCornerFlags_Right'));
-            vana.fill(dl, x + dx + ((dir < 0) and 1 or 0), y + 1, cap - 1, h - 2,
-                      '#FFFFFF', math.max(0, r - 1), 0.07, corners);
-        end
-        vana.glyph(dl, (dir < 0) and 'left' or 'right',
-                   x + dx + cap / 2, cy, hot and vana.P.text or vana.P.dim, vana.S(8));
-        local now = os.clock();
-        local arm = meta[side] or { };
-        meta[side] = arm;
-        if (not held) then
-            arm.at = nil;
-        else
-            local due = clicked and true or false;
-            if (not due and arm.at ~= nil) then
-                local gap = (now - arm.at > 0.4) and 0.06 or 999;
-                due = now - (arm.step or 0) >= gap;
-            end
-            if (due) then
-                local io = im.GetIO();
-                local d = (io and io.KeyCtrl) and fast or step;
-                apply(value + dir * d);
-                arm.step = now;
-                if (arm.at == nil) then
-                    arm.at = now;
-                end
-            end
-        end
-    end
-    endcap('.dec', 0, -1);
-    endcap('.inc', math.max(0, w - cap), 1);
-
+    -- The number is submitted first. The end caps come after it, or the field
+    -- covers them and a click on a chevron only puts the caret in the number.
     local field_w = math.max(1, w - cap * 2);
     local px = vana.S(vana.SMALL + 0.5);
     local tw = vana.measure(buf[1] or '', 'text', px);
@@ -665,22 +623,106 @@ function vana.stepper(id, x, cy, w, value, minv, maxv, step, fast)
     im.SetCursorScreenPos({ x + cap, y });
     im.SetNextItemWidth(field_w);
     local flags = ImGuiInputTextFlags_CharsDecimal or 0;
-    local edited = im.InputText(id .. '.n', buf, 8, flags);
+    -- The id changes after a step, below. An active field keeps the digits it
+    -- was opened with, so a chevron press would land and then be drawn back.
+    local edited = im.InputText(id .. '.n' .. tostring(meta.gen or 0), buf, 8, flags);
     local typing = im.IsItemActive();
-    hot_any = hot_any or im.IsItemHovered();
     im.PopStyleVar(2);
     im.PopStyleColor(4);
     if (pushed) then
         vana.pop();
     end
-    meta.editing = typing;
     if (edited) then
         local n = tonumber(buf[1]);
         if (n ~= nil) then
             apply(n);
         end
     end
-    return value, changed, typing, hot_any or held_any;
+
+    local ax, ay = im.GetMousePos();
+    local mx, my = ax, ay;
+    if (type(ax) ~= 'number') then
+        local ok, px_, py_ = pcall(function ()
+            return ax.x or ax[1], ax.y or ax[2];
+        end);
+        mx, my = (ok and type(px_) == 'number') and px_ or nil,
+                 (ok and type(py_) == 'number') and py_ or nil;
+    end
+    -- A popup over the row is another window. A click there is not a step.
+    local win_hot = false;
+    pcall(function ()
+        win_hot = im.IsWindowHovered() and true or false;
+    end);
+    local function on(v)
+        return v == true or v == 1;
+    end
+    local held_any, hot_any, stepped = false, false, false;
+    local function endcap(side, dx, dir)
+        local bx = x + dx;
+        im.SetCursorScreenPos({ bx, y });
+        im.InvisibleButton(id .. side, { math.max(1, cap), h });
+        -- IsItemClicked, not the button's return: that return stays false on
+        -- this build. The rect covers a field that still overlaps the cap and
+        -- would otherwise take the click for itself.
+        local item_hot = im.IsItemHovered();
+        local item_click = on(im.IsItemClicked(0));
+        local over = mx ~= nil and my ~= nil
+                     and mx >= bx and mx < bx + cap and my >= y and my < y + h;
+        local clicked = item_click or (over and win_hot and on(im.IsMouseClicked(0)));
+        local arm = meta[side] or { };
+        meta[side] = arm;
+        local held = on(im.IsItemActive())
+                     or clicked
+                     or (over and win_hot and on(im.IsMouseDown(0)) and arm.at ~= nil);
+        local hot = item_hot or (over and win_hot);
+        held_any = held_any or held;
+        hot_any = hot_any or hot;
+        if (hot) then
+            local corners = (dir < 0)
+                and (rawget(_G, 'ImDrawFlags_RoundCornersLeft')
+                     or rawget(_G, 'ImDrawCornerFlags_Left'))
+                or (rawget(_G, 'ImDrawFlags_RoundCornersRight')
+                    or rawget(_G, 'ImDrawCornerFlags_Right'));
+            vana.fill(dl, bx + ((dir < 0) and 1 or 0), y + 1, cap - 1, h - 2,
+                      '#FFFFFF', math.max(0, r - 1), 0.07, corners);
+        end
+        vana.glyph(dl, (dir < 0) and 'left' or 'right',
+                   bx + cap / 2, cy, hot and vana.P.text or vana.P.dim, vana.S(8));
+        local now = os.clock();
+        if (not held) then
+            arm.at = nil;
+        else
+            local due = clicked and true or false;
+            if (not due and arm.at ~= nil) then
+                local gap = (now - arm.at > 0.4) and 0.06 or 999;
+                due = now - (arm.step or 0) >= gap;
+            end
+            if (due) then
+                local io_ok, io = pcall(im.GetIO);
+                local ctrl = io_ok and io and (io.KeyCtrl == true or io.KeyCtrl == 1);
+                local d = ctrl and fast or step;
+                apply(value + dir * d);
+                stepped = true;
+                arm.step = now;
+                if (arm.at == nil) then
+                    arm.at = now;
+                end
+            end
+        end
+    end
+    endcap('.dec', 0, -1);
+    endcap('.inc', math.max(0, w - cap), 1);
+
+    -- A step has to win over the caret. The next frame draws a new field, so
+    -- the one that took the click cannot write the old digits back.
+    if (stepped) then
+        meta.gen = (meta.gen or 0) + 1;
+        meta.editing = false;
+    else
+        meta.editing = typing;
+    end
+    hot_any = hot_any or (not stepped and typing);
+    return value, changed, meta.editing, hot_any or held_any;
 end
 
 return vana;

@@ -306,6 +306,14 @@ local FONT_PX = {
     dir   = 'C:\\Windows\\Fonts\\',
     list  = T{ '', 'Arial', 'Calibri', 'Consola', 'Georgia',
                'Segoeui', 'Tahoma', 'Times', 'Verdana' },
+    -- Bold cut of each face. The map's labels are drawn in these; a missing
+    -- file falls back to the regular one and a second stroke fakes the weight.
+    bold_file = {
+        Arial = 'arialbd.ttf', Calibri = 'calibrib.ttf', Consola = 'consolab.ttf',
+        Georgia = 'georgiab.ttf', Segoeui = 'segoeuib.ttf', Tahoma = 'tahomabd.ttf',
+        Times = 'timesbd.ttf', Verdana = 'verdanab.ttf',
+    },
+    is_bold = { },
     -- ImGui's own font is compiled into it rather than loaded from a file, so
     -- it has no file name to be listed under and is '' in the list.  This is
     -- what the pulldown shows in its place, so the row reads as a font rather
@@ -550,12 +558,23 @@ end
 * false and simply never applies, leaving the map on ImGui's own font.
 --]]
 function FONT_PX.bake_all()
+    local function bake_file(file)
+        local ok, font = pcall(imgui.AddFontFromFileTTF,
+                               FONT_PX.dir .. file, FONT_PX.bake);
+        if (ok and font) then
+            return font;
+        end
+        return nil;
+    end
     for _, name in ipairs(FONT_PX.list) do
         if (name ~= '') then
-            local ok, font = pcall(imgui.AddFontFromFileTTF,
-                                   FONT_PX.dir .. name:lower() .. '.ttf',
-                                   FONT_PX.bake);
-            FONT_PX.atlas[name] = (ok and font) or false;
+            local bold = FONT_PX.bold_file[name];
+            local font = bold and bake_file(bold) or nil;
+            FONT_PX.is_bold[name] = font ~= nil;
+            if (font == nil) then
+                font = bake_file(name:lower() .. '.ttf');
+            end
+            FONT_PX.atlas[name] = font or false;
         end
     end
 end
@@ -2048,7 +2067,13 @@ local function outlined_text(dl, x, y, text, dim, scale)
     for _, o in ipairs({ { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 } }) do
         dl:AddText({ x + o[1], y + o[2] }, stamp, text);
     end
-    dl:AddText({ x, y }, dim and COL_TEXT_DIM or COL_TEXT, text);
+    local col = dim and COL_TEXT_DIM or COL_TEXT;
+    dl:AddText({ x, y }, col, text);
+    -- ProggyClean has no bold file, and a bold file that failed to load fell
+    -- back to the regular face. A second stroke one pixel over is the weight.
+    if (not FONT_PX.is_bold[cfg.font]) then
+        dl:AddText({ x + 1, y }, col, text);
+    end
     imgui.SetWindowFontScale(1.0);
     if (face) then imgui.PopFont(); end
 end
@@ -3885,6 +3910,9 @@ local function draw_map(view_w, view_h)
         -- window font is left alone for the icons on this row.
         local search_h = imgui.GetFrameHeight() * SEARCH_H_MULT
                          * cfg.scale_tool / 100;
+        -- The glyphs fill the box. The pixel size is taken from the bar's
+        -- height, so Tools growing the bar grows the text with it.
+        local search_px = math.max(13, math.floor(search_h * 0.62 + 0.5));
         -- Nudged down by half of what it gives up, so the shorter box sits on
         -- the middle of the row rather than riding its top edge.
         local search_y = UI_MARGIN + (row_h - search_h) / 2;
@@ -3902,9 +3930,15 @@ local function draw_map(view_w, view_h)
         -- but never into the room the icons beside it need.  Never below the
         -- share it always had, so a large Tools eats its own room, not the box's.
         local base     = math.min(FIELD_W, view_w * 0.35);
+        -- The cog sits in the top-right corner, past the warp icons.  Same
+        -- height as the past/present switch and Multisend: Tools sizes all
+        -- three, and the art's own aspect sets the width.
+        local cog_h = row_h;
+        local cog_w = icon_width('cog.png', cog_h);
         local search_w = math.min(base * cfg.scale_searchw / 100,
                                   math.max(base, view_w - search_x
-                                                 - tools_w - UI_MARGIN));
+                                                 - tools_w - cog_w - TOGGLE_GAP
+                                                 - UI_MARGIN));
         imgui.SetCursorPos({ search_x, search_y });
         local search_sx, search_sy = imgui.GetCursorScreenPos();
         -- Handed the keyboard on the frame after an open, when the setting asks
@@ -3923,7 +3957,7 @@ local function draw_map(view_w, view_h)
             ui.search_blur and '##ubermap_search_tab' or '##ubermap_search',
             search_sx, search_sy, search_w, search_h,
             ui.search, FIELD_MAX, 'Search',
-            math.max(13, math.floor(ui.style.BODY * cfg.scale_tool / 100 + 0.5)),
+            search_px,
             search_focus);
         ui.search_blur = false;
         -- Only while the mouse is working the field, the way the editor's rows
@@ -4009,6 +4043,37 @@ local function draw_map(view_w, view_h)
             end
         end
 
+        -- Settings cog, top-right of the map. The same panel '/um config'
+        -- opens. assets/cog.png, fitted to the toolbar row the way the
+        -- past/present switch and Multisend are, and held at Multisend's
+        -- dimmer opacity whether the panel is open or shut.
+        local cog_hit = false;
+        if (cog_w > 0) then
+            local cog_x = view_w - UI_MARGIN - cog_w;
+            imgui.SetCursorPos({ cog_x, UI_MARGIN });
+            local cog_sx, cog_sy = imgui.GetCursorScreenPos();
+            imgui.InvisibleButton('##ubermap_cog', { cog_w, cog_h });
+            -- Read the click off this item before anything else is submitted.
+            -- InvisibleButton's own return stays false here; IsItemClicked does not.
+            local cog_hot = imgui.IsItemHovered() and not ui.warp_hot and not ui.ctx_hot;
+            cog_hit = imgui.IsItemClicked(0) and cog_hot;
+            ui.hot = ui.hot or imgui.IsItemHovered();
+            local cog_tex = icon_texture('cog.png');
+            if (cog_tex ~= nil) then
+                imgui.GetWindowDrawList():AddImage(
+                    tonumber(ffi.cast('uint32_t', cog_tex)),
+                    { cog_sx, cog_sy }, { cog_sx + cog_w, cog_sy + cog_h },
+                    { 0, 0 }, { 1, 1 },
+                    COL_MSS_OFF);
+            end
+            if (cog_hot and not ui.gp_active) then
+                imgui.SetTooltip('UberMap Settings');
+            end
+        end
+        if (cog_hit) then
+            ui.config = not ui.config;
+        end
+
         -- Config panel, pinned to the viewport's top-right corner.  The plate,
         -- the type and the controls are the Vanacore window's: Segoe labels, a
         -- drop-down, steppers, swatches and switches.  The map's own labels
@@ -4060,8 +4125,11 @@ local function draw_map(view_w, view_h)
             local label_px = st.S(st.BODY);
             local ctrl_w = st.S(148);
             local pad = st.S(14);
+            local top = st.S(6);
             local row_h = st.S(28);
-            local title_h = st.S(32);
+            local title_px = st.S(18);
+            local title_h = st.S(22);
+            local close_s = st.S(18);
             local head_h = st.S(24);
             local label_w = st.measure('Font', 'text', label_px);
             for _, num in ipairs(nums) do
@@ -4074,13 +4142,20 @@ local function draw_map(view_w, view_h)
                 label_w = math.max(label_w, st.measure(chk[1], 'text', label_px));
             end
             local inner = label_w + st.S(18) + ctrl_w;
+            local title_w = st.measure('UberMap Settings', 'semi', title_px);
+            if (title_w + st.S(8) + close_s > inner) then
+                inner = title_w + st.S(8) + close_s;
+            end
             local panel_w = inner + pad * 2;
             -- Title, two section rules, the font row, then every stepper, swatch
-            -- and switch.
-            local panel_h = pad * 2 + title_h + head_h * 2
+            -- and switch. A short inset over the word: the band is the text,
+            -- not a tall slot with the word centred in it.
+            local panel_h = top + pad + title_h + head_h * 2
                             + row_h * (1 + #nums + #picks + #checks);
             local px = origin_x + view_w - UI_MARGIN - panel_w;
-            local py = origin_y + UI_MARGIN;
+            -- Under the cog, so that corner control stays the one that toggles
+            -- the panel. The X on the title row is the other way to close it.
+            local py = origin_y + UI_MARGIN + cog_h + st.S(4);
             local dl = imgui.GetWindowDrawList();
             st.plate(dl, px, py, panel_w, panel_h);
             -- The panel is a solid block over the map, so the gaps between its
@@ -4091,8 +4166,19 @@ local function draw_map(view_w, view_h)
 
             local lx = px + pad;
             local rx = px + panel_w - pad;
-            local y = py + pad;
-            st.title(dl, lx, y + title_h / 2, 'Config');
+            local y = py + top;
+            st.title(dl, lx, y + title_h / 2, 'UberMap Settings', title_px);
+            local x_at = rx - close_s;
+            local y_at = y + (title_h - close_s) / 2;
+            imgui.SetCursorScreenPos({ x_at, y_at });
+            imgui.InvisibleButton('##ubermap_cfg_x', { close_s, close_s });
+            local x_hot = imgui.IsItemHovered() and not ui.warp_hot and not ui.ctx_hot;
+            if (imgui.IsItemClicked(0) and x_hot) then
+                ui.config = false;
+            end
+            ui.hot = ui.hot or imgui.IsItemHovered();
+            st.glyph(dl, 'close', x_at + close_s / 2, y + title_h / 2,
+                     x_hot and st.P.white or st.P.dim, st.S(11));
             dl:AddLine({ px, y + title_h }, { px + panel_w, y + title_h },
                        st.u32(st.P.border), 1);
             y = y + title_h;
