@@ -58,7 +58,6 @@ local pairs_ = {
     { 'col_text',    'COL_TEXT',  'COL_TEXT_DIM'  },
     { 'col_outline', 'COL_STAMP', 'COL_STAMP_DIM' },
     { 'col_bg',      'COL_BG',    'COL_BG_DIM'    },
-    { 'col_hover',   'COL_HOVER', nil             },
 };
 for _, p in ipairs(pairs_) do
     local c = default(p[1]);
@@ -91,20 +90,15 @@ assert(src:find('if (bg >= 0x1000000) then', 1, true),
 assert(src:find("type(c[4]) == 'number'", 1, true),
        'fill_defaults no longer checks the shape of a saved colour row');
 
--- The popup word no picker owns.  It is written as packed hex with its float
--- form in the comment beside it, so the check is that packing the one lands on
--- the other: a swapped pair of channels is otherwise only visible in the game.
--- (The warp list's saved-row green went with its restyle: it is the palette's
--- teal now, which lib/vana.lua's own test pins.)
-local FIXED = {
-    { 'COL_POPUP_LOCK', { 1.0, 0.7, 0.7, 1.0 } },
-};
-assert(not src:find('COL_POPUP_FAV', 1, true),
-       'COL_POPUP_FAV is back; the warp list draws a saved row in st.P.teal');
-for _, p in ipairs(FIXED) do
-    assert(pack_col(p[2]) == const(p[1]),
-           ('%s is not the colour its comment names'):format(p[1]));
+-- Every list and menu draws in lib/vana.lua's palette, whose own test pins its
+-- colours, so the old popup words and the Hover picker that fed one are gone.
+-- One coming back is a panel drawn in the old look beside the restyled ones.
+for _, gone in ipairs({ 'COL_POPUP_BG', 'COL_POPUP_TEXT', 'COL_POPUP_OFF',
+                        'COL_POPUP_LOCK', 'COL_POPUP_FAV', 'COL_HOVER',
+                        'col_hover' }) do
+    assert(not src:find(gone, 1, true),
+           gone .. ' is back; the lists and menus draw in the vana palette');
 end
 
-print(('ok: %d picker defaults and %d fixed word pack to their constants')
-      :format(#pairs_, #FIXED));
+print(('ok: %d picker defaults pack to their constants, and no list or menu'
+       .. ' draws in the old popup words'):format(#pairs_));

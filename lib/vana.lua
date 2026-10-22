@@ -718,170 +718,118 @@ function vana.switch(id, x, cy, on, veto)
     return on, clicked and true or false, hovered;
 end
 
-local step_buf, step_meta = { }, { };
+local numbers = { };  -- a slider's id -> its typed number's text ({ s }), while that box is open
+
+local function mouse_x(im)
+    local mx = im.GetMousePos();
+    if (type(mx) == 'table') then
+        mx = mx.x or mx[1];
+    end
+    return tonumber(mx) or 0;
+end
 
 --[[
-* A sunken stepper: chevrons on the ends, the number typed in the middle.
-* A click steps by `step`, ctrl-click by `fast`, and holding repeats.
-* Returns value, changed, typing, hovered.
+* The number typed in slider id's box, once Enter is pressed; nil until then.
+* Escape or a click away shuts the box and types nothing.
 --]]
-function vana.stepper(id, x, cy, w, value, minv, maxv, step, fast)
+local function number_box(id, minv, maxv)
     local im = gui();
-    local h = vana.S(24);
-    local y = cy - h / 2;
-    local dl = im.GetWindowDrawList();
-    local r = vana.S(4);
-    vana.fill(dl, x, y, w, h, vana.P.well, r, 1);
-    vana.outline(dl, x, y, w, h, vana.P.well_edge, r, 1);
-    local cap = math.min(vana.S(24), math.floor(w / 3));
-    local buf = step_buf[id];
-    if (buf == nil) then
-        buf = { tostring(value) };
-        step_buf[id] = buf;
-    end
-    local meta = step_meta[id];
-    if (meta == nil) then
-        meta = { };
-        step_meta[id] = meta;
-    end
-    if (not meta.editing) then
-        buf[1] = tostring(value);
-    end
-
-    local changed = false;
-    local function apply(v)
-        v = math.max(minv, math.min(maxv, math.floor(v + 0.5)));
-        if (v ~= value) then
-            value = v;
-            changed = true;
-            buf[1] = tostring(v);
+    local typed = nil;
+    local buf = numbers[id];
+    local nc, nv = vana.push_popup();
+    if (im.BeginPopup(id .. '.number')) then
+        local pushed = vana.push('text', vana.S(vana.SMALL + 1));
+        if (buf.focus) then
+            im.SetKeyboardFocusHere();
+            buf.focus = false;
         end
-    end
-
-    -- The number is submitted first. The end caps come after it, or the field
-    -- covers them and a click on a chevron only puts the caret in the number.
-    local field_w = math.max(1, w - cap * 2);
-    local px = vana.S(vana.SMALL + 0.5);
-    local tw = vana.measure(buf[1] or '', 'text', px);
-    local left_pad = math.floor((field_w - tw) / 2);
-    if (left_pad < vana.S(2)) then
-        left_pad = vana.S(2);
-    end
-    local pushed = vana.push('text', px);
-    local text_h = px;
-    local ok_sz, sz = pcall(im.GetFontSize);
-    if (ok_sz and sz and sz > 0) then
-        text_h = sz;
-    end
-    im.PushStyleColor(ImGuiCol_FrameBg, CLEAR);
-    im.PushStyleColor(ImGuiCol_FrameBgHovered, CLEAR);
-    im.PushStyleColor(ImGuiCol_FrameBgActive, CLEAR);
-    im.PushStyleColor(ImGuiCol_Text, vana.rgba(vana.P.text2));
-    im.PushStyleVar(ImGuiStyleVar_FramePadding, { left_pad, math.max(0, (h - text_h) / 2) });
-    im.PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0);
-    im.SetCursorScreenPos({ x + cap, y });
-    im.SetNextItemWidth(field_w);
-    local flags = ImGuiInputTextFlags_CharsDecimal or 0;
-    -- The id changes after a step, below. An active field keeps the digits it
-    -- was opened with, so a chevron press would land and then be drawn back.
-    local edited = im.InputText(id .. '.n' .. tostring(meta.gen or 0), buf, 8, flags);
-    local typing = im.IsItemActive();
-    im.PopStyleVar(2);
-    im.PopStyleColor(4);
-    if (pushed) then
-        vana.pop();
-    end
-    if (edited) then
-        local n = tonumber(buf[1]);
-        if (n ~= nil) then
-            apply(n);
+        im.PushItemWidth(vana.S(90));
+        local flags = (ImGuiInputTextFlags_CharsDecimal or 0)
+                      + (ImGuiInputTextFlags_EnterReturnsTrue or 0)
+                      + (ImGuiInputTextFlags_AutoSelectAll or 0);
+        if (im.InputText('##' .. id .. '.typed', buf, 16, flags)) then
+            typed = tonumber(buf[1]);
+            im.CloseCurrentPopup();
         end
-    end
-
-    local ax, ay = im.GetMousePos();
-    local mx, my = ax, ay;
-    if (type(ax) ~= 'number') then
-        local ok, px_, py_ = pcall(function ()
-            return ax.x or ax[1], ax.y or ax[2];
-        end);
-        mx, my = (ok and type(px_) == 'number') and px_ or nil,
-                 (ok and type(py_) == 'number') and py_ or nil;
-    end
-    -- A popup over the row is another window. A click there is not a step.
-    local win_hot = false;
-    pcall(function ()
-        win_hot = im.IsWindowHovered() and true or false;
-    end);
-    local function on(v)
-        return v == true or v == 1;
-    end
-    local held_any, hot_any, stepped = false, false, false;
-    local function endcap(side, dx, dir)
-        local bx = x + dx;
-        im.SetCursorScreenPos({ bx, y });
-        im.InvisibleButton(id .. side, { math.max(1, cap), h });
-        -- IsItemClicked, not the button's return: that return stays false on
-        -- this build. The rect covers a field that still overlaps the cap and
-        -- would otherwise take the click for itself.
-        local item_hot = im.IsItemHovered();
-        local item_click = on(im.IsItemClicked(0));
-        local over = mx ~= nil and my ~= nil
-                     and mx >= bx and mx < bx + cap and my >= y and my < y + h;
-        local clicked = item_click or (over and win_hot and on(im.IsMouseClicked(0)));
-        local arm = meta[side] or { };
-        meta[side] = arm;
-        local held = on(im.IsItemActive())
-                     or clicked
-                     or (over and win_hot and on(im.IsMouseDown(0)) and arm.at ~= nil);
-        local hot = item_hot or (over and win_hot);
-        held_any = held_any or held;
-        hot_any = hot_any or hot;
-        if (hot) then
-            local corners = (dir < 0)
-                and (rawget(_G, 'ImDrawFlags_RoundCornersLeft')
-                     or rawget(_G, 'ImDrawCornerFlags_Left'))
-                or (rawget(_G, 'ImDrawFlags_RoundCornersRight')
-                    or rawget(_G, 'ImDrawCornerFlags_Right'));
-            vana.fill(dl, bx + ((dir < 0) and 1 or 0), y + 1, cap - 1, h - 2,
-                      '#FFFFFF', math.max(0, r - 1), 0.07, corners);
+        im.PopItemWidth();
+        im.TextDisabled(string.format('%d to %d', minv, maxv));
+        if (pushed) then
+            vana.pop();
         end
-        vana.glyph(dl, (dir < 0) and 'left' or 'right',
-                   bx + cap / 2, cy, hot and vana.P.text or vana.P.dim, vana.S(8));
-        local now = os.clock();
-        if (not held) then
-            arm.at = nil;
-        else
-            local due = clicked and true or false;
-            if (not due and arm.at ~= nil) then
-                local gap = (now - arm.at > 0.4) and 0.06 or 999;
-                due = now - (arm.step or 0) >= gap;
-            end
-            if (due) then
-                local io_ok, io = pcall(im.GetIO);
-                local ctrl = io_ok and io and (io.KeyCtrl == true or io.KeyCtrl == 1);
-                local d = ctrl and fast or step;
-                apply(value + dir * d);
-                stepped = true;
-                arm.step = now;
-                if (arm.at == nil) then
-                    arm.at = now;
-                end
-            end
-        end
-    end
-    endcap('.dec', 0, -1);
-    endcap('.inc', math.max(0, w - cap), 1);
-
-    -- A step has to win over the caret. The next frame draws a new field, so
-    -- the one that took the click cannot write the old digits back.
-    if (stepped) then
-        meta.gen = (meta.gen or 0) + 1;
-        meta.editing = false;
+        im.EndPopup();
     else
-        meta.editing = typing;
+        numbers[id] = nil;
     end
-    hot_any = hot_any or (not stepped and typing);
-    return value, changed, meta.editing, hot_any or held_any;
+    vana.pop_popup(nc, nv);
+    return typed;
+end
+
+--[[
+* A slider, w wide: the track, then the value with unit after it, which a
+* click lets you type. A drag lands on the steps up from minv; a typed number
+* is held to a whole one. veto stands it down while something drawn over it
+* owns the cursor. Returns value, changed (each frame it moves), typing (its
+* number box has the keyboard), hovered.
+--]]
+function vana.slider(id, x, cy, w, value, minv, maxv, step, unit, veto)
+    local im = gui();
+    local S, P = vana.S, vana.P;
+    local dl = im.GetWindowDrawList();
+    local value_w = S(52);
+    local track = w - value_w - S(10);
+    local function held(v)
+        return math.max(minv, math.min(maxv, v));
+    end
+    -- The press area runs past the track's ends, so the knob drawn half past
+    -- either end is still the slider's and not the map's to pan.
+    im.SetCursorScreenPos({ x - S(4), cy - S(9) });
+    im.InvisibleButton(id, { track + S(12), S(18) });
+    local hovered = im.IsItemHovered() and not veto;
+    local dragging = (im.IsItemActive() and not veto) and true or false;
+    local changed = false;
+    if (dragging) then
+        local f = math.max(0, math.min(1, (mouse_x(im) - x) / track));
+        local v = minv + (maxv - minv) * f;
+        v = held(minv + math.floor((v - minv) / step + 0.5) * step);
+        if (v ~= value) then
+            value, changed = v, true;
+        end
+    end
+    local f = (maxv > minv) and math.max(0, math.min(1, (value - minv) / (maxv - minv))) or 0;
+    local th = S(4);
+    vana.fill(dl, x, cy - th / 2, track, th, P.off, th / 2, 1);
+    if (f > 0) then
+        vana.fill(dl, x, cy - th / 2, math.max(th, track * f), th, P.accent, th / 2, 1);
+    end
+    local lit = vana.ease(id .. '.lit', (hovered or dragging) and 1 or 0, 22);
+    dl:AddCircleFilled({ x + track * f, cy }, S(5.5) + S(1) * lit,
+                       vana.u32(dragging and P.accent2 or vana.mix(P.knob, P.accent2, lit * 0.5)), 24);
+
+    local vx = x + track + S(10);
+    im.SetCursorScreenPos({ vx, cy - S(10) });
+    local vclick = im.InvisibleButton(id .. '.value', { value_w, S(20) }) and not veto;
+    local vhov = im.IsItemHovered() and not veto;
+    if (vhov) then
+        vana.fill(dl, vx, cy - S(10), value_w, S(20), P.hover, S(3), 1);
+    end
+    local px = S(vana.SMALL + 0.5);
+    local shown = tostring(math.floor(value + 0.5)) .. (unit or '');
+    vana.text_mid(dl, vx + value_w - S(4) - vana.measure(shown, 'text', px), cy,
+                  shown, P.text2, 'text', px);
+    if (vclick) then
+        numbers[id] = { tostring(math.floor(value + 0.5)), focus = true };
+        im.OpenPopup(id .. '.number');
+    end
+    if (numbers[id] ~= nil) then
+        local typed = number_box(id, minv, maxv);
+        if (typed ~= nil) then
+            local v = held(math.floor(typed + 0.5));
+            if (v ~= value) then
+                value, changed = v, true;
+            end
+        end
+    end
+    return value, changed, numbers[id] ~= nil, hovered or vhov or dragging;
 end
 
 return vana;

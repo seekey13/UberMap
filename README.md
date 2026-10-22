@@ -12,7 +12,7 @@ Drop the `UberMap` folder into `Ashita/addons/`, then `/addon load ubermap`.
 | --- | --- |
 | `/ubermap`, `/um` | Toggle the map |
 | `/ubermap edit` | Toggle the point editor |
-| `/ubermap config` | Toggle the config panel: map font and size, text, outline, background and row hover colours, and seven switches |
+| `/ubermap config` | Toggle the config panel (also the cog, top right of the map): map font, bold and size, the four scales, text, outline and background colours, and seven switches |
 
 ## The map
 
@@ -91,12 +91,13 @@ A character who has never saved one starts with 36, so the widget has something 
 
 ## Config panel
 
-The cog in the map's top-right corner, or `/um config`, opens **UberMap Settings** under it: a font pulldown, a **Size** box, four scale boxes, four colour swatches and seven switches, one to a row, under a **Look** and an **Options** heading. The **×** on its title bar closes it too. Everything on it changes the map as you drag, and writes to your settings once you let go of the mouse or leave the box you are typing in — one write per edit rather than one per frame of it.
+The cog in the map's top-right corner, or `/um config`, opens **UberMap Settings** under it: a font pulldown, a **Bold** switch, a **Size** slider, four scale sliders, three colour swatches and seven switches, one to a row, under a **Look** and an **Options** heading. The **×** on its title bar closes it too. Everything on it changes the map as you drag, and writes to your settings once you let go of the mouse or press Enter on a typed number — one write per edit rather than one per frame of it.
 
 | Row | Edits |
 | --- | --- |
 | Font | The face the map's own text is drawn in: the zone marker labels, and the editor's hint and coordinate readout. `ProggyClean` is ImGui's own built-in font and the default; the rest are read out of `C:\Windows\Fonts` -- Arial, Calibri, Consola, Georgia, Segoeui, Tahoma, Times, Verdana. A face that will not load falls back to ProggyClean |
-| Size | Height of that same text in screen pixels, 8 to 48, typed or stepped (±1 by the arrows, ±4 by ctrl-click). It opens showing whatever size ImGui is already drawing at, so a map that has never been near the box looks exactly as it always did |
+| Bold | Draws that text in the face's bold cut. ProggyClean has none, and nor does a face whose bold file will not load, so those are drawn twice a pixel apart instead. Off by default |
+| Size | Height of that same text in screen pixels, 8 to 48. It opens showing whatever size ImGui is already drawing at, so a map that has never been near the slider looks exactly as it always did |
 | Points | Size of the zone point markers, as a percent |
 | Nations | Size of the nation art on the world overview, as a percent |
 | Tools | Height of everything on the search box's line — the past/present switch, the layer toggles, Instant Warp, Warp Ring and the search box itself, text included — and of the Favorites and Multisend icons in the bottom corners. The widths follow from each piece of art's own shape |
@@ -104,7 +105,6 @@ The cog in the map's top-right corner, or `/um config`, opens **UberMap Settings
 | Text | The map's text itself. Black by default |
 | Outline | The stamp behind that text that keeps it readable over the art. White, half alpha |
 | Background | A plate drawn under it. Fully transparent by default, i.e. off -- raise its alpha for a solid label instead of an outlined one |
-| Hover | Fill under the row the cursor is on: the heart's favorites list and the map's right-click menu. White, near-transparent |
 | Warp NPC Opens Map | Walking up to a Home Point, Survival Guide, Unity Concord, Abyssea teleporter or Whitegate's Runic Portal puts the map on screen by itself. A Cavernous Maw never does, since it has no rows on the map. On by default; off leaves `/um` and **Y** at the favorites widget as the ways in |
 | Favorites Widget | The controller window below. On by default; ticking it back on also undoes a **B** press that put it away for this visit |
 | Widget Cancel Button | Puts a **Cancel** row at the top of the widget, where the selection starts, see below. Off by default |
@@ -113,11 +113,11 @@ The cog in the map's top-right corner, or `/um config`, opens **UberMap Settings
 | Search Focus On Open | The search box takes the keyboard the frame the map opens, so you can type straight away. Off by default: while it holds the caret the map takes no clicks to pan or zoom |
 | Hide Uberwarp Chat | Drop Uberwarp's `[Uberwarp:<module>]` lines from the log, errors included. On by default; untick it when a warp misbehaves and you want the reason |
 
-The switches save the moment they are clicked, rather than on the mouse coming up like the pickers and boxes.
+The switches save the moment they are clicked, rather than on the mouse coming up like the sliders and pickers.
 
-The four scale rows are whole percents, 25 to 400, typed or stepped (±5 by the arrows, ±25 by ctrl-click). 100 is what the map has always drawn at, which is what a settings file that has never been near them carries.
+The sliders are Sidekick3's: drag the knob, or click the number beside it to type one and press Enter. The four scale rows are whole percents, 25 to 400; a drag moves them in steps of 5, and any whole percent can be typed. 100 is what the map has always drawn at, which is what a settings file that has never been near them carries.
 
-The search box, the config panel, the favorites widget and the warp list are drawn the way Sidekick3 draws its settings window: VanaCore's palette, Segoe UI, and the same title bar, close mark, headings, rows, drop-down and switches. Every tooltip uses that palette too. The heart's favorites panel and the map's right-click menu keep Ashita's own font and size. **Font** and **Size** move the text drawn onto the map itself.
+The search box, the config panel, both favorites lists, the warp list and the right-click menu are drawn the way Sidekick3 draws its settings window: VanaCore's palette, Segoe UI, and the same title bar, close mark, headings, rows, sliders, drop-down and switches. Every tooltip uses that palette too. **Font**, **Bold** and **Size** move the text drawn onto the map itself.
 
 Each swatch shows its colour's hex, and how opaque it is when it is not solid. Click one to open its picker beside the panel, over the map: it has an alpha bar, so a colour can be faded rather than only changed, and dragging inside it recolours the map as you go. Dragging anywhere on the panel or a picker does not pan the map underneath.
 

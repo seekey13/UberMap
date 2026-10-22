@@ -52,23 +52,38 @@ for _, row in ipairs(rows) do
 end
 
 -- The plate, the Options heading and one switch per row. The height is the
--- title, the two headings and a row for the font, each stepper, each swatch
--- and each switch, so a row added to the list without the height following
--- it draws off the bottom of the panel.
+-- title, the two headings and a row for the font, Bold, each slider, each
+-- swatch and each switch, so a row added to the list without the height
+-- following it draws off the bottom of the panel.
 assert(src:find('st.plate(', 1, true),
        'the config panel no longer draws its plate');
 assert(src:match("heading%('Options'%);%s*\n%s*for _, chk in ipairs%(checks%) do"),
        'the switches are no longer under an Options heading');
 assert(src:find('st.switch(', 1, true),
        'the checkbox rows are no longer switches');
-assert(src:find('line_h * (1 + #nums + #picks + #checks)', 1, true),
-       'the panel height no longer follows the number of switch rows');
--- Every row the loops draw goes through line_at, which is what the height
--- above counts: a row placed some other way would not be in the sum.
+assert(src:find('line_h * (2 + #nums + #picks + #checks)', 1, true),
+       'the panel height no longer follows the number of rows');
+-- Every row goes through line_at, which is what the height above counts: a
+-- row placed some other way would not be in the sum.
 local lines = select(2, src:gsub('cy = line_at%(%);', ''));
-assert(lines == 4, ('%d calls place a config row, not the 4 the height counts'
-                    .. ' (the face, then the stepper, swatch and switch loops)')
-                   :format(lines));
+assert(lines == 5, ('%d calls place a config row, not the 5 the height counts'
+                    .. ' (the face, Bold, then the slider, swatch and switch'
+                    .. ' loops)'):format(lines));
+-- The numbers are Sidekick3's sliders, not steppers, and the Hover picker is
+-- gone with the old panels' look.
+assert(src:find('st.slider(', 1, true), 'the number rows are no longer sliders');
+assert(not src:find('st.stepper(', 1, true), 'a stepper is back on the panel');
+assert(not src:find("{ 'Hover',", 1, true), 'the Hover picker is back on the panel');
+
+-- Bold is off by default and saved on the spot, and the face it asks for is
+-- baked at load beside the regular one: the atlas cannot be added to later.
+local defaults_ = src:match('local default_settings%s*=%s*T{(.-)\n};');
+assert(defaults_:match('%f[%w]bold%s*=%s*false'), 'Bold is not off by default');
+assert(src:match("if %(bold_flip%) then%s*\n%s*cfg%.bold = bold_on;%s*\n%s*settings%.save%(%);"),
+       'the Bold switch no longer saves the moment it is flipped');
+assert(src:find('FONT_PX.atlas[name] = bake_file(name:lower() .. \'.ttf\') or false;', 1, true)
+       and src:find('FONT_PX.bold[name] = bold and bake_file(bold) or false;', 1, true),
+       'bake_all no longer bakes both the regular and the bold cut of each face');
 -- The width has to follow the names too: these are the longest text on the
 -- panel, and a name wider than the plate runs off it.
 assert(src:match('for _, chk in ipairs%(checks%) do%s*\n%s*label_w = math%.max'),

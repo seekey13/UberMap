@@ -62,7 +62,8 @@ for _, needle in ipairs({
     'st.plate(',
     'st.switch(',
     'ui.style.push(\'text\', font_px);',
-    'vana  = true,',
+    'clipped = true,',
+    'st.slider(',
     'st.P.rose',
     'st.P.teal',
     'ui.warp_pitch',
@@ -95,15 +96,28 @@ local hovered, click, open = false, false, { };
 local dl = { lines = { }, rects = { }, texts = { } };
 function dl:AddLine(a, b, col, t) self.lines[#self.lines + 1] = { a = a, b = b, col = col, t = t }; end
 function dl:AddRectFilled(a, b, col, r) self.rects[#self.rects + 1] = { a = a, b = b, col = col, r = r }; end
-function dl:AddRect() end
-function dl:AddCircleFilled() end
+function dl.AddRect() end
+function dl.AddCircleFilled() end
 function dl:AddText(p, col, s) self.texts[#self.texts + 1] = { p = p, col = col, s = s }; end
 local function reset()
     dl.lines, dl.rects, dl.texts = { }, { }, { };
     seen = { };
 end
+local active, mouse = false, 0;
+local input = { };  -- InputText's answer: { text typed, Enter pressed }
 package.loaded['imgui'] = {
     GetIO = function () return { DisplaySize = { x = 2560, y = 1440 } }; end,
+    IsItemActive = function () return active; end,
+    GetMousePos = function () return mouse, 0; end,
+    SetKeyboardFocusHere = function () end,
+    PushItemWidth = function () end,
+    PopItemWidth = function () end,
+    TextDisabled = function () end,
+    CloseCurrentPopup = function () end,
+    InputText = function (_, buf)
+        if (input[1] ~= nil) then buf[1] = input[1]; end
+        return input[2] == true;
+    end,
     PushStyleColor = function () depth.color = depth.color + 1; end,
     PopStyleColor = function (n) depth.color = depth.color - (n or 1); end,
     PushStyleVar = function () depth.var = depth.var + 1; end,
@@ -224,6 +238,47 @@ same(dl.rects[1].col, vana.u32(vana.P.hover, 0.8), 'hovered row band');
 reset();
 vana.row(dl, 'r3', 0, 0, 200, 30, false, false);
 same(#dl.rects, 0, 'a plain row draws a ground');
+
+-- The slider: Sidekick3's 180, so a track of 180 - 52 - 10 from x.  A drag
+-- lands on the steps up from the minimum; a typed number lands as a whole
+-- one, step or not, on Enter.
+local track = S(180) - S(52) - S(10);
+reset();
+active, mouse = true, 100 + track * 0.5;
+local v, moved, typing = vana.slider('##s1', 100, 50, S(180), 100, 25, 400, 5, '%');
+same(v % 5, 0, 'a dragged scale between steps');
+assert(moved and math.abs(v - 212.5) <= 2.5, 'a drag to the middle of 25..400 lands at ' .. v);
+assert(not typing, 'a drag reads as typing');
+mouse = 100 - 50;
+v = vana.slider('##s1', 100, 50, S(180), v, 25, 400, 5, '%');
+same(v, 25, 'a drag past the left end');
+mouse = 100 + track + 50;
+v = vana.slider('##s1', 100, 50, S(180), v, 25, 400, 5, '%');
+same(v, 400, 'a drag past the right end');
+v, moved = vana.slider('##s1', 100, 50, S(180), 100, 25, 400, 5, '%', true);
+assert(v == 100 and not moved, 'a vetoed slider still drags');
+active = false;
+same(dl.texts[#dl.texts].s, '100%', 'the value and its unit');
+balanced('slider');
+
+-- Clicking the value opens a box for a number; Enter puts it in, held to the
+-- bounds and to a whole number, and shut, the box no longer has the keyboard.
+reset();
+click = true;
+local _, click_moved, click_typing = vana.slider('##s2', 100, 50, S(180), 100, 25, 400, 5, '%');
+click = false;
+assert(click_typing and not click_moved, 'clicking the value opens no box');
+input = { '137.4', true };
+v, moved = vana.slider('##s2', 100, 50, S(180), 100, 25, 400, 5, '%');
+assert(moved and v == 137, 'a typed 137.4 lands as ' .. tostring(v));
+input = { '9000', true };
+v = vana.slider('##s2', 100, 50, S(180), v, 25, 400, 5, '%');
+same(v, 400, 'a typed number past the top');
+input = { };
+open = { };
+local shut_moved, shut_typing = select(2, vana.slider('##s2', 100, 50, S(180), v, 25, 400, 5, '%'));
+assert(not shut_typing and not shut_moved, 'a shut box still has the keyboard');
+balanced('slider typing');
 
 print('ok: palette, scale clamps, the search, config and widget draw with them,'
       .. ' and the controls are Sidekick3\'s and leave ImGui balanced');

@@ -1,5 +1,5 @@
 --[[
-* Self-check for the Size box and the face pulldown.  Run with any Lua 5.1+ /
+* Self-check for the Size slider and the face pulldown.  Run with any Lua 5.1+ /
 * LuaJIT:
 *     lua test/test_fonts.lua
 *
@@ -35,7 +35,7 @@ assert(OWN < MIN or OWN > MAX, 'the "own size" stand-in is inside the clamp');
 assert(src:find('cfg[num[3]] = math.min(math.max(num[2][1], num[4]), num[5]);', 1, true),
        'the config panel no longer clamps what its numeric boxes are given');
 assert(src:find("{ 'Size', ui.font_px, 'font_px',", 1, true),
-       'the Size box is no longer one of the config panel numeric rows');
+       'the Size slider is no longer one of the config panel numeric rows');
 
 -- A settings file that has never been near the box carries OWN, which only a
 -- frame can resolve; the resolved number is written back so the box opens
@@ -109,7 +109,7 @@ for _, fn in ipairs({ 'text_size', 'outlined_text' }) do
 end
 
 -- A baked face measures FONT_PX.bake, not whatever ImGui's own font measures,
--- so the Size box would mean two different things without this.
+-- so the Size slider would mean two different things without this.
 assert(src:find('if (FONT_PX.face()) then base = FONT_PX.bake; end', 1, true),
        'the font scale no longer divides by the bake size when a face is up');
 
