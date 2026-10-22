@@ -4045,8 +4045,8 @@ local function draw_map(view_w, view_h)
 
         -- Settings cog, top-right of the map. The same panel '/um config'
         -- opens. assets/cog.png, fitted to the toolbar row the way the
-        -- past/present switch and Multisend are, and held at Multisend's
-        -- dimmer opacity whether the panel is open or shut.
+        -- past/present switch and Multisend are, at Multisend's lit opacity
+        -- whether the panel is open or shut.
         local cog_hit = false;
         if (cog_w > 0) then
             local cog_x = view_w - UI_MARGIN - cog_w;
@@ -4064,7 +4064,7 @@ local function draw_map(view_w, view_h)
                     tonumber(ffi.cast('uint32_t', cog_tex)),
                     { cog_sx, cog_sy }, { cog_sx + cog_w, cog_sy + cog_h },
                     { 0, 0 }, { 1, 1 },
-                    COL_MSS_OFF);
+                    COL_MSS_ON);
             end
             if (cog_hot and not ui.gp_active) then
                 imgui.SetTooltip('UberMap Settings');
