@@ -12,7 +12,7 @@ Drop the `UberMap` folder into `Ashita/addons/`, then `/addon load ubermap`.
 | --- | --- |
 | `/ubermap`, `/um` | Toggle the map |
 | `/ubermap edit` | Toggle the point editor |
-| `/ubermap config` | Toggle the config panel: map font and size, text, outline, background and row hover colours, and five checkboxes |
+| `/ubermap config` | Toggle the config panel (also the cog, top right of the map): map font, bold and size, the four scales, text, outline and background colours, and seven switches |
 
 ## The map
 
@@ -65,9 +65,9 @@ They go live at the **Runic Portal** in the Chamber of Passage, Aht Urhgan White
 | Look | Meaning |
 | --- | --- |
 | Normal | Travels now |
-| **Green** | Already on your favorites list. Map's warp panel only — the favorites list is nothing but favorites |
+| **Teal** | Already on your favorites list. Map's warp panel only — the favorites list is nothing but favorites |
 | Grey | Wrong kind of NPC for where you stand, or a conflux in another Abyssea area; the icon says what to walk up to |
-| **Red** | Never registered, or a Runic Portal while you hold assault orders; takes no click from anywhere, hover says why. Outranks the green, so a saved row you cannot reach still reads red |
+| **Red** | Never registered, or a Runic Portal while you hold assault orders; takes no click from anywhere, hover says why. Outranks the teal, so a saved row you cannot reach still reads red |
 
 ## Toolbar
 
@@ -77,6 +77,7 @@ They go live at the **Runic Portal** in the Chamber of Passage, Aht Urhgan White
 | **Crystal**, **Guide**, **Unity**, **Abyssea**, **Conflux**, **Runic** | Right of search | Dim one to drop that kind of row. A zone with nothing left opens no panel |
 | **Warp** | After them | `/item "Instant Warp" <me>` and closes the map. Lit only while the scroll (4181) is carried |
 | **Warp Ring** | After that | Two steps, see below |
+| **Settings** | Top right | The cog. Opens and closes the [config panel](#config-panel) under it, the same as `/um config` |
 | **Multisend** | Bottom right | Prefixes every command the map sends with `/mss ` |
 | **Heart** | Bottom left | Opens favorites. Hidden while the gamepad widget is on, since that lists the same rows.  Filters will completely hide results on this list |
 
@@ -90,12 +91,13 @@ A character who has never saved one starts with 36, so the widget has something 
 
 ## Config panel
 
-`/um config` opens a small panel in the map's top-right corner: a font pulldown, a **Size** box, four scale boxes, four colour pickers and five checkboxes, one to a row. Everything on it changes the map as you drag, and writes to your settings once you let go of the mouse or leave the box you are typing in — one write per edit rather than one per frame of it.
+The cog in the map's top-right corner, or `/um config`, opens **UberMap Settings** under it: a font pulldown, a **Bold** switch, a **Size** slider, four scale sliders, three colour swatches and seven switches, one to a row, under a **Look** and an **Options** heading. The **×** on its title bar closes it too. Everything on it changes the map as you drag, and writes to your settings once you let go of the mouse or press Enter on a typed number — one write per edit rather than one per frame of it.
 
 | Row | Edits |
 | --- | --- |
 | Font | The face the map's own text is drawn in: the zone marker labels, and the editor's hint and coordinate readout. `ProggyClean` is ImGui's own built-in font and the default; the rest are read out of `C:\Windows\Fonts` -- Arial, Calibri, Consola, Georgia, Segoeui, Tahoma, Times, Verdana. A face that will not load falls back to ProggyClean |
-| Size | Height of that same text in screen pixels, 8 to 48, typed or stepped (±1 by the arrows, ±4 by ctrl-click). It opens showing whatever size ImGui is already drawing at, so a map that has never been near the box looks exactly as it always did |
+| Bold | Draws that text in the face's bold cut. ProggyClean has none, and nor does a face whose bold file will not load, so those are drawn twice a pixel apart instead. Off by default |
+| Size | Height of that same text in screen pixels, 8 to 48. It opens showing whatever size ImGui is already drawing at, so a map that has never been near the slider looks exactly as it always did |
 | Points | Size of the zone point markers, as a percent |
 | Nations | Size of the nation art on the world overview, as a percent |
 | Tools | Height of everything on the search box's line — the past/present switch, the layer toggles, Instant Warp, Warp Ring and the search box itself, text included — and of the Favorites and Multisend icons in the bottom corners. The widths follow from each piece of art's own shape |
@@ -103,7 +105,6 @@ A character who has never saved one starts with 36, so the widget has something 
 | Text | The map's text itself. Black by default |
 | Outline | The stamp behind that text that keeps it readable over the art. White, half alpha |
 | Background | A plate drawn under it. Fully transparent by default, i.e. off -- raise its alpha for a solid label instead of an outlined one |
-| Hover | Fill under the row the cursor is on: warp rows, favorites and the right-click menu. White, near-transparent |
 | Warp NPC Opens Map | Walking up to a Home Point, Survival Guide, Unity Concord, Abyssea teleporter or Whitegate's Runic Portal puts the map on screen by itself. A Cavernous Maw never does, since it has no rows on the map. On by default; off leaves `/um` and **Y** at the favorites widget as the ways in |
 | Favorites Widget | The controller window below. On by default; ticking it back on also undoes a **B** press that put it away for this visit |
 | Widget Cancel Button | Puts a **Cancel** row at the top of the widget, where the selection starts, see below. Off by default |
@@ -112,13 +113,13 @@ A character who has never saved one starts with 36, so the widget has something 
 | Search Focus On Open | The search box takes the keyboard the frame the map opens, so you can type straight away. Off by default: while it holds the caret the map takes no clicks to pan or zoom |
 | Hide Uberwarp Chat | Drop Uberwarp's `[Uberwarp:<module>]` lines from the log, errors included. On by default; untick it when a warp misbehaves and you want the reason |
 
-The five checkboxes save the moment they are clicked, rather than on the mouse coming up like the pickers and boxes.
+The switches save the moment they are clicked, rather than on the mouse coming up like the sliders and pickers.
 
-The four scale rows are whole percents, 25 to 400, typed or stepped (±5 by the arrows, ±25 by ctrl-click). 100 is what the map has always drawn at, which is what a settings file that has never been near them carries.
+The sliders are Sidekick3's: drag the knob, or click the number beside it to type one and press Enter. The four scale rows are whole percents, 25 to 400; a drag moves them in steps of 5, and any whole percent can be typed. 100 is what the map has always drawn at, which is what a settings file that has never been near them carries.
 
-The warp, favorites and right-click panels are ImGui widgets rather than map text, so they keep Ashita's own font and size; **Font** and **Size** move the text drawn onto the map itself.
+The search box, the config panel, both favorites lists, the warp list and the right-click menu are drawn the way Sidekick3 draws its settings window: VanaCore's palette, Segoe UI, and the same title bar, close mark, headings, rows, sliders, drop-down and switches. Every tooltip uses that palette too. **Font**, **Bold** and **Size** move the text drawn onto the map itself.
 
-Each picker has an alpha bar, so a colour can be faded rather than only changed; click a swatch to open the picker, and drag inside it to watch the map change under it. Dragging anywhere on the panel does not pan the map underneath.
+Each swatch shows its colour's hex, and how opaque it is when it is not solid. Click one to open its picker beside the panel, over the map: it has an alpha bar, so a colour can be faded rather than only changed, and dragging inside it recolours the map as you go. Dragging anywhere on the panel or a picker does not pan the map underneath.
 
 Everything on the panel is yours alone and is saved with the rest of the per-character settings, so recolouring or resizing your map changes nothing anyone else sees.
 
@@ -146,7 +147,7 @@ A small window listing the same favorites, built for a controller. It comes up o
 
 The widget and the map's panel are one list drawn twice, so the mouse works the same in either: click a row to warp, drag it up or down to reorder, right-click for *Remove point from favorites list*. Turning the widget on hides the heart and its panel, so the list is on screen in one place, not two.
 
-The list is narrowed the same way the panel's is, so every row on it is one the NPC holding it up can send; a destination you have not registered still reads red, and A refuses it. With nothing saved for that kind of NPC the widget stays down. The window has no title bar and sizes itself to the list; like the map, hold shift to drag it somewhere else. On by default -- untick **Favorites Widget** on the `/um config` panel to turn it off -- and saved per character with the rest of the settings. A character who already turned it off keeps it off: the setting is written to their file, and the checkbox is the only way back on.
+The list is narrowed the same way the panel's is, so every row on it is one the NPC holding it up can send; a destination you have not registered still reads red, and A refuses it. With nothing saved for that kind of NPC the widget stays down. The window has no title bar and sizes itself to the list; like the map, hold shift to drag it somewhere else. On by default -- untick **Favorites Widget** on the `/um config` panel to turn it off -- and saved per character with the rest of the settings. A character who already turned it off keeps it off: the setting is written to their file, and the **Favorites Widget** switch is the only way back on.
 
 ### Cancel button
 
@@ -154,7 +155,7 @@ Tick **Widget Cancel Button** on the `/um config` panel and the widget grows a *
 
 ### Group by zone
 
-Tick **Widget Group By Zone** and any zone with two or more favorites on the widget is listed as a single row named for the zone — **Lower Jeuno**, rather than one row per Home Point. The row sits where the first of them was, with a `>` in the grid-reference column. Select it (**A**, **Enter** or a click) and a second panel opens to its right listing that zone's favorites, with the selection on its top row; the D-pad and the arrows walk that panel until you press **B** (or **Esc** after **F**), which shuts it and puts you back on the zone's row. Clicking the zone's row again shuts it too. A zone with just one favorite is listed as it always was. Rows still drag to reorder, in either panel, and right-click still removes one from the list. Off by default.
+Tick **Widget Group By Zone** and any zone with two or more favorites on the widget is listed as a single row named for the zone — **Lower Jeuno**, rather than one row per Home Point. The row sits where the first of them was, with a `>` in the grid-reference column. Select it (**A**, **Enter** or a click) and a second panel opens to its right listing that zone's favorites, with the selection on its top row; the D-pad and the arrows walk that panel until you press **B** (or **Esc** after **F**), which shuts it and puts you back on the zone's row. Clicking the zone's row again shuts it too. A zone with just one favorite is listed as it always was. Rows still drag to reorder, in either panel; dragging a zone's row moves all of its favorites with it. Right-click still removes one from the list. Off by default.
 
 XInput only: an Xbox pad, or anything Windows presents as one. A DirectInput controller (DualShock, DualSense) still works by mouse.
 

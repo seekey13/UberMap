@@ -245,6 +245,133 @@ check(open == nil and ui.fw_grp == nil, 'a zone with nothing left should shut');
 check(ui.fw_sel == 2,
       ('a missing zone should leave the index for the clamp, is %d'):format(ui.fw_sel));
 
+--[[
+* A zone group dragged in the widget's list: fw.reorder, lifted the same way,
+* moves every member as one run so the group lands on the row it was dragged
+* to.  drag() is draw_fav_list's branch -- the slot it lands by, fw.drop_slot's
+* when it comes down onto a group, then a group by its members' slots and a
+* lone row by its own.
+--]]
+env.table = table;
+for _, name in ipairs({ 'reorder', 'drop_slot' }) do
+    local rbody = src:match('\n(function fw%.' .. name .. '%(.-\nend)\n');
+    check(rbody ~= nil, 'fw.' .. name .. ' is no longer written as one function');
+    local rchunk;
+    if (setfenv ~= nil) then
+        rchunk = assert(loadstring(rbody or ''));
+        setfenv(rchunk, env);
+    else
+        rchunk = assert(load(rbody or '', 'fw.' .. name, 't', env));
+    end
+    rchunk();
+end
+
+local function drag(i, j)
+    local dv, ds = fw.view();
+    local to = ds[j];
+    if (j > i and dv[j].members ~= nil) then
+        to = fw.drop_slot(dv[j], ds[j + 1]);
+    end
+    if (dv[i].members ~= nil) then
+        fw.reorder(dv[i].slots, to);
+    else
+        reorder(ds[i], to);
+    end
+end
+-- The zones the widget lists, top to bottom, a group read as its zone.
+local function zones()
+    local out = { };
+    for i, f in ipairs(fw.view()) do
+        out[i] = f.key;
+    end
+    return table.concat(out, ', ');
+end
+local function refill(list)
+    for i = #saved, 1, -1 do saved[i] = nil; end
+    for i, f in ipairs(list) do saved[i] = f; end
+end
+
+local LJ1 = { key = 'Lower Jeuno',    type = 'home',  label = 'Home Point #1' };
+local LJ2 = { key = 'Lower Jeuno',    type = 'home',  label = 'Home Point #2' };
+local LJ3 = { key = 'Lower Jeuno',    type = 'home',  label = 'Home Point #3' };
+local PJ  = { key = 'Port Jeuno',     type = 'home',  label = 'Home Point #1' };
+local WW1 = { key = 'Windurst Woods', type = 'home',  label = 'Home Point #1' };
+local WW2 = { key = 'Windurst Woods', type = 'home',  label = 'Home Point #2' };
+local PB  = { key = 'Port Bastok',    type = 'home',  label = 'Home Point #1' };
+local QI  = { key = 'Qufim Island',   type = 'guide', label = 'Survival Guide' };
+refill({ LJ1, PJ, LJ2, WW1, LJ3, PB, WW2 });
+cfg.favs, cfg.fw_cancel, cfg.fw_group = saved, false, true;
+check(zones() == 'Lower Jeuno, Port Jeuno, Windurst Woods, Port Bastok',
+      'the groups should start where their first members are');
+
+-- Down one row, past a lone row.
+drag(1, 2);
+check(zones() == 'Port Jeuno, Lower Jeuno, Windurst Woods, Port Bastok',
+      'a group dragged down one should land one down, lists ' .. zones());
+local dv = fw.view();
+check(dv[2].members ~= nil and dv[2].members[1] == LJ1
+      and dv[2].members[2] == LJ2 and dv[2].members[3] == LJ3,
+      'the group should keep its members, in their order');
+check(dv[3].members ~= nil and #dv[3].members == 2,
+      'the group passed over should keep both of its members');
+
+-- Down past another group, then on to the bottom two rows at once.
+drag(2, 3);
+check(zones() == 'Port Jeuno, Windurst Woods, Lower Jeuno, Port Bastok',
+      'a group dragged down past a group should land below it, lists ' .. zones());
+drag(2, 4);
+check(zones() == 'Port Jeuno, Lower Jeuno, Port Bastok, Windurst Woods',
+      'a group dragged two rows at once should land two down, lists ' .. zones());
+
+-- And back up to the top.
+drag(4, 1);
+check(zones() == 'Windurst Woods, Port Jeuno, Lower Jeuno, Port Bastok',
+      'a group dragged up should land above the row it was dropped on, lists '
+      .. zones());
+check(#saved == 7, ('a drag should keep every favorite, has %d'):format(#saved));
+
+-- Narrowed to the NPC in reach: a favorite of another kind sits between the
+-- rows the widget lists, and stays put while the group moves past it.
+local all_view = env.fav_view;
+env.fav_view = function ()
+    local view, raw = { }, { };
+    for i, f in ipairs(saved) do
+        if (f.type == 'home') then
+            view[#view + 1], raw[#raw + 1] = f, i;
+        end
+    end
+    return view, raw;
+end
+refill({ LJ1, QI, PJ, LJ2 });
+drag(1, 2);
+check(zones() == 'Port Jeuno, Lower Jeuno',
+      'a narrowed group should move past the row it was dropped on, lists '
+      .. zones());
+check(saved[1] == QI and saved[2] == PJ and saved[3] == LJ1 and saved[4] == LJ2,
+      'the row of another kind should keep its place');
+env.fav_view = all_view;
+
+-- Down onto a zone group lands below the whole zone, a lone row and a group
+-- alike.  Below its first member alone the widget would read the same, and
+-- the heart's list, which shows the saved list row by row, the zone split.
+refill({ WW1, WW2, LJ1, LJ2 });
+drag(1, 2);
+check(saved[1] == LJ1 and saved[2] == LJ2 and saved[3] == WW1 and saved[4] == WW2,
+      'a group dropped down onto a group should land below all of it');
+refill({ PJ, LJ1, LJ2 });
+drag(1, 2);
+check(saved[1] == LJ1 and saved[2] == LJ2 and saved[3] == PJ,
+      'a row dropped down onto a group should land below all of it');
+-- A member saved past the row listed under the group is in the group all the
+-- same, but the drop stops short of it: below it is below that row too.
+refill({ PJ, LJ1, PB, LJ2 });
+drag(1, 2);
+check(zones() == 'Lower Jeuno, Port Jeuno, Port Bastok',
+      'a row dropped onto a split group should land right under it, lists '
+      .. zones());
+check(saved[1] == LJ1 and saved[2] == PJ and saved[3] == PB and saved[4] == LJ2,
+      'a row dropped onto a split group should not pass the row under it');
+
 -- The panel is drawn at the group's row, which moves when its first member
 -- does.  A drag holds the panel where it started so the next frame cannot
 -- reorder a different row.  ImGui is what places it; this only checks the

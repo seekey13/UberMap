@@ -201,7 +201,6 @@ local COL_TEXT      = 0xFF000000;  -- black
 local COL_TEXT_DIM  = 0x40000000;
 local COL_STAMP     = 0x80FFFFFF;  -- white, half alpha
 local COL_STAMP_DIM = 0x20FFFFFF;
-local COL_HOVER     = 0x2EFFFFFF;  -- white, a fifth of an alpha
 -- The plate under a string, drawn behind the stamp.  Fully transparent by
 -- default, so nothing about the map changes until the picker is moved: the
 -- stamp is what makes the text readable, and a plate is the heavier answer for
@@ -226,12 +225,12 @@ local ICON_BORDER  = 2.0;   -- screen pixels
 local ICON_HOT     = 1.05;  -- hovered nation icons draw this larger
 local HOT_GROUP    = 'Nations';  -- the only group that grows on hover
 
--- What the config panel's scale boxes take, as whole percents of the sizes
+-- What the config panel's scale sliders take, as whole percents of the sizes
 -- above, and the steps their arrows move in.  One table rather than a constant
 -- apiece, for the reason FONT_PX below is one: the chunk is near Lua's 200-local
 -- ceiling, where loose constants cost more than the indirection.
 local SCALE = {
-    min = 25, max = 400, step = 5, fast = 25,
+    min = 25, max = 400, step = 5,  -- a slider's drag lands on the steps
     -- cfg key and row name, in the order they stack.  The clamp on load, the
     -- boxes ImGui edits and the panel all walk this, so a box cannot drift from
     -- the setting it writes.
@@ -243,7 +242,7 @@ local SCALE = {
 local COL_ICON     = 0xFFFFFFFF;  -- white: tint that leaves the art untouched
 local COL_SELECT   = 0xFF00FFFF;  -- yellow: ring around the point being edited
 
--- Labels sit above the icon at the size the Size box names, so they stay
+-- Labels sit above the icon at the size the Size slider names, so they stay
 -- readable at every zoom instead of shrinking away with the art.
 local LABEL_GAP   = 1;  -- screen pixels between the label and the icon
 
@@ -283,8 +282,8 @@ local TOGGLE_NAME  = T{ ['Crystal.png'] = 'Home Points',
                         ['Runic.png']   = 'Runic Portals' };
 local TOGGLE_GAP   = 6;   -- screen pixels between toggles
 
--- What the Size box will take, in screen pixels, and what it means by "leave it
--- alone", plus the faces the pulldown beside it lists.
+-- What the Size slider will take, in screen pixels, and what it means by
+-- "leave it alone", plus the faces the pulldown beside it lists.
 --
 -- A face costs more than a size does.  ImGui's font atlas is shared with every
 -- other addon and outlives '/addon reload', and rebuilding it while draw lists
@@ -306,6 +305,16 @@ local FONT_PX = {
     dir   = 'C:\\Windows\\Fonts\\',
     list  = T{ '', 'Arial', 'Calibri', 'Consola', 'Georgia',
                'Segoeui', 'Tahoma', 'Times', 'Verdana' },
+    -- Bold cut of each face, drawn while the Bold switch is on.  Baked beside
+    -- the regular one rather than instead of it, since the atlas cannot be
+    -- added to once the game is running.  A face with no bold cut, or one
+    -- whose file will not load, is drawn twice a pixel apart instead.
+    bold_file = {
+        Arial = 'arialbd.ttf', Calibri = 'calibrib.ttf', Consola = 'consolab.ttf',
+        Georgia = 'georgiab.ttf', Segoeui = 'segoeuib.ttf', Tahoma = 'tahomabd.ttf',
+        Times = 'timesbd.ttf', Verdana = 'verdanab.ttf',
+    },
+    bold = { },                    -- name -> baked bold font, or false if it failed
     -- ImGui's own font is compiled into it rather than loaded from a file, so
     -- it has no file name to be listed under and is '' in the list.  This is
     -- what the pulldown shows in its place, so the row reads as a font rather
@@ -354,26 +363,16 @@ local RING_BAG_NUM = { [0] = 0, [8] = 1, [10] = 2, [11] = 3, [12] = 4,
                        [13] = 5, [14] = 6, [15] = 7, [16] = 8 };
 
 -- Warp popup: a header row and one row per destination, hung off the zone
--- point that opened it.
+-- point that opened it.  Its colours are lib/vana.lua's palette: a row reads
+-- text when it travels now, dim when this NPC cannot send it, and rose when
+-- the destination was never registered -- held apart from the dim, since
+-- walking to the right NPC fixes the one and not the other.  Text only: the
+-- icon still says which kind of NPC the row travels from.
 local POPUP_PAD      = 8;   -- screen pixels of margin on either side of the panel
 local POPUP_ROW      = 24;  -- row pitch, screen pixels
 local POPUP_ICON     = 24;  -- the box a type icon is fitted into
 local POPUP_GAP      = 6;   -- screen pixels between the marker and the panel
-local COL_POPUP_BG   = 0xE0101010;  -- near black, a little of the map showing through
-local COL_POPUP_TEXT = 0xFFFFFFFF;  -- the panel has its own ground, so white reads
-local COL_POPUP_OFF  = 0x60FFFFFF;  -- a row whose kind of NPC is not in reach
--- Light green, { 0.7, 1.0, 0.7, 1.0 }: a warp row already on the favorites
--- list.  On the map's warp panel only -- the favorites list itself is nothing
--- but favorites, and colouring every row of it green says nothing.
-local COL_POPUP_FAV  = 0xFFB3FFB3;
--- Light red, { 1.0, 0.7, 0.7, 1.0 }, held apart from the grey above: not being
--- in front of the right NPC is a thing the player can walk off and fix, while a
--- destination they have never stood at is not, so the two do not read the same.
--- It also outranks the green: a favorite that will not travel is worth knowing
--- about whether or not it was saved.  Text only - the icon still says which kind
--- of NPC the row travels from, which is worth reading either way.
-local COL_POPUP_LOCK = 0xFFB3B3FF;
--- What a red row says when the cursor stops on it.
+-- What a rose row says when the cursor stops on it.
 local LOCK_TIP = T{
     home  = 'Not registered - interact with this Home Point once to unlock it',
     guide = 'Not registered - interact with this Survival Guide once to unlock it',
@@ -439,7 +438,6 @@ local default_settings = T{
     -- that has never been near a picker draws exactly what it always did.
     col_text    = T{ 0.0, 0.0, 0.0, 1.0 },   -- map text
     col_outline = T{ 1.0, 1.0, 1.0, 0.5 },   -- the outline behind it
-    col_hover   = T{ 1.0, 1.0, 1.0, 0.18 },  -- fill under the row the cursor is on
     col_bg      = T{ 0.0, 0.0, 0.0, 0.0 },   -- the plate behind the text, off
     -- Saved warp rows, in the order they are listed in.  Empty here and seeded
     -- in fill_defaults instead: settings.load merges these defaults into the
@@ -478,6 +476,9 @@ local default_settings = T{
     -- The face it is drawn in, named the way FONT_PX.list names them.  Empty is
     -- ImGui's own font, which is what the map always drew with.
     font    = '',
+    -- That face's bold cut, or the face drawn twice a pixel apart where it has
+    -- none.  Off by default: regular is what the map always drew with.
+    bold    = false,
     -- What the map's art is drawn at, as whole percents of the sizes the addon
     -- has always used: 100 is what it drew before these boxes existed, and what
     -- a settings file that has never been near them carries.  Separate knobs
@@ -523,16 +524,15 @@ local function pack_col(c, fade)
 end
 
 --[[
-* Re-packs the seven words the map draws text, plates and hovers with from the
-* four pickers.  Called once at load and once on the frame a picker moves,
-* rather than per string per frame: the colours only move when a picker does.
+* Re-packs the six words the map draws text and plates with from the three
+* pickers.  Called once at load and once on the frame a picker moves, rather
+* than per string per frame: the colours only move when a picker does.
 --]]
 local function repack_cols()
     COL_TEXT      = pack_col(cfg.col_text);
     COL_TEXT_DIM  = pack_col(cfg.col_text, DIM_ALPHA);
     COL_STAMP     = pack_col(cfg.col_outline);
     COL_STAMP_DIM = pack_col(cfg.col_outline, DIM_ALPHA);
-    COL_HOVER     = pack_col(cfg.col_hover);
     COL_BG        = pack_col(cfg.col_bg);
     COL_BG_DIM    = pack_col(cfg.col_bg, DIM_ALPHA);
 end
@@ -550,12 +550,19 @@ end
 * false and simply never applies, leaving the map on ImGui's own font.
 --]]
 function FONT_PX.bake_all()
+    local function bake_file(file)
+        local ok, font = pcall(imgui.AddFontFromFileTTF,
+                               FONT_PX.dir .. file, FONT_PX.bake);
+        if (ok and font) then
+            return font;
+        end
+        return nil;
+    end
     for _, name in ipairs(FONT_PX.list) do
         if (name ~= '') then
-            local ok, font = pcall(imgui.AddFontFromFileTTF,
-                                   FONT_PX.dir .. name:lower() .. '.ttf',
-                                   FONT_PX.bake);
-            FONT_PX.atlas[name] = (ok and font) or false;
+            FONT_PX.atlas[name] = bake_file(name:lower() .. '.ttf') or false;
+            local bold = FONT_PX.bold_file[name];
+            FONT_PX.bold[name] = bold and bake_file(bold) or false;
         end
     end
 end
@@ -563,10 +570,21 @@ end
 --[[
 * The baked face the map draws with, or nil for ImGui's own -- which covers the
 * default, a name whose file would not load, and a frame before bake_all has
-* run.
+* run.  The bold cut while the Bold switch is on and the face has one.
 --]]
 function FONT_PX.face()
+    if (cfg.bold and FONT_PX.bold[cfg.font]) then
+        return FONT_PX.bold[cfg.font];
+    end
     return FONT_PX.atlas[cfg.font] or nil;
+end
+
+--[[
+* Bold asked for on a face with no bold cut to draw it in: ImGui's own, or one
+* whose bold file would not load.  The text then goes down twice, a pixel apart.
+--]]
+function FONT_PX.fake_bold()
+    return cfg.bold and not FONT_PX.bold[cfg.font];
 end
 
 -- A settings file written before a key existed is handed back as it was saved,
@@ -665,7 +683,6 @@ local function fill_defaults()
     end
     cfg.col_text    = fill_col('col_text');
     cfg.col_outline = fill_col('col_outline');
-    cfg.col_hover   = fill_col('col_hover');
     cfg.col_bg      = fill_col('col_bg');
     -- Zero passes through the clamp untouched: it is the stand-in for ImGui's
     -- own size, which is not known until there is a frame to ask.
@@ -700,6 +717,9 @@ local function fill_defaults()
     if (cfg.autoopen == nil) then
         cfg.autoopen = true;
     end
+    -- Bold is off by default, so a file from before the switch reads right as
+    -- it is; written back as a real boolean all the same.
+    cfg.bold = cfg.bold == true;
     -- The map used to write the Campaign zones '(S)' and rewrite them to '[S]'
     -- on the way out; it names them '[S]' throughout now.  A favorite saved
     -- under the old name still travels, but nothing else about it looks up any
@@ -728,7 +748,7 @@ local ui = T{
     hot         = false,     -- cursor was over a widget, not the map
     config      = false,     -- the config panel is on screen
     cfg_dirty   = false,     -- a picker on the config strip has been moved
-    cfg_typing  = false,     -- a numeric box held the keyboard on the last frame
+    cfg_typing  = false,     -- a slider's typed number held the keyboard on the last frame
     dragging    = false,
     drag_x      = 0,
     drag_y      = 0,
@@ -770,6 +790,7 @@ local ui = T{
     -- clamping that decided where the panel went.
     warp_px     = 0,
     warp_py     = 0,
+    warp_pitch  = POPUP_ROW, -- row pitch the last draw used, so Y hangs the menu off the lit row
     favs_open   = false,     -- favorites panel is up
     -- The gamepad widget.  fw_on is what the xinput handler reads to decide
     -- whether a button is its to take, and is written by the draw each frame,
@@ -848,8 +869,9 @@ local ui = T{
     dirty       = false,     -- an edit is waiting to be written to lib/points.lua
     edit_name   = { '', },
     edit_group  = { '', },
-    font_px     = { 0, },    -- the Size box, which edits cfg.font_px
-    -- The scale boxes, keyed by the cfg key each edits, in InputInt's shape.
+    font_px     = { 0, },    -- the Size slider, which edits cfg.font_px
+    -- The scale sliders, keyed by the cfg key each edits, as one-element
+    -- tables.
     -- Filled from SCALE.rows below rather than written out.
     scale       = T{ },
     -- What imgui.SetWindowFontScale is handed to draw the map's text at
@@ -860,6 +882,9 @@ ui.font_px[1] = cfg.font_px;
 for _, row in ipairs(SCALE.rows) do
     ui.scale[row[1]] = { cfg[row[1]], };
 end
+-- The search box, the config panel and the favorites widget. Kept on ui rather
+-- than as its own local: this chunk is at Lua's local ceiling.
+ui.style = require('lib.vana');
 
 --[[
 * The screen pixels an icon is drawn at, through whichever marker scale owns it.
@@ -902,7 +927,7 @@ local function item_tip(text)
         return;
     end
     if (imgui.IsItemHovered() and not ui.warp_hot and not ui.ctx_hot) then
-        imgui.SetTooltip(text);
+        ui.style.tooltip(text);
     end
 end
 
@@ -1860,8 +1885,10 @@ end
 * Handed back the way fav_view hands its rows back, with the slot each sits in
 * in cfg.favs, so a drag inside it still reorders the saved list.  Cancel has
 * no slot and cannot be dragged or dropped on.  A group takes its first
-* member's slot, since that is where it is listed: a row dropped on it lands
-* on the same side of that member the drop put it on the group.
+* member's slot, since that is where it is listed: a row dropped on it from
+* below lands above that member, and one dropped on it from above lands below
+* the zone, by fw.drop_slot.  It carries every member's slot as well, in
+* 'slots', for fw.reorder to drag them by.
 *
 * A group is listed where its first member would have been, and only where two
 * or more share a zone -- one favorite alone in its zone reads as it always has.
@@ -1898,6 +1925,52 @@ function fw.view()
         end
     end
     return view, slot;
+end
+
+--[[
+* fav_reorder for a zone group dragged to the row whose slot is j: every member
+* comes out and goes back in as one run, in the order they were in, beside the
+* favorite at j -- below it when the group came down the list, above it when it
+* went up.  Moving the first member alone would not do: the group is listed at
+* whichever member comes first, so the one after it would take the row over.
+* slots is the group's own, which fw.view builds in ascending order.  Saving
+* is left to the caller, the same as fav_reorder.
+--]]
+function fw.reorder(slots, j)
+    local down = slots[1] < j;
+    local run  = T{ };
+    -- From the back, so taking one out leaves the slots ahead of it alone;
+    -- each one ahead of j shifts j up by one.
+    for k = #slots, 1, -1 do
+        if (slots[k] < j) then
+            j = j - 1;
+        end
+        table.insert(run, 1, table.remove(cfg.favs, slots[k]));
+    end
+    if (down) then
+        j = j + 1;
+    end
+    for k, f in ipairs(run) do
+        table.insert(cfg.favs, j + k - 1, f);
+    end
+end
+
+--[[
+* Where a row dragged down onto zone group g lands: below its last member
+* saved before stop, the slot of the row listed under the group, or nil when
+* none is.  Below the first member alone would split the zone's favorites in
+* cfg.favs, which the heart's list and a widget without grouping list one by
+* one.  A member saved past stop is in the group all the same, but landing
+* below it would carry the row past the one under the group as well.
+--]]
+function fw.drop_slot(g, stop)
+    local to = g.slots[1];
+    for _, s in ipairs(g.slots) do
+        if (stop == nil or s < stop) then
+            to = s;
+        end
+    end
+    return to;
 end
 
 --[[
@@ -2015,6 +2088,8 @@ local function text_size(text)
     local w, h = imgui.CalcTextSize(text);
     imgui.SetWindowFontScale(1.0);
     if (face) then imgui.PopFont(); end
+    -- The second stroke a faked bold adds.
+    if (FONT_PX.fake_bold()) then w = w + 1; end
     return w, h;
 end
 
@@ -2033,18 +2108,28 @@ local function outlined_text(dl, x, y, text, dim, scale)
     local face = FONT_PX.face();
     if (face) then imgui.PushFont(face); end
     imgui.SetWindowFontScale(scale or ui.font_scale);
+    -- Bold on a face with no bold cut to draw it in: a second stroke one
+    -- pixel over is the weight.  The plate widens to it, and each stroke is
+    -- stamped round, or the second would cover the first's right-hand stamp
+    -- and leave the text with no outline down that side.
+    local bold = FONT_PX.fake_bold() and 1 or 0;
     local bg = dim and COL_BG_DIM or COL_BG;
     if (bg >= 0x1000000) then
         local tw, th = imgui.CalcTextSize(text);
         dl:AddRectFilled({ x - BG_PAD, y - BG_PAD },
-                         { x + tw + BG_PAD, y + th + BG_PAD },
+                         { x + tw + bold + BG_PAD, y + th + BG_PAD },
                          bg, 0, ImDrawCornerFlags_All);
     end
     local stamp = dim and COL_STAMP_DIM or COL_STAMP;
     for _, o in ipairs({ { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 } }) do
-        dl:AddText({ x + o[1], y + o[2] }, stamp, text);
+        for b = 0, bold do
+            dl:AddText({ x + b + o[1], y + o[2] }, stamp, text);
+        end
     end
-    dl:AddText({ x, y }, dim and COL_TEXT_DIM or COL_TEXT, text);
+    local col = dim and COL_TEXT_DIM or COL_TEXT;
+    for b = 0, bold do
+        dl:AddText({ x + b, y }, col, text);
+    end
     imgui.SetWindowFontScale(1.0);
     if (face) then imgui.PopFont(); end
 end
@@ -2521,7 +2606,8 @@ function nav.act(act, view_w, view_h)
             local r = (ui.gp_row ~= nil) and rows[ui.gp_row] or nil;
             if (r ~= nil) then
                 ui.ctx = { x = ui.warp_px + POPUP_PAD * 2,
-                           ry = ui.warp_py + POPUP_ROW * (ui.gp_row - 1),
+                           ry = ui.warp_py + ui.warp_pitch * (ui.gp_row - 1),
+                           row_h = ui.warp_pitch,
                            fresh = true, key = ui.warp.label, row = r };
             end
             return;
@@ -2822,8 +2908,9 @@ nav.h = {
 * Measures fav_view unless handed a list of its own: the widget's, or the
 * members of the zone group it has opened out.
 --]]
-local function fav_metrics(favs)
+local function fav_metrics(favs, pitch)
     favs        = favs or fav_view();
+    pitch       = pitch or POPUP_ROW;
     local n     = #favs;
     local _, th = imgui.CalcTextSize('A');
     -- Columns: the warp type's icon, then the text.  An empty list is one row
@@ -2850,8 +2937,9 @@ local function fav_metrics(favs)
              th    = th,
              lab_x = lab_x,
              pos_x = pos_x,
+             pitch = pitch,
              w     = ((posw > 0) and (pos_x + posw) or (lab_x + textw)) + POPUP_PAD,
-             h     = POPUP_ROW * math.max(n, 1) };
+             h     = pitch * math.max(n, 1) };
 end
 
 --[[
@@ -2868,11 +2956,13 @@ end
 *   rows - the list to draw and the slot each row sits in in cfg.favs, as
 *   slot   fav_view hands them back; fav_view itself when not given.  A row
 *          with no slot (Cancel) is never dragged or dropped on, and a zone
-*          group, which carries 'members', is dropped on but never dragged.
+*          group, which carries 'members', drags all of them along with it.
 *   id   - the list's name, for its button and its drags: the widget draws a
 *          zone group's panel beside its own list in the one window.
 *   click- what a click that did not drag does, handed the row's number;
 *          unset, the row travels if it can.
+*   clipped - the window drawn into is the list's own size, so the plate's
+*          shadow goes on the background list instead of being clipped off.
 *
 * One drag at a time, in ui.fav_drag, tagged with the id of the list it
 * started in so that only that list moves it.
@@ -2883,20 +2973,15 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
     local sel     = opts.sel;
     local veto    = opts.veto;
     local id      = opts.id or '##ubermap_favs';
+    local pitch   = m.pitch or POPUP_ROW;
+    local st      = ui.style;
 
-    dl:AddRectFilled({ px, py }, { px + w, py + h }, COL_POPUP_BG,
-                     0, ImDrawCornerFlags_All);
-    dl:AddRect({ px, py }, { px + w, py + h }, COL_OUTLINE,
-               0, ImDrawCornerFlags_All, ICON_BORDER);
-    -- Kept inside the outline at both ends, so a lit first or last row does
-    -- not paint over the border it sits against.
-    local function light(ry)
-        dl:AddRectFilled(
-            { px + ICON_BORDER, math.max(ry, py + ICON_BORDER) },
-            { px + w - ICON_BORDER,
-              math.min(ry + POPUP_ROW, py + h - ICON_BORDER) },
-            COL_HOVER, 0, ImDrawCornerFlags_All);
-    end
+    -- The Vanacore plate.  The widget's window is the list's own size, so its
+    -- shadow goes on the background list or the window would clip it away;
+    -- the heart's lies on the map it is drawn in.
+    st.shadow(px, py, w, h, (not opts.clipped) and dl or nil);
+    st.fill(dl, px, py, w, h, st.P.bg, st.S(5), 1);
+    st.outline(dl, px, py, w, h, st.P.border, st.S(5), 1);
 
     -- Which row the cursor is on, read while drawing and acted on after: a
     -- drag reorders the list the loop is walking.
@@ -2920,7 +3005,7 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
         return raw[k];
     end
     for i, f in ipairs(favs) do
-        local ry = py + POPUP_ROW * (i - 1);
+        local ry = py + pitch * (i - 1);
         -- The same two tests the popup rows use: a favorite travels only from
         -- the kind of NPC it was saved off, and only to somewhere the player
         -- has registered.  A favorite can outlive neither, so both are asked
@@ -2939,23 +3024,19 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
         end
         local over  = not veto
                       and mouse_x >= px and mouse_x <= px + w
-                      and mouse_y >= ry and mouse_y < ry + POPUP_ROW;
+                      and mouse_y >= ry and mouse_y < ry + pitch;
         if (over) then
             hot_i, hot_live = i, live and known;
             hot_lock = (not known) and LOCK_TIP[f.type] or nil;
-            hot_fixed = slot(i) == nil or f.members ~= nil;
+            hot_fixed = slot(i) == nil;
         end
-        -- The selection, and over it the row under the cursor -- or while one
-        -- is being dragged, the slot the cursor has carried it to rather than
-        -- the one it was picked up from.  A row that is both reads brighter,
-        -- since the two fills stack.
-        if (i == sel) then
-            light(ry);
-        end
-        if ((drag ~= nil and drag.i == i) or (drag == nil and over)) then
-            light(ry);
-        end
-        local ty = ry + (POPUP_ROW - m.th) / 2;
+        -- The selection, and the row under the cursor -- or while one is
+        -- being dragged, the slot the cursor has carried it to rather than the
+        -- one it was picked up from.  The selection eases in the accent's
+        -- ground and bar, and takes no hover on top.
+        local pointed = (drag ~= nil and drag.i == i) or (drag == nil and over);
+        st.row(dl, id .. '.' .. i, px, ry, w, pitch, i == sel, pointed);
+        local ty = ry + (pitch - m.th) / 2 - st.lift(m.th);
 
         -- Unlike a popup row, a favorite comes back off disk, so its type is
         -- only as good as the settings file: one no toggle names draws no icon
@@ -2966,25 +3047,30 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
         local tex, iw, ih;
         if (art ~= nil) then tex, iw, ih = icon_texture(art); end
         if (tex ~= nil) then
-            local sc = math.min(POPUP_ICON / iw, POPUP_ROW / ih);
+            local sc = math.min(POPUP_ICON / iw, pitch / ih);
             local ix = px + POPUP_PAD + (POPUP_ICON - iw * sc) / 2;
-            local iy = ry + (POPUP_ROW - ih * sc) / 2;
+            local iy = ry + (pitch - ih * sc) / 2;
             dl:AddImage(tonumber(ffi.cast('uint32_t', tex)),
                         { ix, iy }, { ix + iw * sc, iy + ih * sc },
                         { 0, 0 }, { 1, 1 },
                         live and COL_ICON or COL_ICON_OFF);
         end
-        local col = (not known) and COL_POPUP_LOCK
-                    or live and COL_POPUP_TEXT or COL_POPUP_OFF;
+        -- Rose for a destination never registered, dim for one this NPC
+        -- cannot send, text otherwise (white on the selection), the grid
+        -- reference a step quieter.
+        local col = (not known) and st.u32(st.P.rose)
+                    or live and st.u32((i == sel) and st.P.white or st.P.text)
+                    or st.u32(st.P.dim);
         dl:AddText({ px + m.lab_x, ty }, col, fav_text(f));
         local pos = fav_pos(f);
         if (pos ~= nil) then
-            dl:AddText({ px + m.pos_x, ty }, col, pos);
+            dl:AddText({ px + m.pos_x, ty },
+                       (known and live) and st.u32(st.P.text2) or col, pos);
         end
     end
     if (n == 0) then
-        dl:AddText({ px + m.lab_x, py + (POPUP_ROW - m.th) / 2 },
-                   COL_POPUP_OFF, ui.near_kind and FAV_NONE or FAV_EMPTY);
+        dl:AddText({ px + m.lab_x, py + (pitch - m.th) / 2 - st.lift(m.th) },
+                   st.u32(st.P.faint), ui.near_kind and FAV_NONE or FAV_EMPTY);
     end
 
     -- Same as the warp panel: one InvisibleButton over the whole thing so the
@@ -3020,7 +3106,7 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
     -- Why a red favorite does not travel.  Not while the pad or the keys are
     -- driving: the cursor is not what a press would land on then.
     if (hot_lock ~= nil and not veto and not ui.gp_active) then
-        imgui.SetTooltip(hot_lock);
+        ui.style.tooltip(hot_lock);
     end
 
     if (drag ~= nil) then
@@ -3030,9 +3116,21 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
             -- since the cursor is free to leave it.  A row that cannot move,
             -- or a slot it cannot land on, leaves the list as it is.
             local j = mm.clamp(
-                math.floor((mouse_y - py) / POPUP_ROW) + 1, 1, n);
+                math.floor((mouse_y - py) / pitch) + 1, 1, n);
             if (j ~= drag.i and not drag.fixed and slot(j) ~= nil) then
-                fav_reorder(slot(drag.i), slot(j));
+                -- Down onto a zone group lands below the whole zone; up onto
+                -- one lands above its first member, which is above all of it.
+                local to = slot(j);
+                if (j > drag.i and favs[j].members ~= nil) then
+                    to = fw.drop_slot(favs[j], slot(j + 1));
+                end
+                -- A zone group moves every favorite folded into it.
+                local f = favs[drag.i];
+                if (f.members ~= nil) then
+                    fw.reorder(f.slots, to);
+                else
+                    fav_reorder(slot(drag.i), to);
+                end
                 drag.i, drag.moved = j, true;
             end
         elseif (imgui.IsMouseReleased(0)) then
@@ -3200,25 +3298,36 @@ local function draw_fav_widget()
         imgui.SetNextWindowPos({ x, y });
         if (imgui.BeginPopupContextItem(pid)) then
             ui.fw_ctx = true;
+            -- A popup list's size, a step under the rows it hangs off.
+            local face_on = ui.style.push('text', ui.style.S(ui.style.BODY - 1));
             if (imgui.MenuItem('Remove point from favorites list')) then
                 -- One shorter from here: the selection is clamped back onto
                 -- the list at the top of the next draw, and an emptied list
                 -- takes the widget down with it.
                 fav_toggle(f.key, f);
             end
+            if (face_on) then
+                ui.style.pop();
+            end
             imgui.EndPopup();
         end
     end
 
+    -- Segoe, at the body size, for as long as this window draws.  The row
+    -- grows with it so a tall screen does not clip the line.  Popped below,
+    -- after End, so the map drawn later in the frame is not left on it.
+    local font_px = ui.style.S(ui.style.BODY);
+    local pitch = math.max(POPUP_ROW, font_px + ui.style.S(8));
+    local face_on = ui.style.push('text', font_px);
     imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, { 0, 0 });
     -- 'true' rather than nil for the open flag: Ashita's binding reads a nil
     -- there as the two-argument Begin and throws the flags away, which puts
     -- back the title bar and the resize grip this is meant to be without.
     if (imgui.Begin('UberMap Favorites##ubermap_fw', true, flags)) then
-        -- The panel's own list, drawn into this window rather than over the
-        -- map: same rows, same colours, same drag to reorder.  No empty text,
+        -- The same rows as the heart's list, in the Vanacore plate: navy
+        -- ground, Segoe, an accent stripe on the pad's row.  No empty text,
         -- since a list with nothing in it took the widget down above.
-        local m = fav_metrics(rows);
+        local m = fav_metrics(rows, pitch);
         local mouse_x, mouse_y = imgui.GetMousePos();
         local px, py = imgui.GetCursorScreenPos();
         -- A cursor moving over the widget hands it to the mouse, whose own
@@ -3238,6 +3347,7 @@ local function draw_fav_widget()
                                       veto  = veto,
                                       rows  = rows,
                                       slot  = slots,
+                                      clipped = true,
                                       id    = '##ubermap_fw_list',
                                       click = function (i) fw.pick(false, i); end });
         -- Mouse and D-pad share the one selection: a press of either button
@@ -3252,17 +3362,11 @@ local function draw_fav_widget()
                 and (imgui.IsMouseClicked(0) or imgui.IsMouseClicked(1))) then
             ui.fw_sel = hot_i;
         end
-        -- Dressed in the panel's own colours, or this would be the one menu on
-        -- screen wearing ImGui's: the ground and outline the lists draw
-        -- themselves, and the hover the map's Hover picker sets.  Header* is
-        -- what MenuItem lights with.
-        imgui.PushStyleColor(ImGuiCol_PopupBg,
-                             { 0.0627, 0.0627, 0.0627, 0.8784 });
-        imgui.PushStyleColor(ImGuiCol_Border, { 0.0, 0.0, 0.0, 1.0 });
-        imgui.PushStyleColor(ImGuiCol_HeaderHovered, cfg.col_hover);
-        imgui.PushStyleColor(ImGuiCol_HeaderActive, cfg.col_hover);
+        -- The right-click menu in the same palette.  Header* is what MenuItem
+        -- lights with.
+        local pop_c, pop_v = ui.style.push_popup();
         menu('##ubermap_fw_ctx', rows[ui.fw_sel],
-             px, py + POPUP_ROW * ui.fw_sel + POPUP_GAP);
+             px, py + m.pitch * ui.fw_sel + POPUP_GAP);
 
         -- The zone group opened out, as a second list to the right of the
         -- first with its top row level with the zone's own.  Asked for after
@@ -3270,9 +3374,9 @@ local function draw_fav_widget()
         local grp, gi = fw.group_open();
         if (grp ~= nil) then
             ui.fw_sub = mm.clamp(ui.fw_sub, 1, #grp.members);
-            local gm = fav_metrics(grp.members);
+            local gm = fav_metrics(grp.members, pitch);
             local gx = px + m.w + POPUP_GAP;
-            local gy = py + POPUP_ROW * (gi - 1);
+            local gy = py + m.pitch * (gi - 1);
             -- The panel is anchored on the group's first member, so a drag
             -- that moves that member past another zone moves gi, and the panel
             -- with it, under a cursor that has not.  The next frame then
@@ -3291,6 +3395,7 @@ local function draw_fav_widget()
                                           veto  = veto,
                                           rows  = grp.members,
                                           slot  = grp.slots,
+                                          clipped = true,
                                           id    = '##ubermap_fw_grp',
                                           click = function (i) fw.pick(true, i); end });
             drag = ui.fav_drag;
@@ -3301,12 +3406,15 @@ local function draw_fav_widget()
                 ui.fw_sub = sub_i;
             end
             menu('##ubermap_fw_grp_ctx', grp.members[ui.fw_sub],
-                 gx, gy + POPUP_ROW * ui.fw_sub + POPUP_GAP);
+                 gx, gy + m.pitch * ui.fw_sub + POPUP_GAP);
         end
-        imgui.PopStyleColor(4);
+        ui.style.pop_popup(pop_c, pop_v);
     end
     imgui.End();
     imgui.PopStyleVar();
+    if (face_on) then
+        ui.style.pop();
+    end
 end
 
 --[[
@@ -3338,10 +3446,16 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
     end
 
     if (ui.favs_open) then
-        -- The list the widget also puts up, drawn over the map: the panel is
-        -- the frame around it, and everything inside -- rows, hover, drag to
-        -- reorder, click to travel -- is draw_fav_list's.
-        local m  = fav_metrics();
+        -- The list the widget also puts up, drawn over the map in the same
+        -- Vanacore plate and Segoe: the panel is the frame around it, and
+        -- everything inside -- rows, hover, drag to reorder, click to travel
+        -- -- is draw_fav_list's.  The face is popped before the menu below,
+        -- which sets its own.
+        local st      = ui.style;
+        local font_px = st.S(st.BODY);
+        local pitch   = math.max(POPUP_ROW, font_px + st.S(8));
+        local face_on = st.push('text', font_px);
+        local m  = fav_metrics(nil, pitch);
         local px = origin_x + UI_MARGIN;
         -- Clamped so a list longer than the viewport tucks against the top
         -- edge rather than running off it.
@@ -3353,18 +3467,21 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
         -- neither panel moves while it is open.
         local hot_i = draw_fav_list(px, py, m, mouse_x, mouse_y,
                                     { veto = ui.warp_hot or ui.ctx_hot });
+        if (face_on) then
+            st.pop();
+        end
 
         -- Right-click a listed favorite to take it back off the list, the
         -- same menu that put it on.  Hung under the row rather than at the
         -- cursor: a menu lying over the row it was opened on puts its item and
         -- that row under the one click, which reads as picking both.  Rows are
-        -- POPUP_ROW apart from the panel's top, so the hot row's bottom edge is
+        -- pitch apart from the panel's top, so the hot row's bottom edge is
         -- its own index times the pitch.  None at a maw, whose one row is not
         -- on the list: its menu would offer to add a second.
         if (imgui.IsMouseClicked(1) and hot_i ~= nil and not ui.warp_hot
             and ui.near_kind ~= 'maw') then
             local f = fav_view()[hot_i];
-            ui.ctx = { x = mouse_x, ry = py + POPUP_ROW * (hot_i - 1),
+            ui.ctx = { x = mouse_x, ry = py + pitch * (hot_i - 1), row_h = pitch,
                        fresh = true, key = f.key, row = f };
         end
     end
@@ -3386,8 +3503,15 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
             ui.warp   = nil;
             ui.gp_row = nil;
         else
-            local pdl    = imgui.GetWindowDrawList();
-            local _, th  = imgui.CalcTextSize(ui.warp.label);
+            local st      = ui.style;
+            local pdl     = imgui.GetWindowDrawList();
+            -- Segoe at the body size, same as the favorites widget. Popped
+            -- before the button below, so the menu drawn after this panel
+            -- is not left on it. The row grows with the face.
+            local font_px = st.S(st.BODY);
+            local pitch   = math.max(POPUP_ROW, font_px + st.S(8));
+            local face_on = st.push('text', font_px);
+            local _, th   = imgui.CalcTextSize(ui.warp.label);
             -- The grid reference is a column of its own, so every row's
             -- label starts at one x and every '(F-11)' at another.
             local labw, posw = 0, 0;
@@ -3404,7 +3528,7 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
             local pos_x = lab_x + labw + POPUP_PAD;
             local w     = ((posw > 0) and (pos_x + posw) or (lab_x + labw))
                           + POPUP_PAD;
-            local h = POPUP_ROW * #rows;
+            local h = pitch * #rows;
 
             -- Hung under the marker and clamped both ways, so a point near
             -- an edge does not push the panel off the viewport.
@@ -3417,22 +3541,9 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                 h, origin_y, view_h);
             -- Kept for the pad: Y hangs the favorites menu off the lit row,
             -- and the row's place on screen is this corner plus its pitch.
-            ui.warp_px, ui.warp_py = px, py;
+            ui.warp_px, ui.warp_py, ui.warp_pitch = px, py, pitch;
 
-            pdl:AddRectFilled({ px, py }, { px + w, py + h }, COL_POPUP_BG,
-                              0, ImDrawCornerFlags_All);
-            pdl:AddRect({ px, py }, { px + w, py + h }, COL_OUTLINE,
-                        0, ImDrawCornerFlags_All, ICON_BORDER);
-            -- Kept inside the outline at both ends, so a lit first or last row
-            -- does not paint over the border it sits against.  The same fill
-            -- the favorites list lights its own rows with.
-            local function light(ry)
-                pdl:AddRectFilled(
-                    { px + ICON_BORDER, math.max(ry, py + ICON_BORDER) },
-                    { px + w - ICON_BORDER,
-                      math.min(ry + POPUP_ROW, py + h - ICON_BORDER) },
-                    COL_HOVER, 0, ImDrawCornerFlags_All);
-            end
+            st.plate(pdl, px, py, w, h);
             -- hot_row is the row a left-click would send, so it is only
             -- ever a live one; hot_any is the row under the cursor whether
             -- it is live or not, which is what the right-click menu goes
@@ -3444,7 +3555,7 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
             -- can be hung under it rather than over it.
             local hot_row, hot_any, hot_lock, hot_ry = nil, nil, nil, nil;
             for i, r in ipairs(rows) do
-                local ry = py + POPUP_ROW * (i - 1);
+                local ry = py + pitch * (i - 1);
                 -- A row only travels from the kind of NPC the player is
                 -- stood at, so one of another kind is drawn dim and takes
                 -- no hover or press.  Listed rather than dropped: the row
@@ -3471,7 +3582,7 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                 -- hover nor either button: the menu is what the cursor is on.
                 local over = not ui.ctx_hot
                              and mouse_x >= px and mouse_x <= px + w
-                             and mouse_y >= ry and mouse_y < ry + POPUP_ROW;
+                             and mouse_y >= ry and mouse_y < ry + pitch;
                 if (over) then
                     hot_any  = r;
                     hot_ry   = ry;
@@ -3480,43 +3591,46 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
                 -- The gamepad's landing, lit while the pad is what is
                 -- driving the map, the way the favorites widget lights its own
                 -- selection.  Out while the mouse has it, which lights the row
-                -- under the cursor and nothing else.  A row that is both reads
-                -- brighter, the two fills stacking.
-                if (ui.gp_active and i == ui.gp_row) then
-                    light(ry);
-                end
-                if (live and known and over) then
+                -- under the cursor and nothing else.  The pad's row eases in
+                -- the accent's ground and bar and takes no hover on top.
+                local pointed = live and known and over;
+                local chosen  = ui.gp_active and i == ui.gp_row;
+                st.row(pdl, '##ubermap_warps.' .. i, px, ry, w, pitch, chosen, pointed);
+                if (pointed) then
                     hot_row = r;
-                    light(ry);
                 end
                 local tex, iw, ih = icon_texture(WARP_ICON[r.type]);
                 if (tex ~= nil) then
                     -- The art is not square, so fit it into the icon column
                     -- by its own aspect and centre the slack.
-                    local sc = math.min(POPUP_ICON / iw, POPUP_ROW / ih);
+                    local sc = math.min(POPUP_ICON / iw, pitch / ih);
                     local ix = px + POPUP_PAD + (POPUP_ICON - iw * sc) / 2;
-                    local iy = ry + (POPUP_ROW - ih * sc) / 2;
+                    local iy = ry + (pitch - ih * sc) / 2;
                     pdl:AddImage(tonumber(ffi.cast('uint32_t', tex)),
                                  { ix, iy }, { ix + iw * sc, iy + ih * sc },
                                  { 0, 0 }, { 1, 1 },
                                  live and COL_ICON or COL_ICON_OFF);
                 end
-                local ty  = ry + (POPUP_ROW - th) / 2;
-                -- Red first: a destination nobody has registered will not
+                local ty  = ry + (pitch - th) / 2 - st.lift(th);
+                -- Rose first: a destination nobody has registered will not
                 -- travel whether or not it was saved, and that is the thing
-                -- worth knowing.  Then green for a row already on the list, so
+                -- worth knowing.  Then teal for a row already on the list, so
                 -- the panel says what is saved without opening the heart.
                 -- Asked per row per frame like the two tests above it, since a
                 -- Y press on the row underneath can save one while this panel
                 -- is on screen.
-                local col = (not known) and COL_POPUP_LOCK
+                local col = (not known) and st.u32(st.P.rose)
                             or (fav_index(ui.warp.label, r) ~= nil)
-                               and COL_POPUP_FAV
-                            or live and COL_POPUP_TEXT or COL_POPUP_OFF;
+                               and st.u32(st.P.teal)
+                            or live and st.u32(chosen and st.P.white or st.P.text)
+                            or st.u32(st.P.dim);
                 pdl:AddText({ px + lab_x, ty }, col, r.label);
                 if (r.pos ~= nil) then
                     pdl:AddText({ px + pos_x, ty }, col, r.pos);
                 end
+            end
+            if (face_on) then
+                st.pop();
             end
 
             -- An InvisibleButton over the panel takes the press, so it
@@ -3535,7 +3649,7 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
             -- Straight from the panel's own button rather than through
             -- item_tip, which vetoes on this very panel lying over things.
             if (hot_lock ~= nil and not ui.gp_active) then
-                imgui.SetTooltip(hot_lock);
+                st.tooltip(hot_lock);
             end
             -- A click while the right-click menu is up belongs to the menu,
             -- which is drawn after this and reads the same press.  Without
@@ -3556,7 +3670,7 @@ local function draw_warp_popup(origin_x, origin_y, view_w, view_h, mouse_x, mous
             -- so the menu's item and the row it came from are never both under
             -- the same click.
             if (imgui.IsMouseClicked(1) and hot_any ~= nil) then
-                ui.ctx = { x = mouse_x, ry = hot_ry, fresh = true,
+                ui.ctx = { x = mouse_x, ry = hot_ry, row_h = pitch, fresh = true,
                            key = ui.warp.label, row = hot_any };
             end
         end
@@ -3578,22 +3692,34 @@ local function draw_ctx_menu(origin_x, origin_y, view_w, view_h, mouse_x, mouse_
     -- than an ImGui popup: the panels are one InvisibleButton each and have
     -- no per-row item for a popup to hang off.
     if (ui.ctx ~= nil) then
+        local st    = ui.style;
         local cdl   = imgui.GetWindowDrawList();
         local text  = (fav_index(ui.ctx.key, ui.ctx.row) ~= nil)
             and 'Remove point from favorites list'
             or 'Add point to favorites list';
+        -- An ImGui popup's look, drawn by hand: the popup ground and edge,
+        -- its padding, Segoe a step under the rows it hangs off, and the
+        -- item lit in the hover band.
+        local face_on = st.push('text', st.S(st.BODY - 1));
         local tw, th = imgui.CalcTextSize(text);
-        local w = tw + POPUP_PAD * 2;
-        local h = POPUP_ROW;
+        if (face_on) then
+            st.pop();
+        end
+        local pad_x, pad_y = st.S(10), st.S(8);
+        local w = tw + pad_x * 2;
+        local h = th + pad_y * 2;
         -- Hung under the row it was opened on, at the cursor's own column,
         -- and flipped above that row when there is no room below.  Never over
         -- it: a menu lying across the row would put its item and that row
         -- under the one click, which reads as picking both.  ui.ctx.ry is the
         -- row's top, so the two placements are its own pitch either side --
         -- plus POPUP_GAP, the same gap a panel keeps off its marker, so the
-        -- two edges are apart rather than merely not overlapping.
+        -- two edges are apart rather than merely not overlapping.  row_h is
+        -- the pitch of the list that opened it, which grows with the face
+        -- those lists draw in; POPUP_ROW for a caller that does not say.
+        local row_h = ui.ctx.row_h or POPUP_ROW;
         local px = mm.clamp_box(ui.ctx.x, w, origin_x, view_w);
-        local py = ui.ctx.ry + POPUP_ROW + POPUP_GAP;
+        local py = ui.ctx.ry + row_h + POPUP_GAP;
         if (py + h > origin_y + view_h) then
             py = ui.ctx.ry - h - POPUP_GAP;
         end
@@ -3601,10 +3727,8 @@ local function draw_ctx_menu(origin_x, origin_y, view_w, view_h, mouse_x, mouse_
         -- on screen.
         py = mm.clamp_box(py, h, origin_y, view_h);
 
-        cdl:AddRectFilled({ px, py }, { px + w, py + h }, COL_POPUP_BG,
-                          0, ImDrawCornerFlags_All);
-        cdl:AddRect({ px, py }, { px + w, py + h }, COL_OUTLINE,
-                    0, ImDrawCornerFlags_All, ICON_BORDER);
+        st.fill(cdl, px, py, w, h, st.P.popup, st.S(5), 1);
+        st.outline(cdl, px, py, w, h, st.P.border, st.S(5), 1);
         local ctx_hot = mouse_x >= px and mouse_x <= px + w
                         and mouse_y >= py and mouse_y <= py + h;
         -- What everything drawn before this reads next frame to know the
@@ -3614,11 +3738,10 @@ local function draw_ctx_menu(origin_x, origin_y, view_w, view_h, mouse_x, mouse_
         -- menu is one item, so a pad opening it is already on the only thing
         -- there is to pick, and an unlit item would read as nothing to press.
         if (ctx_hot or ui.gp_active) then
-            cdl:AddRectFilled({ px + ICON_BORDER, py + ICON_BORDER },
-                              { px + w - ICON_BORDER, py + h - ICON_BORDER },
-                              COL_HOVER, 0, ImDrawCornerFlags_All);
+            st.fill(cdl, px + st.S(4), py + st.S(4), w - st.S(8), h - st.S(8),
+                    st.P.hover, st.S(3), 1);
         end
-        cdl:AddText({ px + POPUP_PAD, py + (h - th) / 2 }, COL_POPUP_TEXT, text);
+        st.text_mid(cdl, px + pad_x, py + h / 2, text, st.P.text, 'text', st.S(st.BODY - 1));
 
         imgui.SetCursorPos({ px - origin_x, py - origin_y });
         imgui.InvisibleButton('##ubermap_ctx', { w, h });
@@ -3813,18 +3936,17 @@ local function draw_map(view_w, view_h)
         -- marker whose label does not match, which is icon_dim's doing; nothing
         -- is hidden, so the map keeps its shape while a search narrows it.
         local search_x = UI_MARGIN + time_w + TOGGLE_GAP;
-        -- Sized off the row it sits on, text included: Tools scales the whole
-        -- line, and a taller box whose glyphs stayed put would buy only padding.
-        -- The font is a window property, so it goes straight back below -- the
-        -- toggles are drawn on this same row.
+        -- Sized off the row it sits on. Tools scales the whole line, Search W
+        -- the width. The face is Segoe, drawn by the field itself, so the
+        -- window font is left alone for the icons on this row.
         local search_h = imgui.GetFrameHeight() * SEARCH_H_MULT
                          * cfg.scale_tool / 100;
-        imgui.SetWindowFontScale(cfg.scale_tool / 100);
-        imgui.PushStyleVar(ImGuiStyleVar_FramePadding,
-                           { 6, math.max(0, (search_h - imgui.GetFontSize()) / 2) });
+        -- The glyphs fill the box. The pixel size is taken from the bar's
+        -- height, so Tools growing the bar grows the text with it.
+        local search_px = math.max(13, math.floor(search_h * 0.62 + 0.5));
         -- Nudged down by half of what it gives up, so the shorter box sits on
         -- the middle of the row rather than riding its top edge.
-        imgui.SetCursorPos({ search_x, UI_MARGIN + (row_h - search_h) / 2 });
+        local search_y = UI_MARGIN + (row_h - search_h) / 2;
         -- The room the icons after the box need, at the size Tools draws them.
         local tools_w = TOGGLE_GAP * 3
                         + icon_width(WARP_ITEM_ICON, row_h)
@@ -3839,17 +3961,19 @@ local function draw_map(view_w, view_h)
         -- but never into the room the icons beside it need.  Never below the
         -- share it always had, so a large Tools eats its own room, not the box's.
         local base     = math.min(FIELD_W, view_w * 0.35);
+        -- The cog sits in the top-right corner, past the warp icons.  Same
+        -- height as the past/present switch and Multisend: Tools sizes all
+        -- three, and the art's own aspect sets the width.
+        local cog_w = icon_width('cog.png', row_h);
         local search_w = math.min(base * cfg.scale_searchw / 100,
                                   math.max(base, view_w - search_x
-                                                 - tools_w - UI_MARGIN));
-        imgui.SetNextItemWidth(search_w);
+                                                 - tools_w - cog_w - TOGGLE_GAP
+                                                 - UI_MARGIN));
+        imgui.SetCursorPos({ search_x, search_y });
+        local search_sx, search_sy = imgui.GetCursorScreenPos();
         -- Handed the keyboard on the frame after an open, when the setting asks
-        -- for it.  ImGui takes the focus request for the next item drawn, so
-        -- this sits right on top of the box.
-        if (ui.focus_next) then
-            ui.focus_next = false;
-            imgui.SetKeyboardFocusHere();
-        end
+        -- for it.  ImGui takes the focus request for the next item drawn.
+        --
         -- Tab out of the box.  ImGui hands the caret back on its own from any
         -- item it stops being shown, so the box is drawn under a second id for
         -- the one frame that asks for it: same text, same hint, same width, so
@@ -3857,27 +3981,29 @@ local function draw_map(view_w, view_h)
         -- id with the caret gone.  There is no call that drops it outright --
         -- Ashita's ImGui exposes no ClearActiveID -- and handing the focus to a
         -- neighbour instead would leave it sat on the toggle beside the box.
-        imgui.InputTextWithHint(ui.search_blur and '##ubermap_search_tab'
-                                or '##ubermap_search',
-                                'Search', ui.search, FIELD_MAX);
+        local search_focus = ui.focus_next;
+        ui.focus_next = false;
+        local _, search_hot, search_on = ui.style.field(
+            ui.search_blur and '##ubermap_search_tab' or '##ubermap_search',
+            search_sx, search_sy, search_w, search_h,
+            ui.search, FIELD_MAX, 'Search',
+            search_px,
+            search_focus);
         ui.search_blur = false;
-        imgui.PopStyleVar();
-        imgui.SetWindowFontScale(1.0);
         -- Only while the mouse is working the field, the way the editor's rows
-        -- below feed it: IsItemActive stays true for the whole time the caret
-        -- sits in the box, and on its own it would leave the map unable to
-        -- zoom, pan or be clicked for as long as a search was being typed --
-        -- including, with Search Focus On Open ticked, the frame the map
-        -- opens in.  Held mouse included, so dragging a selection across the
-        -- text does not pan.
-        ui.hot = ui.hot or imgui.IsItemHovered()
-                 or (imgui.IsItemActive() and imgui.IsMouseDown(0));
+        -- below feed it: the caret sitting in the box is not enough on its own,
+        -- or the map could not be clicked for as long as a search was being
+        -- typed -- including, with Search Focus On Open ticked, the frame the
+        -- map opens in.  Held mouse included, so dragging a selection across
+        -- the text does not pan.
+        ui.hot = ui.hot or search_hot
+                 or (search_on and imgui.IsMouseDown(0));
         -- The caret being in the box, which is the whole of it rather than the
         -- mouse's share above: the arrows walk the text, Enter and Escape leave
         -- the field, and none of the three are the map's while it is being
         -- typed into -- including, with Search Focus On Open ticked, the frame
         -- the map opens in.
-        ui.kb_typing = ui.kb_typing or imgui.IsItemActive();
+        ui.kb_typing = ui.kb_typing or search_on;
 
         -- Reframed on every change to the text, so narrowing a search closes in
         -- on what is left.  Only on a change: refitting every frame would fight
@@ -3947,29 +4073,45 @@ local function draw_map(view_w, view_h)
             end
         end
 
-        -- Config panel, pinned to the viewport's top-right corner: the face
-        -- pulldown, the Size box, the scale boxes and the four colour pickers,
-        -- one to a row.  ImGui writes into the tables cfg keeps and repack_cols
-        -- turns those back into the words the draw lists take, so the map
-        -- retints as a picker moves; the scales are read straight off cfg, so it
-        -- resizes as an arrow is held.  NoInputs leaves only the swatch, which
-        -- opens the picker on click, and the name ImGui draws beside it labels
-        -- the row.  Widgets stay at ImGui's own frame height rather than the
-        -- toolbar's doubled one: a stacked panel has the room.  Behind
-        -- '/um config' rather than the point editor: recolouring is something a
-        -- player does to their own map, while the editor moves the markers
-        -- everybody gets.
+        -- Settings cog, top-right of the map. The same panel '/um config'
+        -- opens. assets/cog.png, fitted to the toolbar row the way the
+        -- past/present switch and Multisend are, at Multisend's lit opacity
+        -- whether the panel is open or shut.  Missing art draws nothing and
+        -- leaves '/um config' as the way in.
+        if (icon_button('cog', 'cog.png', view_w - UI_MARGIN - cog_w, UI_MARGIN,
+                        row_h, COL_MSS_ON, 'UberMap Settings')) then
+            ui.config = not ui.config;
+        end
+
+        -- Config panel, pinned to the viewport's top-right corner, under the
+        -- cog.  The plate, the type and the controls are Sidekick3's settings
+        -- window's: a title bar with its close mark, teal group headings,
+        -- Segoe labels, a drop-down, sliders, swatches and switches.  The
+        -- map's own labels stay on the face this panel picks.  ImGui writes
+        -- into the tables cfg keeps and repack_cols turns those back into the
+        -- words the draw lists take, so the map retints as a picker moves; the
+        -- scales are read straight off cfg, so it resizes as a knob is
+        -- dragged.  Behind '/um config' rather than the point editor: recolouring
+        -- is something a player does to their own map, while the editor moves
+        -- the markers everybody gets.
         if (ui.config) then
-            local pick_flags = bit.bor(ImGuiColorEditFlags_NoInputs,
-                                       ImGuiColorEditFlags_AlphaBar,
-                                       ImGuiColorEditFlags_AlphaPreview);
+            local st = ui.style;
+            -- The picker's square and hue bar, its alpha bar, and the RGB and
+            -- hex rows under them.  AlphaPreview is ImGui 1.81's; 1.92 shows
+            -- the alpha by default and dropped the name.
+            local pick_flags = bit.bor(ImGuiColorEditFlags_AlphaBar,
+                                       ImGuiColorEditFlags_PickerHueBar,
+                                       ImGuiColorEditFlags_DisplayRGB,
+                                       ImGuiColorEditFlags_DisplayHex,
+                                       rawget(_G, 'ImGuiColorEditFlags_AlphaPreview') or 0);
+            -- The map's own label colours.  (Hover went with the old panels'
+            -- look: every list now lights its rows in the palette's band.)
             local picks = { { 'Text',       cfg.col_text },
                             { 'Outline',    cfg.col_outline },
-                            { 'Background', cfg.col_bg },
-                            { 'Hover',      cfg.col_hover } };
+                            { 'Background', cfg.col_bg } };
             -- The rows that are not about how the map looks, on the end of
-            -- the panel: the name, the box ImGui edits, and the cfg key it
-            -- writes.  The box is built from cfg on the frame it is drawn
+            -- the panel: the name, the box the switch edits, and the cfg key
+            -- it writes.  The box is built from cfg on the frame it is drawn
             -- rather than kept, so a toggle made from '/um' shows here without
             -- anything having to be told about it.
             local checks = { { 'Warp NPC Opens Map',
@@ -3986,89 +4128,120 @@ local function draw_map(view_w, view_h)
                                { cfg.focus }, 'focus' },
                              { 'Hide Uberwarp Chat',
                                { cfg.quiet }, 'quiet' } };
-            -- Every InputInt row: the name it is drawn under, the box ImGui
-            -- edits, the cfg key it writes, and the bounds and steps it takes.
-            -- Size is one of them rather than a case of its own.
+            -- Every slider: the name it is drawn under, the box it edits, the
+            -- cfg key it writes, its bounds, the step a drag lands on, and the
+            -- unit after its value.  Size is one of them rather than a case of
+            -- its own.
             local nums = { { 'Size', ui.font_px, 'font_px',
-                             FONT_PX.min, FONT_PX.max, 1, 4 } };
+                             FONT_PX.min, FONT_PX.max, 1, 'px' } };
             for _, row in ipairs(SCALE.rows) do
                 table.insert(nums, { row[2], ui.scale[row[1]], row[1],
-                                     SCALE.min, SCALE.max, SCALE.step, SCALE.fast });
+                                     SCALE.min, SCALE.max, SCALE.step, '%' });
             end
-            -- The widest row decides the panel's width: an InputInt wants its
-            -- digits and the pair of step buttons ImGui puts on the end of it, a
-            -- swatch is one frame square, and every row carries its name to the
-            -- right of that.
-            local fh      = imgui.GetFrameHeight();
-            -- InputInt spends the width it is given on the field and both
-            -- step buttons, with ImGui's spacing and frame padding coming out
-            -- of the field's share, so the digits are asked for with slack:
-            -- three digits of it, at the widest a box holds -- the scales'
-            -- three, not the Size box's two, which clipped every scale row.
-            local size_w  = fh * 2 + imgui.CalcTextSize('000000');
-            local panel_w = 0;
+
+            -- Sidekick3's settings window, in its unscaled pixels: a 44 title
+            -- bar with the name in semibold at the body size and a 21 close
+            -- box, labels 24 in from the left, controls 18 in from the right,
+            -- rows of 30, and each group's heading 8 under the row before it
+            -- and 26 tall.
+            local title     = 'UberMap Settings';
+            local label_px  = st.S(st.BODY);
+            local title_px  = st.S(st.BODY);
+            local margin_l  = st.S(24);
+            local margin_r  = st.S(18);
+            local line_h    = st.S(30);
+            local title_h   = st.S(44);
+            local close_box = st.S(21);
+            -- The face drop-down fits its longest name the way Sidekick3's
+            -- widget fits its profile's; a slider is Sidekick3's 180; a swatch
+            -- takes the room its widest label could need.
+            local font_w = 0;
+            for _, name in ipairs(FONT_PX.list) do
+                font_w = math.max(font_w, st.measure((name ~= '') and name or FONT_PX.own_name,
+                                                     'text', st.S(st.SMALL + 0.5)));
+            end
+            local pick_w   = math.min(st.S(200), math.max(st.S(110), font_w + st.S(40)));
+            local slider_w = st.S(180);
+            local ctrl_w   = math.max(pick_w, slider_w, st.swatch_width());
+            local label_w = math.max(st.measure('Font', 'text', label_px),
+                                     st.measure('Bold', 'text', label_px));
             for _, num in ipairs(nums) do
-                panel_w = math.max(panel_w,
-                                   size_w + POPUP_PAD + imgui.CalcTextSize(num[1]));
+                label_w = math.max(label_w, st.measure(num[1], 'text', label_px));
             end
             for _, pick in ipairs(picks) do
-                panel_w = math.max(panel_w,
-                                   fh + POPUP_PAD + imgui.CalcTextSize(pick[1]));
+                label_w = math.max(label_w, st.measure(pick[1], 'text', label_px));
             end
-            -- A checkbox is a frame square with its name beside it, the same
-            -- shape as a swatch -- and these names are long enough to be what
-            -- decides the panel's width.
             for _, chk in ipairs(checks) do
-                panel_w = math.max(panel_w,
-                                   fh + POPUP_PAD + imgui.CalcTextSize(chk[1]));
+                label_w = math.max(label_w, st.measure(chk[1], 'text', label_px));
             end
-            -- The pulldown carries no name, so it spends the panel's whole width
-            -- on the face and the arrow ImGui puts on its end -- one frame's
-            -- worth, the same as a swatch.
-            for _, name in ipairs(FONT_PX.list) do
-                panel_w = math.max(panel_w, fh + POPUP_PAD + imgui.CalcTextSize(
-                    (name ~= '') and name or FONT_PX.own_name));
-            end
-            panel_w = panel_w + POPUP_PAD * 2;
-            local pitch   = fh + TOGGLE_GAP;
-            -- The face pulldown, then every numeric row, then the pickers,
-            -- then the checkboxes on the end.
-            local panel_h = pitch * (#picks + #nums + #checks + 1) - TOGGLE_GAP
-                            + POPUP_PAD * 2;
-            local px      = view_w - UI_MARGIN - panel_w;
-            local py      = UI_MARGIN;
-
-            -- Drawn like the warp and favorites panels rather than as a window
-            -- of its own: this one lives inside the map child, and a plate under
-            -- it is what keeps ImGui's own label text off the map art.
-            local ldl = imgui.GetWindowDrawList();
-            ldl:AddRectFilled({ origin_x + px, origin_y + py },
-                              { origin_x + px + panel_w, origin_y + py + panel_h },
-                              COL_POPUP_BG, 0, ImDrawCornerFlags_All);
-            ldl:AddRect({ origin_x + px, origin_y + py },
-                        { origin_x + px + panel_w, origin_y + py + panel_h },
-                        COL_OUTLINE, 0, ImDrawCornerFlags_All, ICON_BORDER);
+            local panel_w = math.max(margin_l + label_w + st.S(18) + ctrl_w + margin_r,
+                                     margin_l + st.measure(title, 'semi', title_px) + st.S(10)
+                                     + close_box + margin_r);
+            -- The title bar and its rule, 10 down to the first heading, the two
+            -- headings, a row each for the face, Bold, and every slider, swatch
+            -- and switch, and 14 under the last.
+            local head_h  = st.S(8) + st.S(26);
+            local panel_h = title_h + 1 + st.S(10) + head_h * 2
+                            + line_h * (2 + #nums + #picks + #checks) + st.S(14);
+            local px = origin_x + view_w - UI_MARGIN - panel_w;
+            -- Under the cog, so that corner control stays the one that toggles
+            -- the panel. The X on the title bar is the other way to close it.
+            local py = origin_y + UI_MARGIN + row_h + st.S(4);
+            local dl = imgui.GetWindowDrawList();
+            st.plate(dl, px, py, panel_w, panel_h);
             -- The panel is a solid block over the map, so the gaps between its
-            -- rows have to swallow a drag as much as the widgets do.  Tested as
-            -- a rect for that reason rather than off any one item.
+            -- rows have to swallow a drag as much as the widgets do.
             ui.hot = ui.hot
-                     or (mouse_x >= origin_x + px
-                         and mouse_x <= origin_x + px + panel_w
-                         and mouse_y >= origin_y + py
-                         and mouse_y <= origin_y + py + panel_h);
+                     or (mouse_x >= px and mouse_x <= px + panel_w
+                         and mouse_y >= py and mouse_y <= py + panel_h);
 
-            local row_x, row_y = px + POPUP_PAD, py + POPUP_PAD;
+            -- A warp list or the right-click menu lying over the panel owns
+            -- the cursor, as it does over a toolbar icon: no close, no band.
+            local veto = ui.warp_hot or ui.ctx_hot;
+            local lx = px + margin_l;
+            local rx = px + panel_w - margin_r;
+            local title_cy = py + title_h / 2;
+            st.title(dl, lx, title_cy, title, title_px);
+            local closed, close_hot = st.close('##ubermap_cfg_x', rx - close_box / 2,
+                                               title_cy, close_box, veto);
+            ui.hot = ui.hot or imgui.IsItemHovered();
+            if (close_hot and not ui.gp_active) then
+                st.tooltip('Close');
+            end
+            if (closed) then
+                ui.config = false;
+            end
+            dl:AddLine({ px, py + title_h }, { px + panel_w, py + title_h },
+                       st.u32(st.P.border), 1);
+            local y = py + title_h + 1 + st.S(10);
 
-            -- Face pulldown, first row of the panel.  No name beside it: the row
-            -- it sits on says what it is, and the panel is narrow enough that a
-            -- name would come out of the pulldown's own width.  Rows are drawn
-            -- in ImGui's own font rather than in the face they name -- previewing
-            -- one means pushing it per row, and the point of this panel is the
-            -- map.
-            imgui.SetCursorPos({ row_x, row_y });
-            imgui.SetNextItemWidth(panel_w - POPUP_PAD * 2);
+            -- A group's heading: teal small capitals and a rule to the right.
+            local function heading(name)
+                y = y + st.S(8);
+                st.heading(dl, lx, y + st.S(12), name, rx - lx);
+                y = y + st.S(26);
+            end
+            -- A row: the hover band while the pointer is on it, and its middle.
+            local function line_at()
+                local top = y;
+                y = y + line_h;
+                if (not veto and imgui.IsWindowHovered()
+                    and mouse_x >= px + st.S(4) and mouse_x < px + panel_w - st.S(4)
+                    and mouse_y >= top and mouse_y < top + line_h) then
+                    st.fill(dl, px + st.S(4), top, panel_w - st.S(8), line_h,
+                            st.P.hover, st.S(3), 0.8);
+                end
+                return top + line_h / 2;
+            end
+
+            -- Face drop-down.  The row is labelled; the closed face names the
+            -- file, with ProggyClean standing in for ImGui's own.
+            heading('Look');
+            local cy = line_at();
+            st.label(dl, lx, cy, 'Font', label_px);
             local shown = (cfg.font ~= '') and cfg.font or FONT_PX.own_name;
-            if (imgui.BeginCombo('##ubermap_font', shown, ImGuiComboFlags_None)) then
+            local open, combo_hot = st.combo('##ubermap_font', rx - pick_w, cy, pick_w,
+                                              shown, function ()
                 for _, name in ipairs(FONT_PX.list) do
                     if (imgui.Selectable(((name ~= '') and name or FONT_PX.own_name)
                                          .. '##ubermap_font_' .. name,
@@ -4077,59 +4250,106 @@ local function draw_map(view_w, view_h)
                         settings.save();
                     end
                 end
-                imgui.EndCombo();
-                -- The list stands outside the panel's rect, so a drag over it
-                -- would pan the map underneath without this.
-                ui.hot = true;
-            end
-            ui.hot = ui.hot or imgui.IsItemActive();
+            end);
+            -- The list stands outside the panel's rect, so a drag over it
+            -- would pan the map underneath without this.
+            ui.hot = ui.hot or open or combo_hot;
 
-            -- The Size box and the scale boxes, stacked under the pulldown.
-            -- The map reads cfg every frame, so a scale takes effect as its
-            -- arrows are held rather than when the panel closes.
-            for i, num in ipairs(nums) do
-                imgui.SetCursorPos({ row_x, row_y + pitch * i });
-                imgui.SetNextItemWidth(size_w);
-                if (imgui.InputInt(num[1] .. '##ubermap_' .. num[3],
-                                   num[2], num[6], num[7])) then
-                    -- Clamped rather than trusted: a box takes a typed
-                    -- number as well as its step buttons, and a zero or a
+            -- Bold, under the face it weights.  Saved on the spot like the
+            -- switches under Options.
+            cy = line_at();
+            st.label(dl, lx, cy, 'Bold', label_px);
+            local bold_on, bold_flip, bold_hot = st.switch(
+                '##ubermap_bold', rx - st.S(32), cy, cfg.bold, veto);
+            ui.hot = ui.hot or bold_hot;
+            if (bold_flip) then
+                cfg.bold = bold_on;
+                settings.save();
+            end
+
+            -- The Size slider and the scale sliders.  The map reads cfg every
+            -- frame, so a scale takes effect as its knob is dragged.
+            for _, num in ipairs(nums) do
+                cy = line_at();
+                st.label(dl, lx, cy, num[1], label_px);
+                local v, changed, typing, hot = st.slider(
+                    '##ubermap_' .. num[3], rx - slider_w, cy, slider_w,
+                    num[2][1], num[4], num[5], num[6], num[7], veto);
+                if (changed) then
+                    -- Clamped rather than trusted: a value clicked open takes
+                    -- a typed number as well as a drag, and a zero or a
                     -- four-digit one is a map with no labels or no markers on
-                    -- it.  Written back so the box shows what was taken.
+                    -- it.  Written back so the slider shows what was taken.
+                    num[2][1] = v;
                     cfg[num[3]] = math.min(math.max(num[2][1], num[4]), num[5]);
                     num[2][1]   = cfg[num[3]];
                     ui.cfg_dirty = true;
                 end
-                -- Held while a box has the keyboard, which is outside the
-                -- panel's own rect once a picker popup is up and so is not
-                -- covered by the test above.  Also what defers the save:
-                -- InputInt reports a change per keystroke, so a number typed a
-                -- digit at a time would be a save per digit.  Only the save --
-                -- cfg takes every keystroke, so a '2' on the way to '24' clamps
-                -- up to the minimum and the map draws at it.
-                ui.cfg_typing = ui.cfg_typing or imgui.IsItemActive();
+                -- Held while a typed number's box has the keyboard, so the
+                -- arrows, Enter and Escape are that box's and not the map's.
+                -- The number lands on Enter, a save as the drag's does.
+                ui.cfg_typing = ui.cfg_typing or typing;
+                ui.hot = ui.hot or hot or typing;
             end
-            ui.hot = ui.hot or ui.cfg_typing;
 
-            for i, pick in ipairs(picks) do
-                imgui.SetCursorPos({ row_x, row_y + pitch * (i + #nums) });
-                if (imgui.ColorEdit4(pick[1], pick[2], pick_flags)) then
-                    -- Repacked on the frame it moved, so the map retints under
-                    -- the picker rather than at the end of the drag.
-                    repack_cols();
-                    ui.cfg_dirty = true;
+            -- A swatch per colour, its hex beside it.  A click opens its
+            -- picker left of the panel, over the map it is recolouring, the
+            -- top level with the row.
+            for _, pick in ipairs(picks) do
+                cy = line_at();
+                st.label(dl, lx, cy, pick[1], label_px);
+                local pid = '##ubermap_pick_' .. pick[1];
+                local picking = imgui.IsPopupOpen(pid) == true;
+                local tapped, swatch_hot = st.swatch(pid .. '_swatch', rx, cy, pick[2], picking);
+                ui.hot = ui.hot or swatch_hot;
+                if (tapped and not veto) then
+                    imgui.OpenPopup(pid);
+                    picking = true;
                 end
-                ui.hot = ui.hot or imgui.IsItemActive();
+                if (picking) then
+                    -- Held inside the view: ImGui leaves a popup placed by
+                    -- hand where it is put, off the bottom or not.  380 is
+                    -- about the picker's height at 230 wide.
+                    local top = math.max(origin_y, math.min(cy - st.S(20),
+                                         origin_y + view_h - st.S(380)));
+                    imgui.SetNextWindowPos({ px - st.S(8), top }, ImGuiCond_Always, { 1, 0 });
+                end
+                local pop_c, pop_v = st.push_popup();
+                if (imgui.BeginPopup(pid)) then
+                    local face_on = st.push('text', st.S(st.SMALL + 1));
+                    imgui.SetNextItemWidth(st.S(230));
+                    if (imgui.ColorPicker4('##ubermap_picker_' .. pick[1],
+                                           pick[2], pick_flags)) then
+                        -- Repacked on the frame it moved, so the map retints
+                        -- under the picker rather than at the end of the drag.
+                        repack_cols();
+                        ui.cfg_dirty = true;
+                    end
+                    if (face_on) then
+                        st.pop();
+                    end
+                    imgui.EndPopup();
+                end
+                st.pop_popup(pop_c, pop_v);
+                -- The picker stands outside the panel's rect, and ImGui counts
+                -- a popup as part of the map window it was opened from, so a
+                -- drag across it would pan the map underneath without this.
+                ui.hot = ui.hot or picking;
             end
 
-            -- The checkboxes, last rows of the panel.  Saved on the spot
-            -- rather than deferred through cfg_dirty like the pickers and the
-            -- boxes: a checkbox reports its change once, not once a frame for
-            -- as long as the mouse is held.
-            for i, chk in ipairs(checks) do
-                imgui.SetCursorPos({ row_x,
-                                     row_y + pitch * (#nums + #picks + i) });
-                if (imgui.Checkbox(chk[1] .. '##ubermap_' .. chk[3], chk[2])) then
+            -- The switches, last rows of the panel.  Saved on the spot rather
+            -- than deferred through cfg_dirty like the pickers and the boxes:
+            -- a switch reports its change once, not once a frame for as long
+            -- as the mouse is held.
+            heading('Options');
+            for _, chk in ipairs(checks) do
+                cy = line_at();
+                st.label(dl, lx, cy, chk[1], label_px);
+                local on, changed, hot = st.switch(
+                    '##ubermap_' .. chk[3], rx - st.S(32), cy, chk[2][1], veto);
+                ui.hot = ui.hot or hot;
+                if (changed) then
+                    chk[2][1] = on;
                     cfg[chk[3]] = chk[2][1];
                     -- Ticking it back on is asking to see it, and a B press
                     -- earlier in this visit is otherwise only cleared by
@@ -4139,7 +4359,6 @@ local function draw_map(view_w, view_h)
                     end
                     settings.save();
                 end
-                ui.hot = ui.hot or imgui.IsItemActive();
             end
             -- The write itself is flushed from d3d_present rather than here, so
             -- a change still reaches the file on the frame the panel or the map
@@ -4193,7 +4412,7 @@ local function draw_map(view_w, view_h)
             local my = math.floor(mm.to_map(mouse_y, ui.pan_y, ui.zoom, origin_y));
             -- Twice the size the rest of the map's text is at, rather than twice
             -- ImGui's own: the readout is a number being read off a map that has
-            -- already been sized, so it follows the Size box up and down.
+            -- already been sized, so it follows the Size slider up and down.
             outlined_text(imgui.GetWindowDrawList(), origin_x + 6, origin_y + view_h - 30,
                           ('%d, %d'):fmt(mx, my), false,
                           ui.font_scale * READOUT_SCALE);
@@ -4236,9 +4455,12 @@ end
 -- load.  Everything after this only ever pushes what was baked here.
 ashita.events.register('load', 'ubermap_load', function ()
     FONT_PX.bake_all();
+    ui.style.bake();
 end);
 
 ashita.events.register('d3d_present', 'ubermap_present', function ()
+    -- Scale and the switch animation, before the widget or the map draws.
+    ui.style.frame();
     local now = os.clock();
     pump_escape(now);
     pump_guide(now);
@@ -4253,11 +4475,10 @@ ashita.events.register('d3d_present', 'ubermap_present', function ()
     ui.ptr_x, ui.ptr_y = px, py;
 
     -- One write per drag rather than one per frame of it: a colour picker
-    -- reports a change on every frame the mouse moves inside it, and the Size
-    -- box does the same for every keystroke typed into it and for as long as a
-    -- step button is held down.  Checked here rather than on the panel, and
-    -- against the frame before it, so a change still lands on the frame the
-    -- panel or the map is closed out from under it.
+    -- reports a change on every frame the mouse moves inside it, and a slider
+    -- does the same for as long as its knob is dragged.  Checked here rather
+    -- than on the panel, and against the frame before it, so a change still
+    -- lands on the frame the panel or the map is closed out from under it.
     if (ui.cfg_dirty and not imgui.IsMouseDown(0) and not ui.cfg_typing) then
         ui.cfg_dirty = false;
         settings.save();
@@ -4271,10 +4492,11 @@ ashita.events.register('d3d_present', 'ubermap_present', function ()
     -- label.  Ahead of the map, and of the readout and labels it draws through
     -- outlined_text.
     --
-    -- A settings file that has never been near the Size box carries zero, which
-    -- stands for the size ImGui's own font already comes out at: there is no
-    -- frame to ask that of until now, so it is answered here and written back
-    -- the first time, and the box opens showing the number rather than a nought.
+    -- A settings file that has never been near the Size slider carries zero,
+    -- which stands for the size ImGui's own font already comes out at: there is
+    -- no frame to ask that of until now, so it is answered here and written
+    -- back the first time, and the slider opens showing the number rather than
+    -- a nought.
     -- Clamped on the way in like every other write to it, or an Ashita
     -- configured with a font outside the bounds would put a number in the box
     -- that the next login silently shrinks.
@@ -4286,8 +4508,8 @@ ashita.events.register('d3d_present', 'ubermap_present', function ()
     end
     -- A picked face is baked at FONT_PX.bake rather than at whatever ImGui's own
     -- font measures, and pushing it is what the scale then multiplies, so the
-    -- divisor has to follow the face or the Size box would mean two different
-    -- things depending on which one is up.
+    -- divisor has to follow the face or the Size slider would mean two
+    -- different things depending on which one is up.
     if (FONT_PX.face()) then base = FONT_PX.bake; end
     ui.font_scale = (base > 0) and (cfg.font_px / base) or 1.0;
 
