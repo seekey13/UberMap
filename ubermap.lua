@@ -1886,7 +1886,8 @@ end
 * in cfg.favs, so a drag inside it still reorders the saved list.  Cancel has
 * no slot and cannot be dragged or dropped on.  A group takes its first
 * member's slot, since that is where it is listed: a row dropped on it lands
-* on the same side of that member the drop put it on the group.
+* on the same side of that member the drop put it on the group.  It carries
+* every member's slot as well, in 'slots', for fw.reorder to drag them by.
 *
 * A group is listed where its first member would have been, and only where two
 * or more share a zone -- one favorite alone in its zone reads as it always has.
@@ -1923,6 +1924,34 @@ function fw.view()
         end
     end
     return view, slot;
+end
+
+--[[
+* fav_reorder for a zone group dragged to the row whose slot is j: every member
+* comes out and goes back in as one run, in the order they were in, beside the
+* favorite at j -- below it when the group came down the list, above it when it
+* went up.  Moving the first member alone would not do: the group is listed at
+* whichever member comes first, so the one after it would take the row over.
+* slots is the group's own, which fw.view builds in ascending order.  Saving
+* is left to the caller, the same as fav_reorder.
+--]]
+function fw.reorder(slots, j)
+    local down = slots[1] < j;
+    local run  = T{ };
+    -- From the back, so taking one out leaves the slots ahead of it alone;
+    -- each one ahead of j shifts j up by one.
+    for k = #slots, 1, -1 do
+        if (slots[k] < j) then
+            j = j - 1;
+        end
+        table.insert(run, 1, table.remove(cfg.favs, slots[k]));
+    end
+    if (down) then
+        j = j + 1;
+    end
+    for k, f in ipairs(run) do
+        table.insert(cfg.favs, j + k - 1, f);
+    end
 end
 
 --[[
@@ -2904,7 +2933,7 @@ end
 *   rows - the list to draw and the slot each row sits in in cfg.favs, as
 *   slot   fav_view hands them back; fav_view itself when not given.  A row
 *          with no slot (Cancel) is never dragged or dropped on, and a zone
-*          group, which carries 'members', is dropped on but never dragged.
+*          group, which carries 'members', drags all of them along with it.
 *   id   - the list's name, for its button and its drags: the widget draws a
 *          zone group's panel beside its own list in the one window.
 *   click- what a click that did not drag does, handed the row's number;
@@ -2976,7 +3005,7 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
         if (over) then
             hot_i, hot_live = i, live and known;
             hot_lock = (not known) and LOCK_TIP[f.type] or nil;
-            hot_fixed = slot(i) == nil or f.members ~= nil;
+            hot_fixed = slot(i) == nil;
         end
         -- The selection, and the row under the cursor -- or while one is
         -- being dragged, the slot the cursor has carried it to rather than the
@@ -3066,7 +3095,13 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
             local j = mm.clamp(
                 math.floor((mouse_y - py) / pitch) + 1, 1, n);
             if (j ~= drag.i and not drag.fixed and slot(j) ~= nil) then
-                fav_reorder(slot(drag.i), slot(j));
+                -- A zone group moves every favorite folded into it.
+                local f = favs[drag.i];
+                if (f.members ~= nil) then
+                    fw.reorder(f.slots, slot(j));
+                else
+                    fav_reorder(slot(drag.i), slot(j));
+                end
                 drag.i, drag.moved = j, true;
             end
         elseif (imgui.IsMouseReleased(0)) then
