@@ -33,12 +33,14 @@ end
 -- the D-pad, either Enter is A and Escape is B.
 local DIK = { up = 0xC8, down = 0xD0, left = 0xCB, right = 0xCD,
               enter = 0x1C, pad_enter = 0x9C, esc = 0x01, u = 0x16, f = 0x21,
-              tab = 0x0F };
+              tab = 0x0F, minus = 0x0C, pad_minus = 0x4A };
 for name, dik in pairs(DIK) do
     check(gp.KEY[dik] ~= nil, ('%s should be one of the addon\'s keys'):format(name));
 end
 check(gp.KEY[DIK.enter] == 'a' and gp.KEY[DIK.pad_enter] == 'a',
       'both Enters should stand for the same action');
+check(gp.KEY[DIK.minus] == 'time' and gp.KEY[DIK.pad_minus] == 'time',
+      'both minuses should stand for the past/present switch');
 
 local ui, favs_n;
 -- The widget's two optional extras: the length of an opened zone group's
@@ -545,6 +547,77 @@ check(ui.fw_sel == 2, ('Escape should land back on the zone\'s row, is %d'):form
 key(DIK.esc, true); key(DIK.esc, false);
 check(not ui.fw_key, 'the Escape after that should hand the arrows back');
 check(not ui.fw_hide, 'and leave the widget up');
+
+-- Minus switches past and present, and only while the map is up and the keys
+-- or the pad are already driving.  It does not wake: with the mouse in charge
+-- it stays a hyphen, and it does not take the slot off a press ahead of it.
+-- Escape still takes the slot off it.  Either minus stands for the switch.
+reset();
+ui.is_open[1] = true;
+check(not key(DIK.minus, true),
+      'minus should be the client\'s until the keys are driving');
+check(not ui.gp_active, 'minus should not wake the keys');
+check(state({ DIK.minus })[DIK.minus] ~= nil,
+      'minus should reach the game until the keys are driving');
+check(ui.gp_act == nil, 'minus should hold nothing until the keys are driving');
+
+reset();
+check(not key(DIK.minus, true), 'minus should be the client\'s with the map shut');
+
+reset();
+ui.is_open[1], ui.gp_ready, ui.gp_active = true, false, true;
+check(not key(DIK.minus, true), 'an undrawn map should leave minus to the client');
+check(ui.gp_act == nil, 'an undrawn map should hold nothing for minus');
+
+reset();
+ui.fw_on, favs_n, ui.fw_key, ui.gp_active = true, 3, true, true;
+check(not key(DIK.minus, true),
+      'minus should be the client\'s at a widget with no map');
+check(ui.fw_sel == 1, 'minus should not step the widget');
+
+reset();
+ui.is_open[1], ui.fw_on, favs_n, ui.fw_key, ui.gp_active = true, true, 3, true, true;
+check(key(DIK.minus, true), 'minus should still be the map\'s with the widget in front');
+check(ui.gp_act == 'time',
+      ('minus should hold the era switch, holds %s'):format(tostring(ui.gp_act)));
+check(ui.fw_sel == 1, 'minus should not step the widget in front of the map');
+key(DIK.minus, false);
+
+for _, field in ipairs({ 'chat', 'kb_typing', 'cfg_typing' }) do
+    reset();
+    ui.is_open[1], ui.gp_active = true, true;
+    ui[field] = (field == 'chat') and 0x11 or true;
+    check(not key(DIK.minus, true),
+          ('minus should be the caret\'s while %s'):format(field));
+    check(state({ DIK.minus })[DIK.minus] ~= nil,
+          ('minus should reach the game while %s'):format(field));
+    check(ui.gp_act == nil, ('minus should hold nothing while %s'):format(field));
+end
+
+reset();
+ui.is_open[1], ui.gp_active = true, true;
+for _, dik in ipairs({ DIK.minus, DIK.pad_minus }) do
+    check(key(dik, true),
+          ('key 0x%02X should be taken with the keys driving'):format(dik));
+    check(ui.gp_act == 'time',
+          ('key 0x%02X should hold the era switch, holds %s'):format(
+              dik, tostring(ui.gp_act)));
+    check(state({ dik })[dik] == nil,
+          ('key 0x%02X should be kept from the game while held'):format(dik));
+    check(key(dik, false),
+          ('key 0x%02X release should follow its press'):format(dik));
+    ui.gp_act = nil;
+end
+
+reset();
+ui.is_open[1], ui.gp_active = true, true;
+key(DIK.up, true); key(DIK.up, false);
+key(DIK.minus, true);
+check(ui.gp_act == 'up', 'minus should not take the slot off the press ahead of it');
+key(DIK.minus, false);
+key(DIK.esc, true);
+check(ui.gp_act == 'b', 'Escape should still take the slot off minus');
+key(DIK.esc, false);
 
 -- An empty widget reads no key at all: it is off screen, and the list the
 -- arrows would walk is not there.

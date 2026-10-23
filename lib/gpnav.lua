@@ -142,40 +142,46 @@ end
 * ---------------------------------------------------------------------------
 --]]
 
--- The favorites widget reads five of the seven buttons below -- up, down, A, B
--- and Y, which swaps it for the full map -- and leaves left and right to the
+-- The favorites widget reads five of the buttons below -- up, down, A, B and
+-- Y, which swaps it for the full map -- and leaves left and right to the
 -- client, since it is a single column and taking them would leave no way to
--- work the NPC's own menu behind it.
+-- work the NPC's own menu behind it.  Select is not one of its buttons.
 --
--- The map reads all seven.  It takes them only while it is on screen, which is
--- a place the player put it rather than one they walked into, so unlike the
--- widget it needs no toggle to justify swallowing them: the map is what a
--- press is for while it is up.  Y is the pad's right-click: on a warp row it
--- opens the same favorites menu the mouse's second button does.
+-- The map reads those seven whenever it is on screen, which is a place the
+-- player put it rather than one they walked into, so unlike the widget it
+-- needs no toggle to justify swallowing them: the map is what a press is for
+-- while it is up.  Y is the pad's right-click: on a warp row it opens the
+-- same favorites menu the mouse's second button does.  Select is the eighth.
+-- Unlike the seven it is read only while the pad is already driving: it is
+-- the past/present switch, and the press that relights the hover is not the
+-- one that should flip the map.
 --
 -- Keyed by the XInput button index Ashita's xinput_button event delivers, so
 -- one lookup answers both questions the handler has: whether the button is
--- read at all, and which of the seven it is.
+-- read at all, and which action it is.
 M.GP = {
     [0]  = 'up',
     [1]  = 'down',
     [2]  = 'left',
     [3]  = 'right',
+    -- Select / Back.  XINPUT_GAMEPAD_BACK, bit 5.
+    [5]  = 'time',
     [12] = 'a',
     [13] = 'b',
     [15] = 'y',
 };
 
 --[[
-* The keyboard's half of the same seven: the arrows are the D-pad, Enter is A
-* and Escape is B, so one set of actions serves both and nav.act needs to know
-* nothing about which hand made the press.
+* The keyboard's half of the same controls: the arrows are the D-pad, Enter is
+* A and Escape is B, so one set of actions serves both and nav.act needs to
+* know nothing about which hand made the press.
 *
 * U is the widget's alone and has no pad twin: the Y press that swaps the
 * widget for the map.  F is read twice over -- at the widget it hands it the
 * arrows, and on the map it is the pad's Y, which opens the favorites menu on
 * the lit warp row.  Tab is the map's alone and has no pad twin either: it
-* moves the keyboard between the map and its own search box.
+* moves the keyboard between the map and its own search box.  Minus is
+* Select's: the past/present switch, on the main keyboard and the numpad.
 *
 * Keyed by DirectInput scan code rather than by virtual key, because that is
 * what the game reads.  The WNDPROC key event carries virtual keys and can be
@@ -193,6 +199,9 @@ M.KEY = {
     [0x01] = 'b',
     [0x16] = 'u',     [0x21] = 'f',
     [0x0F] = 'tab',
+    -- Both minuses.  The past/present switch, and only while the pad or the
+    -- keys are already driving; see M.press.
+    [0x0C] = 'time',  [0x4A] = 'time',
 };
 
 
@@ -259,6 +268,26 @@ function M.press(ui, act, down, h)
 
     if (ui.kb_typing) then
         return false;
+    end
+
+    -- Minus switches past and present.  A hyphen the rest of the time, so it
+    -- is read only while the map is up and the pad or the keys are already
+    -- driving it: the press that relights the hover is not this one.  Ahead
+    -- of the widget, because it is about which map is drawn.  A map open
+    -- behind the widget still switches; with the map shut the key stays the
+    -- client's.  Held for the draw, the same as every other map press.
+    if (act == 'time') then
+        if (not ui.is_open[1] or ui.zoom == nil or not ui.gp_ready
+            or not ui.gp_active) then
+            return false;
+        end
+        if (not down) then
+            return true;
+        end
+        if (ui.gp_act == nil) then
+            ui.gp_act = act;
+        end
+        return true;
     end
 
     -- The addon's own Escape, held down through user32 to back out of an NPC's
@@ -423,7 +452,9 @@ end
 * map itself.  The widget is asked first, so walking up to an NPC puts it in
 * front of a map that is already open and it has to be dismissed before the
 * map answers again.  Every other button, and every button at all outside
-* those two, is the client's.
+* those two, is the client's.  Select is the exception to the widget winning:
+* with the map open behind it, and the pad already driving, Select still
+* switches past and present.
 --]]
 function M.pad(ui, index, state, h)
     local act = M.GP[index];
@@ -445,6 +476,22 @@ function M.pad(ui, index, state, h)
             return true;
         end
         return false;
+    end
+
+    -- Select / Back is the toolbar's past/present switch.  The widget does
+    -- not read it.  It does not wake the pad either: it switches only while
+    -- the map is on screen and the pad is already what is driving it.
+    -- Otherwise it stays the client's, the way Start does.
+    if (act == 'time') then
+        if (not ui.is_open[1] or ui.zoom == nil or not ui.gp_ready
+            or not ui.gp_active) then
+            return false;
+        end
+        ui.pad_held[index] = true;
+        if (ui.gp_act == nil) then
+            ui.gp_act = act;
+        end
+        return true;
     end
 
     -- The widget first, and outright: it is only ever up stood at a warp NPC,

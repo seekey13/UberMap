@@ -76,6 +76,7 @@ end
 -- The widget reads the five that are not left and right.
 check(gp.GP[2] == 'left' and gp.GP[3] == 'right',
       'the two the widget leaves alone should be left and right');
+check(gp.GP[5] == 'time', 'Back should be the past/present switch');
 
 -- Map shut: every one of the seven is the client's, and nothing is held.
 reset();
@@ -249,12 +250,66 @@ button(13, 1); button(13, 0);
 check(ui.fw_hide, 'a second B should put the widget away');
 
 -- Nothing else on the pad is anybody's business: Start, the shoulders and X
--- stay the client's with the map wide open.
+-- stay the client's with the map wide open.  Back is the past/present switch
+-- and is tested on its own below.
 reset();
 ui.is_open[1] = true;
-for _, i in ipairs({ 4, 5, 8, 9, 14 }) do
+for _, i in ipairs({ 4, 8, 9, 14 }) do
     check(not button(i, 1), ('button %d is not the map\'s'):format(i));
 end
+
+-- Back / Select switches era, and only while the map is up and the pad is
+-- already driving.  It does not wake: with the mouse in charge it stays the
+-- client's, and it does not take the slot off a press ahead of it.  B still
+-- takes the slot off it, the same as off any other press.
+reset();
+ui.is_open[1], ui.gp_active = true, false;
+check(not button(5, 1), 'Back should be the client\'s until the pad is driving');
+check(not ui.gp_active, 'Back should not wake the pad');
+check(ui.gp_act == nil, 'Back should hold nothing until the pad is driving');
+
+reset();
+check(not button(5, 1), 'Back should be the client\'s with the map shut');
+
+reset();
+ui.is_open[1], ui.zoom, ui.gp_active = true, nil, true;
+check(not button(5, 1), 'Back should wait until the view is sized');
+
+reset();
+ui.is_open[1], ui.gp_ready, ui.gp_active = true, false, true;
+check(not button(5, 1), 'Back should be the client\'s with the map undrawn');
+
+reset();
+ui.fw_on, favs_n, ui.gp_active = true, 3, true;
+check(not button(5, 1), 'Back should be the client\'s at a widget with no map');
+
+reset();
+ui.is_open[1], ui.fw_on, favs_n = true, true, 3;
+check(button(5, 1), 'Back should still be the map\'s with the widget in front');
+check(ui.gp_act == 'time',
+      ('Back should hold the era switch, holds %s'):format(tostring(ui.gp_act)));
+check(ui.fw_sel == 1, 'Back should not step the widget');
+check(ui.sent == 0, 'Back should send nothing');
+check(button(5, 0), 'the Back release should follow its press');
+check(not button(5, 0), 'Back should only release once');
+
+reset();
+ui.is_open[1] = true;
+check(button(5, 1), 'Back should be taken with the pad driving');
+check(ui.gp_act == 'time',
+      ('Back should hold the era switch, holds %s'):format(tostring(ui.gp_act)));
+check(button(0, 1), 'the D-pad behind Back should be taken');
+check(ui.gp_act == 'time', 'Back should keep the slot from the press behind it');
+button(5, 0);
+button(0, 0);
+
+reset();
+ui.is_open[1] = true;
+check(button(0, 1), 'the D-pad press should be taken');
+check(button(5, 1), 'Back behind it should be taken');
+check(ui.gp_act == 'up', 'Back should not take the slot off the press ahead of it');
+button(13, 1);
+check(ui.gp_act == 'b', 'B should still take the slot off Back');
 
 if (fails == 0) then
     print('ok: the widget wins, Y opens the map, releases follow presses');

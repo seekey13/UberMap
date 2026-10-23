@@ -10,13 +10,14 @@
 *
 * Mouse wheel zooms, left-drag pans, Escape closes.  A controller drives the
 * whole thing too: the D-pad walks the markers, A opens what is under it and B
-* backs out.  /ubermap or /um toggles the map by hand; /um edit turns on the
-* point editor (ctrl+click to place).
+* backs out.  While that pad is already driving, Back (Select) or the minus
+* key switches past and present.  /ubermap or /um toggles the map by hand;
+* /um edit turns on the point editor (ctrl+click to place).
 --]]
 
 addon.name    = 'UberMap';
 addon.author  = 'Seekey';
-addon.version = '1.3';
+addon.version = '1.4';
 addon.desc    = 'Displays the server map, automatically on Home Point interaction.';
 
 require('common');
@@ -2568,6 +2569,15 @@ end
 * ways in share the one way out.
 --]]
 function nav.act(act, view_w, view_h)
+    -- Select, Back, or minus: the toolbar's past/present switch.  Ahead of
+    -- the menus, because it is about which map is drawn.  Held for the end of
+    -- the frame the way a click on the switch is: set_time clears the zoom
+    -- this frame is still drawing.
+    if (act == 'time') then
+        ui.next_time = (ui.time == 'present') and 'past' or 'present';
+        return;
+    end
+
     -- Inside even the warp list: while the favorites menu is up it is what
     -- every press is for, the same way a mouse click anywhere belongs to it
     -- rather than to what it is lying over.  A picks its one item, B and a
@@ -4382,11 +4392,16 @@ local function draw_map(view_w, view_h)
                 imgui.SetNextItemWidth(FIELD_W);
                 imgui.InputTextWithHint('##ubermap_pt_name', 'Name', ui.edit_name, FIELD_MAX);
                 local hot = imgui.IsItemActive() or imgui.IsItemHovered();
+                -- A hyphen in a point's name is a character.  The minus key
+                -- that switches era stays with the field while it has the caret,
+                -- the same way the search box keeps it.
+                ui.kb_typing = ui.kb_typing or imgui.IsItemActive();
 
                 imgui.SetCursorPos({ UI_MARGIN, edit_y + EDIT_ROW });
                 imgui.SetNextItemWidth(FIELD_W);
                 imgui.InputTextWithHint('##ubermap_pt_group', 'Group', ui.edit_group, FIELD_MAX);
                 hot = hot or imgui.IsItemActive() or imgui.IsItemHovered();
+                ui.kb_typing = ui.kb_typing or imgui.IsItemActive();
 
                 if (ui.edit_name[1] ~= ui.sel.label or ui.edit_group[1] ~= ui.sel.group) then
                     ui.sel.label, ui.sel.group = ui.edit_name[1], ui.edit_group[1];
