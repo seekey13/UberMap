@@ -115,9 +115,9 @@ The cog in the map's top-right corner, or `/um config`, opens **UberMap Settings
 
 The switches save the moment they are clicked, rather than on the mouse coming up like the sliders and pickers.
 
-The sliders are Sidekick3's: drag the knob, or click the number beside it to type one and press Enter. The four scale rows are whole percents, 25 to 400; a drag moves them in steps of 5, and any whole percent can be typed. 100 is what the map has always drawn at, which is what a settings file that has never been near them carries.
+Drag a slider's knob, or click the number beside it to type one and press Enter. The four scale rows are whole percents, 25 to 400; a drag moves them in steps of 5, and any whole percent can be typed. 100 is what the map has always drawn at, which is what a settings file that has never been near them carries.
 
-The search box, the config panel, both favorites lists, the warp list and the right-click menu are drawn the way Sidekick3 draws its settings window: VanaCore's palette, Segoe UI, and the same title bar, close mark, headings, rows, sliders, drop-down and switches. Every tooltip uses that palette too. **Font**, **Bold** and **Size** move the text drawn onto the map itself.
+The search box, the config panel, both favorites lists, the warp list, the right-click menu and the tooltips are styled after VanaCore by Vekien. **Font**, **Bold** and **Size** move the text drawn onto the map itself.
 
 Each swatch shows its colour's hex, and how opaque it is when it is not solid. Click one to open its picker beside the panel, over the map: it has an alpha bar, so a colour can be faded rather than only changed, and dragging inside it recolours the map as you go. Dragging anywhere on the panel or a picker does not pan the map underneath.
 

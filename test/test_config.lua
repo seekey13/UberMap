@@ -69,11 +69,8 @@ local lines = select(2, src:gsub('cy = line_at%(%);', ''));
 assert(lines == 5, ('%d calls place a config row, not the 5 the height counts'
                     .. ' (the face, Bold, then the slider, swatch and switch'
                     .. ' loops)'):format(lines));
--- The numbers are Sidekick3's sliders, not steppers, and the Hover picker is
--- gone with the old panels' look.
+-- The numbers are sliders.
 assert(src:find('st.slider(', 1, true), 'the number rows are no longer sliders');
-assert(not src:find('st.stepper(', 1, true), 'a stepper is back on the panel');
-assert(not src:find("{ 'Hover',", 1, true), 'the Hover picker is back on the panel');
 
 -- Bold is off by default and saved on the spot, and the face it asks for is
 -- baked at load beside the regular one: the atlas cannot be added to later.

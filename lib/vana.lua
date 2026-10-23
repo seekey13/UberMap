@@ -1,18 +1,14 @@
 --[[
-* Vanacore look for UberMap's search box, config panel, favorites widget
-* and the warp list hung off a zone point.
+* The look of UberMap's search box, config panel, favorites widget and warp
+* list, styled after VanaCore by Vekien: a dark navy ground, one blue accent,
+* and Segoe UI.
 *
-* The palette and the type are the /vana window's: a dark navy ground, one
-* blue accent, and Segoe UI. Sizes for the panel go through S(), which follows
-* the screen the way that window does. The search box keeps the Tools and
-* Search W scales, and the map's own labels stay on the face the Font row picks.
+* Sizes go through S(), which follows the screen height. The search box keeps
+* the Tools and Search W scales, and the map's own labels stay on the face the
+* Font row picks.
 *
 * Controls are a hit target plus a drawing. ImGui still owns the text field,
 * the colour picker and popup lists, with the palette pushed onto them.
-*
-* Sizes and colours follow Sidekick3's ui/kit.lua and ui/window.lua, which
-* are the /vana window as an Ashita addon draws it: its title bar, close mark,
-* group headings, rows, drop-down, popups and tooltips.
 --]]
 
 local vana = { };
@@ -26,8 +22,8 @@ vana.P = {
     dim = '#7B8095', faint = '#4E536A',
     accent = '#7AA2F7', accent2 = '#A9C1FF', accent_lo = '#3E5CB3',
     accent_bg = '#1B2340',
-    teal = '#5FD3B3', amber = '#E8B45C', rose = '#EE6F78',
-    knob = '#F2F3F8', off = '#2B2F42', seg = '#313752', ink = '#0B1020',
+    teal = '#5FD3B3', rose = '#EE6F78',
+    knob = '#F2F3F8', off = '#2B2F42',
 };
 
 -- Body and small text, in unscaled pixels. S() is what a draw passes.
@@ -162,8 +158,7 @@ function vana.bake()
 end
 
 --[[
-* Once a frame, before anything draws. The screen sets the scale, and a scale
-* change throws out cached measurements.
+* Once a frame, before anything draws. The screen sets the scale.
 --]]
 function vana.frame()
     local h = 1080;
@@ -174,9 +169,6 @@ function vana.frame()
         h = tonumber(io.DisplaySize.y) or h;
     end
     vana.scale_to(h);
-    if (measured_scale ~= scale) then
-        measured, measured_scale, measured_n = { }, scale, 0;
-    end
     tick();
 end
 
@@ -204,16 +196,10 @@ function vana.pop()
     gui().PopFont();
 end
 
-local function text_wh(w, h)
-    if (type(w) == 'table') then
-        return w.x or w[1] or 0, w.y or w[2] or 0;
-    end
-    return w or 0, h or 0;
-end
-
 --[[
-* Width and height of str in face `which` at px. Cached: the same labels are
-* measured every frame.
+* Width and height of str in face `which` at px, measured with the face pushed
+* the way a draw pushes it. Cached: the same labels are measured every frame,
+* and a scale change throws the cache out.
 --]]
 function vana.measure(str, which, px)
     str = tostring(str or '');
@@ -221,26 +207,15 @@ function vana.measure(str, which, px)
     if (measured_scale ~= scale or measured_n > 4000) then
         measured, measured_scale, measured_n = { }, scale, 0;
     end
-    local face = fonts[which];
-    local key = tostring(face) .. '|' .. tostring(px) .. '|' .. str;
+    local key = tostring(fonts[which]) .. '|' .. tostring(px) .. '|' .. str;
     local found = measured[key];
     if (found) then
         return found[1], found[2];
     end
-    local im = gui();
-    local w, h;
-    if (fonts.ready and face and DYNAMIC) then
-        im.PushFont(face, px);
-        w, h = text_wh(im.CalcTextSize(str));
-        im.PopFont();
-    elseif (fonts.ready and face) then
-        -- Baked at 18, and PushFont cannot take a size on this build, so
-        -- AddText draws 18. Measuring 18 is what keeps a label inside its row.
-        im.PushFont(face);
-        w, h = text_wh(im.CalcTextSize(str));
-        im.PopFont();
-    else
-        w, h = text_wh(im.CalcTextSize(str));
+    local pushed = vana.push(which, px);
+    local w, h = gui().CalcTextSize(str);
+    if (pushed) then
+        vana.pop();
     end
     measured[key] = { w, h };
     measured_n = measured_n + 1;
@@ -263,21 +238,21 @@ vana.lift = lift;
 --[[
 * str with its middle on cy. which is a face name ('text', 'semi', ...).
 --]]
-function vana.text_mid(dl, x, cy, str, hex, which, px, alpha)
+function vana.text_mid(dl, x, cy, str, hex, which, px)
     local _, h = vana.measure(str, which, px);
     local y = cy - h / 2 - lift(h);
     local pushed = vana.push(which, px);
-    dl:AddText({ x, y }, vana.u32(hex, alpha), str);
+    dl:AddText({ x, y }, vana.u32(hex), str);
     if (pushed) then
         vana.pop();
     end
 end
 
 --[[
-* Capitals one glyph at a time, spacing pixels apart. Returns the width.
-* dl nil only measures, which is how a heading knows where its rule starts.
+* Capitals one glyph at a time, spacing pixels apart. Returns the width, which
+* is how a heading knows where its rule starts.
 --]]
-function vana.text_spaced(dl, x, cy, str, hex, which, px, spacing, alpha)
+function vana.text_spaced(dl, x, cy, str, hex, which, px, spacing)
     str = tostring(str or '');
     spacing = spacing or 0;
     local start, i, n = x, 1, #str;
@@ -292,9 +267,7 @@ function vana.text_spaced(dl, x, cy, str, hex, which, px, spacing, alpha)
             len = 2;
         end
         local letter = str:sub(i, i + len - 1);
-        if (dl ~= nil) then
-            vana.text_mid(dl, x, cy, letter, hex, which, px, alpha);
-        end
+        vana.text_mid(dl, x, cy, letter, hex, which, px);
         x = x + vana.measure(letter, which, px) + spacing;
         i = i + len;
     end
@@ -304,16 +277,11 @@ function vana.text_spaced(dl, x, cy, str, hex, which, px, spacing, alpha)
     return x - start - spacing;
 end
 
-function vana.fill(dl, x, y, w, h, hex, radius, alpha, corners)
+function vana.fill(dl, x, y, w, h, hex, radius, alpha)
     if (w <= 0 or h <= 0) then
         return;
     end
-    local col = vana.u32(hex, alpha);
-    if (corners == nil) then
-        dl:AddRectFilled({ x, y }, { x + w, y + h }, col, radius or 0);
-    else
-        dl:AddRectFilled({ x, y }, { x + w, y + h }, col, radius or 0, corners);
-    end
+    dl:AddRectFilled({ x, y }, { x + w, y + h }, vana.u32(hex, alpha), radius or 0);
 end
 
 function vana.outline(dl, x, y, w, h, hex, radius, alpha)
@@ -379,11 +347,12 @@ function vana.label(dl, x, cy, str, px)
 end
 
 --[[
-* A chevron or a close mark, px pixels across, centred on cx, cy.
+* A chevron ('right' or 'down') or a close mark, px pixels across, centred on
+* cx, cy.
 --]]
-function vana.glyph(dl, kind, cx, cy, hex, px, alpha)
+function vana.glyph(dl, kind, cx, cy, hex, px)
     local k = (px or 11) / 24;
-    local col = vana.u32(hex, alpha);
+    local col = vana.u32(hex);
     local thickness = math.max(1, 2 * k);
     local function p(px_, py)
         return { cx + (px_ - 12) * k, cy + (py - 12) * k };
@@ -391,12 +360,6 @@ function vana.glyph(dl, kind, cx, cy, hex, px, alpha)
     if (kind == 'right') then
         dl:AddLine(p(9, 5), p(16, 12), col, thickness);
         dl:AddLine(p(16, 12), p(9, 19), col, thickness);
-    elseif (kind == 'left') then
-        dl:AddLine(p(15, 5), p(8, 12), col, thickness);
-        dl:AddLine(p(8, 12), p(15, 19), col, thickness);
-    elseif (kind == 'up') then
-        dl:AddLine(p(5, 15), p(12, 8), col, thickness);
-        dl:AddLine(p(12, 8), p(19, 15), col, thickness);
     elseif (kind == 'close') then
         dl:AddLine(p(6, 6), p(18, 18), col, thickness);
         dl:AddLine(p(18, 6), p(6, 18), col, thickness);
@@ -733,14 +696,6 @@ end
 
 local numbers = { };  -- a slider's id -> its typed number's text ({ s }), while that box is open
 
-local function mouse_x(im)
-    local mx = im.GetMousePos();
-    if (type(mx) == 'table') then
-        mx = mx.x or mx[1];
-    end
-    return tonumber(mx) or 0;
-end
-
 --[[
 * The number typed in slider id's box, once Enter is pressed; nil until then.
 * Escape or a click away shuts the box and types nothing.  ImGui itself only
@@ -806,7 +761,7 @@ function vana.slider(id, x, cy, w, value, minv, maxv, step, unit, veto)
     local dragging = (im.IsItemActive() and not veto) and true or false;
     local changed = false;
     if (dragging) then
-        local f = math.max(0, math.min(1, (mouse_x(im) - x) / track));
+        local f = math.max(0, math.min(1, (im.GetMousePos() - x) / track));
         local v = minv + (maxv - minv) * f;
         v = held(minv + math.floor((v - minv) / step + 0.5) * step);
         if (v ~= value) then
