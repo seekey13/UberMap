@@ -35,6 +35,9 @@ vana.BODY  = 16;
 vana.SMALL = 13.5;
 
 local DYNAMIC = (tonumber(IMGUI_VERSION_NUM) or 0) >= 19200;
+-- The pixel size Segoe is baked at, and so what a build that is not DYNAMIC
+-- draws it at whatever size is asked for.
+local BAKE = 18;
 
 local function gui()
     return require('imgui');
@@ -141,7 +144,7 @@ function vana.bake()
             return nil;
         end
         handle:close();
-        local ok, face = pcall(im.AddFontFromFileTTF, path, 18);
+        local ok, face = pcall(im.AddFontFromFileTTF, path, BAKE);
         if (ok and face) then
             return face;
         end
@@ -154,7 +157,6 @@ function vana.bake()
     local semi = add('seguisb.ttf') or text;
     fonts.text = text;
     fonts.semi = semi;
-    fonts.bold_italic = add('segoeuiz.ttf') or semi;
     fonts.semi_italic = add('seguisbi.ttf') or semi;
     fonts.ready = true;
 end
@@ -441,6 +443,14 @@ function vana.field(id, x, y, w, h, buf, max, hint, font_px, focus)
     local xw = show_x and math.floor(h * 0.9) or 0;
     local pad = math.max(8, math.floor(h * 0.28 + 0.5));
     local pushed = vana.push('text', font_px);
+    -- A build that cannot push a face at a size draws it at BAKE, so the
+    -- window's font scale makes up the rest, the way the map's own labels
+    -- reach theirs: font_px follows Tools, and the text has to as well.
+    -- ImGui's own font, where Segoe would not load, goes by the same ratio.
+    -- Put back before the icons on the row draw.
+    if (not DYNAMIC) then
+        im.SetWindowFontScale(font_px / BAKE);
+    end
     local text_h = font_px;
     local ok_sz, sz = pcall(im.GetFontSize);
     if (ok_sz and sz and sz > 0) then
@@ -465,6 +475,9 @@ function vana.field(id, x, y, w, h, buf, max, hint, font_px, focus)
     local active = im.IsItemActive();
     im.PopStyleVar(2);
     im.PopStyleColor(5);
+    if (not DYNAMIC) then
+        im.SetWindowFontScale(1.0);
+    end
     if (pushed) then
         vana.pop();
     end
@@ -730,7 +743,9 @@ end
 
 --[[
 * The number typed in slider id's box, once Enter is pressed; nil until then.
-* Escape or a click away shuts the box and types nothing.
+* Escape or a click away shuts the box and types nothing.  ImGui itself only
+* takes the caret out on Escape and leaves the box up, and an open box is what
+* the map counts as typing, so its keys would stay the game's until a click.
 --]]
 local function number_box(id, minv, maxv)
     local im = gui();
@@ -750,7 +765,10 @@ local function number_box(id, minv, maxv)
         if (im.InputText('##' .. id .. '.typed', buf, 16, flags)) then
             typed = tonumber(buf[1]);
             im.CloseCurrentPopup();
+        elseif (buf.caret and not im.IsItemActive()) then
+            im.CloseCurrentPopup();
         end
+        buf.caret = im.IsItemActive();
         im.PopItemWidth();
         im.TextDisabled(string.format('%d to %d', minv, maxv));
         if (pushed) then

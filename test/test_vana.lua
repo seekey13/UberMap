@@ -105,16 +105,23 @@ local function reset()
 end
 local active, mouse = false, 0;
 local input = { };  -- InputText's answer: { text typed, Enter pressed }
+-- IsItemActive answers for the item drawn last: a button is held while
+-- active is, a number box's field has the caret while caret is.
+local caret, last = false, nil;
 package.loaded['imgui'] = {
     GetIO = function () return { DisplaySize = { x = 2560, y = 1440 } }; end,
-    IsItemActive = function () return active; end,
+    IsItemActive = function ()
+        if (last == 'input') then return caret; end
+        return active;
+    end,
     GetMousePos = function () return mouse, 0; end,
     SetKeyboardFocusHere = function () end,
     PushItemWidth = function () end,
     PopItemWidth = function () end,
     TextDisabled = function () end,
-    CloseCurrentPopup = function () end,
+    CloseCurrentPopup = function () seen.closed = true; end,
     InputText = function (_, buf)
+        last = 'input';
         if (input[1] ~= nil) then buf[1] = input[1]; end
         return input[2] == true;
     end,
@@ -128,7 +135,11 @@ package.loaded['imgui'] = {
     GetFontSize = function () return 16; end,
     GetWindowDrawList = function () return dl; end,
     SetCursorScreenPos = function (p) seen.cursor = p; end,
-    InvisibleButton = function (_, size) seen.button = size; return click; end,
+    InvisibleButton = function (_, size)
+        last = 'button';
+        seen.button = size;
+        return click;
+    end,
     IsItemHovered = function () return hovered; end,
     IsPopupOpen = function (id) return open[id] == true; end,
     OpenPopup = function (id) open[id] = true; end,
@@ -137,6 +148,12 @@ package.loaded['imgui'] = {
     SetNextWindowPos = function (p) seen.next_pos = p; end,
     SetNextWindowSizeConstraints = function (a, b) seen.limits = { a, b }; end,
     SetTooltip = function (s) seen.tip = s; end,
+    SetNextItemWidth = function () end,
+    InputTextWithHint = function () last = 'input'; return false; end,
+    SetWindowFontScale = function (s)
+        seen.scales = seen.scales or { };
+        seen.scales[#seen.scales + 1] = s;
+    end,
 };
 local function balanced(what)
     same(depth.color, 0, what .. ': style colours left pushed');
@@ -279,6 +296,31 @@ open = { };
 local shut_moved, shut_typing = select(2, vana.slider('##s2', 100, 50, S(180), v, 25, 400, 5, '%'));
 assert(not shut_typing and not shut_moved, 'a shut box still has the keyboard');
 balanced('slider typing');
+
+-- Escape, or a click off the field, takes the caret out with no Enter.  ImGui
+-- would leave the box up with no caret in it, and an open box is typing to the
+-- map, so the box shuts itself rather than keep the map's keys from it.
+reset();
+click = true;
+vana.slider('##s3', 100, 50, S(180), 100, 25, 400, 5, '%');
+click, caret = false, true;
+local _, _, caret_typing = vana.slider('##s3', 100, 50, S(180), 100, 25, 400, 5, '%');
+assert(caret_typing and not seen.closed, 'a box with the caret in it shut');
+caret = false;
+local esc_v, esc_moved = vana.slider('##s3', 100, 50, S(180), 100, 25, 400, 5, '%');
+assert(seen.closed, 'a box that lost its caret without an Enter stayed up');
+assert(esc_v == 100 and not esc_moved, 'a box that lost its caret typed a number');
+open = { };
+balanced('slider escape');
+
+-- The search box, on a build that cannot push a face at a size, which this
+-- stand-in is: the window's font scale takes the text from the size Segoe is
+-- baked at to the one asked for, so Tools still sizes it, and is put back.
+reset();
+vana.field('##q', 0, 0, 300, 40, { 'jeuno' }, 64, 'Search', 36, false);
+same(seen.scales and seen.scales[1], 2, 'the search text scale for 36px');
+same(seen.scales[#seen.scales], 1, 'the window font scale put back');
+balanced('field');
 
 print('ok: palette, scale clamps, the search, config and widget draw with them,'
       .. ' and the controls are Sidekick3\'s and leave ImGui balanced');

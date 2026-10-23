@@ -1885,9 +1885,10 @@ end
 * Handed back the way fav_view hands its rows back, with the slot each sits in
 * in cfg.favs, so a drag inside it still reorders the saved list.  Cancel has
 * no slot and cannot be dragged or dropped on.  A group takes its first
-* member's slot, since that is where it is listed: a row dropped on it lands
-* on the same side of that member the drop put it on the group.  It carries
-* every member's slot as well, in 'slots', for fw.reorder to drag them by.
+* member's slot, since that is where it is listed: a row dropped on it from
+* below lands above that member, and one dropped on it from above lands below
+* the zone, by fw.drop_slot.  It carries every member's slot as well, in
+* 'slots', for fw.reorder to drag them by.
 *
 * A group is listed where its first member would have been, and only where two
 * or more share a zone -- one favorite alone in its zone reads as it always has.
@@ -1952,6 +1953,24 @@ function fw.reorder(slots, j)
     for k, f in ipairs(run) do
         table.insert(cfg.favs, j + k - 1, f);
     end
+end
+
+--[[
+* Where a row dragged down onto zone group g lands: below its last member
+* saved before stop, the slot of the row listed under the group, or nil when
+* none is.  Below the first member alone would split the zone's favorites in
+* cfg.favs, which the heart's list and a widget without grouping list one by
+* one.  A member saved past stop is in the group all the same, but landing
+* below it would carry the row past the one under the group as well.
+--]]
+function fw.drop_slot(g, stop)
+    local to = g.slots[1];
+    for _, s in ipairs(g.slots) do
+        if (stop == nil or s < stop) then
+            to = s;
+        end
+    end
+    return to;
 end
 
 --[[
@@ -2089,23 +2108,27 @@ local function outlined_text(dl, x, y, text, dim, scale)
     local face = FONT_PX.face();
     if (face) then imgui.PushFont(face); end
     imgui.SetWindowFontScale(scale or ui.font_scale);
+    -- Bold on a face with no bold cut to draw it in: a second stroke one
+    -- pixel over is the weight.  The plate widens to it, and each stroke is
+    -- stamped round, or the second would cover the first's right-hand stamp
+    -- and leave the text with no outline down that side.
+    local bold = FONT_PX.fake_bold() and 1 or 0;
     local bg = dim and COL_BG_DIM or COL_BG;
     if (bg >= 0x1000000) then
         local tw, th = imgui.CalcTextSize(text);
         dl:AddRectFilled({ x - BG_PAD, y - BG_PAD },
-                         { x + tw + BG_PAD, y + th + BG_PAD },
+                         { x + tw + bold + BG_PAD, y + th + BG_PAD },
                          bg, 0, ImDrawCornerFlags_All);
     end
     local stamp = dim and COL_STAMP_DIM or COL_STAMP;
     for _, o in ipairs({ { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 } }) do
-        dl:AddText({ x + o[1], y + o[2] }, stamp, text);
+        for b = 0, bold do
+            dl:AddText({ x + b + o[1], y + o[2] }, stamp, text);
+        end
     end
     local col = dim and COL_TEXT_DIM or COL_TEXT;
-    dl:AddText({ x, y }, col, text);
-    -- Bold on a face with no bold cut to draw it in: a second stroke one
-    -- pixel over is the weight.
-    if (FONT_PX.fake_bold()) then
-        dl:AddText({ x + 1, y }, col, text);
+    for b = 0, bold do
+        dl:AddText({ x + b, y }, col, text);
     end
     imgui.SetWindowFontScale(1.0);
     if (face) then imgui.PopFont(); end
@@ -3095,12 +3118,18 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
             local j = mm.clamp(
                 math.floor((mouse_y - py) / pitch) + 1, 1, n);
             if (j ~= drag.i and not drag.fixed and slot(j) ~= nil) then
+                -- Down onto a zone group lands below the whole zone; up onto
+                -- one lands above its first member, which is above all of it.
+                local to = slot(j);
+                if (j > drag.i and favs[j].members ~= nil) then
+                    to = fw.drop_slot(favs[j], slot(j + 1));
+                end
                 -- A zone group moves every favorite folded into it.
                 local f = favs[drag.i];
                 if (f.members ~= nil) then
-                    fw.reorder(f.slots, slot(j));
+                    fw.reorder(f.slots, to);
                 else
-                    fav_reorder(slot(drag.i), slot(j));
+                    fav_reorder(slot(drag.i), to);
                 end
                 drag.i, drag.moved = j, true;
             end
@@ -3686,8 +3715,8 @@ local function draw_ctx_menu(origin_x, origin_y, view_w, view_h, mouse_x, mouse_
         -- row's top, so the two placements are its own pitch either side --
         -- plus POPUP_GAP, the same gap a panel keeps off its marker, so the
         -- two edges are apart rather than merely not overlapping.  row_h is
-        -- the warp list's pitch when that list opened it; the heart's rows
-        -- are POPUP_ROW and leave it unset.
+        -- the pitch of the list that opened it, which grows with the face
+        -- those lists draw in; POPUP_ROW for a caller that does not say.
         local row_h = ui.ctx.row_h or POPUP_ROW;
         local px = mm.clamp_box(ui.ctx.x, w, origin_x, view_w);
         local py = ui.ctx.ry + row_h + POPUP_GAP;

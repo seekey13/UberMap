@@ -248,27 +248,34 @@ check(ui.fw_sel == 2,
 --[[
 * A zone group dragged in the widget's list: fw.reorder, lifted the same way,
 * moves every member as one run so the group lands on the row it was dragged
-* to.  drag() is draw_fav_list's branch -- a group by its members' slots, a
+* to.  drag() is draw_fav_list's branch -- the slot it lands by, fw.drop_slot's
+* when it comes down onto a group, then a group by its members' slots and a
 * lone row by its own.
 --]]
-local rbody = src:match('\n(function fw%.reorder%(.-\nend)\n');
-check(rbody ~= nil, 'fw.reorder is no longer written as one function');
 env.table = table;
-local rchunk;
-if (setfenv ~= nil) then
-    rchunk = assert(loadstring(rbody or ''));
-    setfenv(rchunk, env);
-else
-    rchunk = assert(load(rbody or '', 'fw.reorder', 't', env));
+for _, name in ipairs({ 'reorder', 'drop_slot' }) do
+    local rbody = src:match('\n(function fw%.' .. name .. '%(.-\nend)\n');
+    check(rbody ~= nil, 'fw.' .. name .. ' is no longer written as one function');
+    local rchunk;
+    if (setfenv ~= nil) then
+        rchunk = assert(loadstring(rbody or ''));
+        setfenv(rchunk, env);
+    else
+        rchunk = assert(load(rbody or '', 'fw.' .. name, 't', env));
+    end
+    rchunk();
 end
-rchunk();
 
 local function drag(i, j)
     local dv, ds = fw.view();
+    local to = ds[j];
+    if (j > i and dv[j].members ~= nil) then
+        to = fw.drop_slot(dv[j], ds[j + 1]);
+    end
     if (dv[i].members ~= nil) then
-        fw.reorder(dv[i].slots, ds[j]);
+        fw.reorder(dv[i].slots, to);
     else
-        reorder(ds[i], ds[j]);
+        reorder(ds[i], to);
     end
 end
 -- The zones the widget lists, top to bottom, a group read as its zone.
@@ -343,6 +350,27 @@ check(zones() == 'Port Jeuno, Lower Jeuno',
 check(saved[1] == QI and saved[2] == PJ and saved[3] == LJ1 and saved[4] == LJ2,
       'the row of another kind should keep its place');
 env.fav_view = all_view;
+
+-- Down onto a zone group lands below the whole zone, a lone row and a group
+-- alike.  Below its first member alone the widget would read the same, and
+-- the heart's list, which shows the saved list row by row, the zone split.
+refill({ WW1, WW2, LJ1, LJ2 });
+drag(1, 2);
+check(saved[1] == LJ1 and saved[2] == LJ2 and saved[3] == WW1 and saved[4] == WW2,
+      'a group dropped down onto a group should land below all of it');
+refill({ PJ, LJ1, LJ2 });
+drag(1, 2);
+check(saved[1] == LJ1 and saved[2] == LJ2 and saved[3] == PJ,
+      'a row dropped down onto a group should land below all of it');
+-- A member saved past the row listed under the group is in the group all the
+-- same, but the drop stops short of it: below it is below that row too.
+refill({ PJ, LJ1, PB, LJ2 });
+drag(1, 2);
+check(zones() == 'Lower Jeuno, Port Jeuno, Port Bastok',
+      'a row dropped onto a split group should land right under it, lists '
+      .. zones());
+check(saved[1] == LJ1 and saved[2] == PJ and saved[3] == PB and saved[4] == LJ2,
+      'a row dropped onto a split group should not pass the row under it');
 
 -- The panel is drawn at the group's row, which moves when its first member
 -- does.  A drag holds the panel where it started so the next frame cannot
