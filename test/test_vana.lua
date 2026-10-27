@@ -1,5 +1,5 @@
 --[[
-* Self-check for the Vanacore palette and scale, and for the four surfaces
+* Self-check for the VanaCore palette and scale, and for the four surfaces
 * that draw with them.  Run with any Lua 5.1+ / LuaJIT, from the addon root:
 *     lua test/test_vana.lua
 *
@@ -44,8 +44,8 @@ local tokens = {
     dim = '#7B8095', faint = '#4E536A',
     accent = '#7AA2F7', accent2 = '#A9C1FF', accent_lo = '#3E5CB3',
     accent_bg = '#1B2340',
-    teal = '#5FD3B3', amber = '#E8B45C', rose = '#EE6F78',
-    knob = '#F2F3F8', off = '#2B2F42', seg = '#313752', ink = '#0B1020',
+    teal = '#5FD3B3', rose = '#EE6F78',
+    knob = '#F2F3F8', off = '#2B2F42',
 };
 for name, hex in pairs(tokens) do
     same(vana.P[name], hex, name);
@@ -75,7 +75,7 @@ for _, needle in ipairs({
     assert(src:find(needle, 1, true), 'ubermap.lua is missing ' .. needle);
 end
 -- Every tooltip goes through the palette's: a bare SetTooltip is ImGui's grey
--- box in a window that is otherwise Sidekick3's.
+-- box in a window that is otherwise VanaCore's.
 assert(not src:find('imgui.SetTooltip(', 1, true),
        'ubermap.lua calls SetTooltip directly instead of through ui.style.tooltip');
 
@@ -88,7 +88,7 @@ same(adds, 1, 'AddFontFromFileTTF in ubermap.lua');
 * The controls, drawn against a stand-in ImGui.  What it records is what
 * matters in game: every style colour, style var and font pushed is popped
 * (ImGui asserts on an unbalanced stack), and the sizes and colours are
-* Sidekick3's.
+* VanaCore's.
 --]]
 local depth = { color = 0, var = 0, font = 0 };
 local seen = { };
@@ -164,7 +164,7 @@ end
 vana.frame();  -- 1440 tall: S(n) is n * 1.1
 local S = vana.S;
 
--- Sidekick3's popup style: ten colours and six vars, and they come back off.
+-- The popup style: ten colours and six vars, and they come back off.
 local nc, nv = vana.push_popup();
 same(nc, 10, 'popup colours');
 same(nv, 6, 'popup vars');
@@ -200,13 +200,14 @@ assert(not clicked and not hot, 'a vetoed close mark still takes the click');
 hovered, click = false, false;
 
 -- The group heading: teal capitals, then a teal rule at 0.35 from 10 after them.
+-- The stand-in measures every glyph 7 wide, so 'LOOK' is four of them and the
+-- three gaps between.
 reset();
 vana.heading(dl, 10, 50, 'Look', 300);
 same(dl.texts[1].s, 'L', 'heading capitals');
 same(dl.lines[1].col, vana.u32(vana.P.teal, 0.35), 'heading rule colour');
 same(dl.lines[1].b[1], 310, 'heading rule end');
-local tw = vana.text_spaced(nil, 0, 0, 'LOOK', nil, 'semi_italic', S(vana.SMALL),
-                            math.max(1, S(1.2)));
+local tw = 4 * 7 + 3 * math.max(1, S(1.2));
 same(dl.lines[1].a[1], 10 + tw + S(10), 'heading rule start');
 
 -- The shadow: a pixel past the panel either side, two below, none above.
@@ -256,7 +257,7 @@ reset();
 vana.row(dl, 'r3', 0, 0, 200, 30, false, false);
 same(#dl.rects, 0, 'a plain row draws a ground');
 
--- The slider: Sidekick3's 180, so a track of 180 - 52 - 10 from x.  A drag
+-- The slider: 180 wide, so a track of 180 - 52 - 10 from x.  A drag
 -- lands on the steps up from the minimum; a typed number lands as a whole
 -- one, step or not, on Enter.
 local track = S(180) - S(52) - S(10);
@@ -323,4 +324,4 @@ same(seen.scales[#seen.scales], 1, 'the window font scale put back');
 balanced('field');
 
 print('ok: palette, scale clamps, the search, config and widget draw with them,'
-      .. ' and the controls are Sidekick3\'s and leave ImGui balanced');
+      .. ' and the controls are VanaCore\'s and leave ImGui balanced');

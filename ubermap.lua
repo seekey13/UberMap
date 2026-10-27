@@ -10,13 +10,16 @@
 *
 * Mouse wheel zooms, left-drag pans, Escape closes.  A controller drives the
 * whole thing too: the D-pad walks the markers, A opens what is under it and B
-* backs out.  /ubermap or /um toggles the map by hand; /um edit turns on the
-* point editor (ctrl+click to place).
+* backs out.  While that pad is already driving, Back (Select) or the minus
+* key switches past and present.  /ubermap or /um toggles the map by hand;
+* /um edit turns on the point editor (ctrl+click to place).
+*
+* The panels and controls are styled after VanaCore by Vekien (lib/vana.lua).
 --]]
 
 addon.name    = 'UberMap';
 addon.author  = 'Seekey';
-addon.version = '1.3';
+addon.version = '1.4';
 addon.desc    = 'Displays the server map, automatically on Home Point interaction.';
 
 require('common');
@@ -2568,6 +2571,15 @@ end
 * ways in share the one way out.
 --]]
 function nav.act(act, view_w, view_h)
+    -- Select, Back, or minus: the toolbar's past/present switch.  Ahead of
+    -- the menus, because it is about which map is drawn.  Held for the end of
+    -- the frame the way a click on the switch is: set_time clears the zoom
+    -- this frame is still drawing.
+    if (act == 'time') then
+        ui.next_time = (ui.time == 'present') and 'past' or 'present';
+        return;
+    end
+
     -- Inside even the warp list: while the favorites menu is up it is what
     -- every press is for, the same way a mouse click anywhere belongs to it
     -- rather than to what it is lying over.  A picks its one item, B and a
@@ -2976,9 +2988,9 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
     local pitch   = m.pitch or POPUP_ROW;
     local st      = ui.style;
 
-    -- The Vanacore plate.  The widget's window is the list's own size, so its
-    -- shadow goes on the background list or the window would clip it away;
-    -- the heart's lies on the map it is drawn in.
+    -- The plate.  The widget's window is the list's own size, so its shadow
+    -- goes on the background list or the window would clip it away; the
+    -- heart's lies on the map it is drawn in.
     st.shadow(px, py, w, h, (not opts.clipped) and dl or nil);
     st.fill(dl, px, py, w, h, st.P.bg, st.S(5), 1);
     st.outline(dl, px, py, w, h, st.P.border, st.S(5), 1);
@@ -3324,9 +3336,8 @@ local function draw_fav_widget()
     -- there as the two-argument Begin and throws the flags away, which puts
     -- back the title bar and the resize grip this is meant to be without.
     if (imgui.Begin('UberMap Favorites##ubermap_fw', true, flags)) then
-        -- The same rows as the heart's list, in the Vanacore plate: navy
-        -- ground, Segoe, an accent stripe on the pad's row.  No empty text,
-        -- since a list with nothing in it took the widget down above.
+        -- The same rows as the heart's list.  No empty text, since a list
+        -- with nothing in it took the widget down above.
         local m = fav_metrics(rows, pitch);
         local mouse_x, mouse_y = imgui.GetMousePos();
         local px, py = imgui.GetCursorScreenPos();
@@ -3446,11 +3457,9 @@ local function draw_favs(origin_x, origin_y, view_w, view_h, mouse_x, mouse_y, r
     end
 
     if (ui.favs_open) then
-        -- The list the widget also puts up, drawn over the map in the same
-        -- Vanacore plate and Segoe: the panel is the frame around it, and
-        -- everything inside -- rows, hover, drag to reorder, click to travel
-        -- -- is draw_fav_list's.  The face is popped before the menu below,
-        -- which sets its own.
+        -- The list the widget also puts up, drawn over the map: rows, hover,
+        -- drag to reorder and click to travel are all draw_fav_list's.  The
+        -- face is popped before the menu below, which sets its own.
         local st      = ui.style;
         local font_px = st.S(st.BODY);
         local pitch   = math.max(POPUP_ROW, font_px + st.S(8));
@@ -4084,10 +4093,8 @@ local function draw_map(view_w, view_h)
         end
 
         -- Config panel, pinned to the viewport's top-right corner, under the
-        -- cog.  The plate, the type and the controls are Sidekick3's settings
-        -- window's: a title bar with its close mark, teal group headings,
-        -- Segoe labels, a drop-down, sliders, swatches and switches.  The
-        -- map's own labels stay on the face this panel picks.  ImGui writes
+        -- cog, laid out the way VanaCore lays out its settings.  The map's
+        -- own labels stay on the face this panel picks.  ImGui writes
         -- into the tables cfg keeps and repack_cols turns those back into the
         -- words the draw lists take, so the map retints as a picker moves; the
         -- scales are read straight off cfg, so it resizes as a knob is
@@ -4104,8 +4111,7 @@ local function draw_map(view_w, view_h)
                                        ImGuiColorEditFlags_DisplayRGB,
                                        ImGuiColorEditFlags_DisplayHex,
                                        rawget(_G, 'ImGuiColorEditFlags_AlphaPreview') or 0);
-            -- The map's own label colours.  (Hover went with the old panels'
-            -- look: every list now lights its rows in the palette's band.)
+            -- The map's own label colours.
             local picks = { { 'Text',       cfg.col_text },
                             { 'Outline',    cfg.col_outline },
                             { 'Background', cfg.col_bg } };
@@ -4139,11 +4145,9 @@ local function draw_map(view_w, view_h)
                                      SCALE.min, SCALE.max, SCALE.step, '%' });
             end
 
-            -- Sidekick3's settings window, in its unscaled pixels: a 44 title
-            -- bar with the name in semibold at the body size and a 21 close
-            -- box, labels 24 in from the left, controls 18 in from the right,
-            -- rows of 30, and each group's heading 8 under the row before it
-            -- and 26 tall.
+            -- In unscaled pixels: a 44 title bar with a 21 close box, labels
+            -- 24 in from the left, controls 18 in from the right, rows of 30,
+            -- and each group's heading 8 under the row before it and 26 tall.
             local title     = 'UberMap Settings';
             local label_px  = st.S(st.BODY);
             local title_px  = st.S(st.BODY);
@@ -4152,9 +4156,8 @@ local function draw_map(view_w, view_h)
             local line_h    = st.S(30);
             local title_h   = st.S(44);
             local close_box = st.S(21);
-            -- The face drop-down fits its longest name the way Sidekick3's
-            -- widget fits its profile's; a slider is Sidekick3's 180; a swatch
-            -- takes the room its widest label could need.
+            -- The face drop-down fits its longest name, a slider is 180, and a
+            -- swatch takes the room its widest label could need.
             local font_w = 0;
             for _, name in ipairs(FONT_PX.list) do
                 font_w = math.max(font_w, st.measure((name ~= '') and name or FONT_PX.own_name,
@@ -4382,11 +4385,16 @@ local function draw_map(view_w, view_h)
                 imgui.SetNextItemWidth(FIELD_W);
                 imgui.InputTextWithHint('##ubermap_pt_name', 'Name', ui.edit_name, FIELD_MAX);
                 local hot = imgui.IsItemActive() or imgui.IsItemHovered();
+                -- A hyphen in a point's name is a character.  The minus key
+                -- that switches era stays with the field while it has the caret,
+                -- the same way the search box keeps it.
+                ui.kb_typing = ui.kb_typing or imgui.IsItemActive();
 
                 imgui.SetCursorPos({ UI_MARGIN, edit_y + EDIT_ROW });
                 imgui.SetNextItemWidth(FIELD_W);
                 imgui.InputTextWithHint('##ubermap_pt_group', 'Group', ui.edit_group, FIELD_MAX);
                 hot = hot or imgui.IsItemActive() or imgui.IsItemHovered();
+                ui.kb_typing = ui.kb_typing or imgui.IsItemActive();
 
                 if (ui.edit_name[1] ~= ui.sel.label or ui.edit_group[1] ~= ui.sel.group) then
                     ui.sel.label, ui.sel.group = ui.edit_name[1], ui.edit_group[1];

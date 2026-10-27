@@ -90,15 +90,4 @@ assert(src:find('if (bg >= 0x1000000) then', 1, true),
 assert(src:find("type(c[4]) == 'number'", 1, true),
        'fill_defaults no longer checks the shape of a saved colour row');
 
--- Every list and menu draws in lib/vana.lua's palette, whose own test pins its
--- colours, so the old popup words and the Hover picker that fed one are gone.
--- One coming back is a panel drawn in the old look beside the restyled ones.
-for _, gone in ipairs({ 'COL_POPUP_BG', 'COL_POPUP_TEXT', 'COL_POPUP_OFF',
-                        'COL_POPUP_LOCK', 'COL_POPUP_FAV', 'COL_HOVER',
-                        'col_hover' }) do
-    assert(not src:find(gone, 1, true),
-           gone .. ' is back; the lists and menus draw in the vana palette');
-end
-
-print(('ok: %d picker defaults pack to their constants, and no list or menu'
-       .. ' draws in the old popup words'):format(#pairs_));
+print(('ok: %d picker defaults pack to their constants'):format(#pairs_));

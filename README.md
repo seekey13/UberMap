@@ -22,7 +22,7 @@ Talking to a warp NPC (other than a Cavernous Maw) opens it; or use `/um`.
 It closes itself once you walk away or a warp is used.  
 The UberMap widget will open when approaching a warp point.
 
-The **Past**/**Present** switch at the head of the toolbar swaps between the two maps of Vana'diel.  
+The **Past**/**Present** switch at the head of the toolbar swaps between the two maps of Vana'diel. With the pad or the keys already driving the map, **Back** (**Select**) or **-** does the same.  
 
 ## Warp list
 
@@ -115,9 +115,9 @@ The cog in the map's top-right corner, or `/um config`, opens **UberMap Settings
 
 The switches save the moment they are clicked, rather than on the mouse coming up like the sliders and pickers.
 
-The sliders are Sidekick3's: drag the knob, or click the number beside it to type one and press Enter. The four scale rows are whole percents, 25 to 400; a drag moves them in steps of 5, and any whole percent can be typed. 100 is what the map has always drawn at, which is what a settings file that has never been near them carries.
+Drag a slider's knob, or click the number beside it to type one and press Enter. The four scale rows are whole percents, 25 to 400; a drag moves them in steps of 5, and any whole percent can be typed. 100 is what the map has always drawn at, which is what a settings file that has never been near them carries.
 
-The search box, the config panel, both favorites lists, the warp list and the right-click menu are drawn the way Sidekick3 draws its settings window: VanaCore's palette, Segoe UI, and the same title bar, close mark, headings, rows, sliders, drop-down and switches. Every tooltip uses that palette too. **Font**, **Bold** and **Size** move the text drawn onto the map itself.
+The search box, the config panel, both favorites lists, the warp list, the right-click menu and the tooltips are styled after VanaCore by Vekien. **Font**, **Bold** and **Size** move the text drawn onto the map itself.
 
 Each swatch shows its colour's hex, and how opaque it is when it is not solid. Click one to open its picker beside the panel, over the map: it has an alpha bar, so a colour can be faded rather than only changed, and dragging inside it recolours the map as you go. Dragging anywhere on the panel or a picker does not pan the map underneath.
 
@@ -168,11 +168,12 @@ The map itself reads the pad whenever it is open — no toggle, because unlike t
 | D-pad | Move the hover to the marker that way. Nothing that way, nothing moves — it does not wrap round the world |
 | A | Zoom into the nation or region under the hover, then open a zone point's warp list, then send the row |
 | B | Back out one step: the warp list, then the whole map with the nation you came out of still hovered, then the map closes |
+| Back / Select | Switch between the past and present maps. Only once the pad or the keys are already driving — it does not relight the hover, and with the mouse in charge it stays the game's. Still switches if the map is open behind the favorites widget |
 | Y | The pad's right-click: on a warp row it opens the same *Add / Remove point from favorites list* menu the mouse's second button does. **A** picks the item, **B** or a second **Y** dismisses it |
 
 Three tiers, nested the way the game's own menus are, and the mouse walks the same ones: click a nation and **B** still backs out of it, click a zone point and the D-pad still walks the rows that come up. A list opened with the mouse lights no row until you press something, so the cursor's own hover is never argued with.
 
-Only one of the two is ever in charge, and it is whichever you last used — the pad being plugged in counts for nothing. Move the mouse over the map or the widget and the pad's hover goes out, since the cursor's own hover now says what a click would open. Press one of the map's own buttons and it comes back on the marker nearest the middle again — that first press only relights, it does not walk or open. Esc is the exception, since it is the way out of a map covering most of the screen: it acts on the first press however the map was being driven.
+Only one of the two is ever in charge, and it is whichever you last used — the pad being plugged in counts for nothing. Move the mouse over the map or the widget and the pad's hover goes out, since the cursor's own hover now says what a click would open. Press the D-pad, **A**, **B** or **Y** and it comes back on the marker nearest the middle again — that first press only relights, it does not walk or open. Esc is the exception, since it is the way out of a map covering most of the screen: it acts on the first press however the map was being driven. **Back** is the other: it switches past and present only once the pad or the keys are already driving, and with the mouse in charge it stays the game's.
 
 While the pad or the keys are in charge the cursor's own hover and its tooltips stay out, so only one marker on screen ever looks pressable. Move the mouse over the map and they come straight back.
 
@@ -190,14 +191,15 @@ The same three tiers off the keyboard, with the arrows standing in for the D-pad
 | Tab | With the map open, put the caret in the search box; Enter, or Esc -- hands the keyboard back to the map |
 | U | At the widget, swap it for the full map — the **Y** press, on a key |
 | F | At the widget, hand it the arrows. Up and down walk the list, Enter warps, Esc hands them back. With the map open it is **Y** instead: on a warp row it opens the *Add / Remove point from favorites list* menu on the highlighted row, where Enter picks the item and Esc or a second **F** dismisses it. On the map's other screens it is still taken, and does nothing |
+| - | Switch between the past and present maps, the same as **Back**. Numpad minus counts. Only while the pad or the keys are already driving; while you are typing it stays a hyphen |
 
 Esc at the widget without an **F** first puts the widget away, the way **B** does; press it again for the NPC's own menu behind it. The map takes the arrows only while it is on screen, and the widget only after an **F**, so walking is never swallowed.
 
 **U** and **F** are taken for the whole time the widget is on screen, whether or not you are using it — so a `/bind u` or `/bind f` of your own will not fire while you stand at a Home Point, Survival Guide, Unity Concord, Abyssea teleporter, Whitegate's Runic Portal or Cavernous Maw. Untick **Favorites Widget** on the `/um config` panel if you need those keys there. **F** is taken by the open map as well, for the same reason the arrows are.
 
-Typing wins over nearly all of it. The game's own chat line, the map's search box and the config panel's number boxes each take the arrows, Enter and Esc while a caret is in them — with **Search Focus On Open** ticked, that includes the frame the map opens in, so start typing straight away and press Tab, Enter, Esc or click the map when you want the keys back. **Tab** is the exception, since a key that could only ever get the keyboard *into* the box would be a door with no handle on the inside: it moves the caret in and back out again, and is taken from the game for as long as the map is up. The chat line and the config panel's number boxes still beat it.
+Typing wins over nearly all of it. The game's own chat line, the map's search box, the config panel's number boxes and the point editor's name fields each take the arrows, Enter, Esc and **-** while a caret is in them — with **Search Focus On Open** ticked, that includes the frame the map opens in, so start typing straight away and press Tab, Enter, Esc or click the map when you want the keys back. **Tab** is the exception, since a key that could only ever get the keyboard *into* the box would be a door with no handle on the inside: it moves the caret in and back out again, and is taken from the game for as long as the map is up. The chat line and the config panel's number boxes still beat it.
 
-A key the map takes is kept from the game outright, for as long as it is held, so an arrow walking the markers is not also turning the camera. Numpad Enter counts as Enter; the numpad arrows are left alone, since they are how a lot of people move.
+A key the map takes is kept from the game outright, for as long as it is held, so an arrow walking the markers is not also turning the camera. Numpad Enter counts as Enter, and numpad minus counts as minus; the numpad arrows are left alone, since they are how a lot of people move.
 
 ## Filters set themselves
 
