@@ -378,6 +378,14 @@ check(saved[1] == LJ1 and saved[2] == PJ and saved[3] == PB and saved[4] == LJ2,
 -- hold is still there.
 check(src:find('held.anchor_y', 1, true) ~= nil,
       'a group drag no longer holds the panel where it started');
+check(src:find('opts.header', 1, true) ~= nil,
+      'the zone section no longer draws its name as a header');
+check(src:find('section_gap', 1, true) ~= nil,
+      'the zone section and the favorites no longer have a break between them');
+check(src:find('show_favs', 1, true) ~= nil,
+      'a zone with no favorites still draws a second plate');
+check(src:find('gm.pitch', 1, true) ~= nil,
+      'the open zone group menu reads a pitch the list no longer has');
 
 --[[
 * The zone's homepoints, listed above the favorites.  fw.zone_rows is what the
