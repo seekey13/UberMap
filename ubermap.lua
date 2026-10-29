@@ -459,9 +459,10 @@ local default_settings = T{
     -- a file that already has it gets them once under this marker instead.
     seeded_rp = false,
     widget = true,   -- the gamepad favorites widget is on
-    -- A Cancel row at the top of the widget, where the selection starts.  Off
-    -- by default.  For the player who walks up to a warp NPC and presses A out
-    -- of habit: with it on, that press shuts the widget instead of warping.
+    -- A Cancel row at the top of the favorites, where the selection starts.
+    -- The current zone's homepoints, when there are any, are listed above it.
+    -- Off by default.  For the player who walks up to a warp NPC and presses A
+    -- out of habit: with it on, that press shuts the widget instead of warping.
     fw_cancel = false,
     -- Two or more favorites in one zone listed on the widget as a single row
     -- named for the zone, which opens them out in a panel beside it.  Off by
@@ -801,6 +802,13 @@ local ui = T{
     fw_on       = false,
     fw_shown    = false,     -- it was up last frame, i.e. this is not its first
     fw_sel      = 1,         -- the row the D-pad has landed on, 1-based
+    -- Where the favorites start, and how many homepoint rows sit above them.
+    -- The highlight starts on that row, so Up walks the zone and Down walks
+    -- the favorites.  fw_at_zone is the count last drawn: a zone line that
+    -- changes it puts the highlight back on the seam, not onto a new row.
+    fw_home     = 1,
+    fw_zone_n   = 0,
+    fw_at_zone  = nil,
     fw_hide     = false,     -- B put it away until the player walks off the NPC
     -- The two widget checkboxes as of the last frame the widget was drawn.
     -- A change reshapes the list under fw_sel, which is only a row number, so
@@ -1871,7 +1879,9 @@ local fw = {
 
 -- What a favorite reads as: the zone the row hung off, then the row itself,
 -- e.g. 'Windurst Woods - Home Point #2'.  A zone group reads as the zone
--- alone, and Cancel as itself.
+-- alone, and Cancel as itself.  A homepoint of the zone the player is stood
+-- in reads as the point alone: the section it sits in is that zone, and the
+-- grid reference already says which one.
 local function fav_text(f)
     if (f.cancel) then
         return fw.CANCEL_TXT;
@@ -1879,28 +1889,112 @@ local function fav_text(f)
     if (f.members ~= nil) then
         return f.key;
     end
+    if (f.here) then
+        return f.label;
+    end
     return ('%s - %s'):fmt(f.key, f.label);
 end
 
 --[[
-* The widget's own list: fav_view, with a Cancel row on top and favorites that
+* The Home Points of the zone named 'name', as rows the widget can send.
+* Nil when that zone has none.  'warps' defaults to the loaded list; the test
+* hands in its own.  The name is the game's, which is the key the rows are
+* filed under.  A row filed under that key but traveling to some other zone
+* is left out, so one marker's list cannot answer for a floor it does not
+* stand in.
+--]]
+function fw.zone_list(name, warps)
+    if (name == nil or name == '') then
+        return nil;
+    end
+    warps = warps or WARPS;
+    local list = warps[name];
+    if (list == nil) then
+        return nil;
+    end
+    local out;
+    for _, w in ipairs(list) do
+        if (w.type == 'home' and (w.zone or name) == name) then
+            out = out or T{ };
+            out[#out + 1] = { key = name, type = 'home', label = w.label,
+                              zone = w.zone, here = true };
+        end
+    end
+    return out;
+end
+
+--[[
+* The game's name for the zone the player is stood in, or nil before the
+* party list has been read.  Cached on the zone id: the resource lookup is
+* the same string until a zone line, and the widget asks every frame.
+--]]
+function fw.zone_name()
+    local zid = ui.near_zid;
+    if (zid == nil or zid == 0) then
+        return nil;
+    end
+    if (fw._zid ~= zid) then
+        fw._zid = zid;
+        local ok, name = pcall(function ()
+            return AshitaCore:GetResourceManager():GetString('zones.names', zid);
+        end);
+        fw._zname = (ok and type(name) == 'string' and name ~= '') and name or nil;
+    end
+    return fw._zname;
+end
+
+--[[
+* Home Points in the zone the player is stood in, while they are stood at a
+* Home Point.  Nil everywhere else, and nil for a zone that has none: a
+* Survival Guide cannot send one, so listing them there would be rows that
+* look like choices and are not.  Not saved, and not a copy of a favorite --
+* the zone's points are listed whether or not anyone saved them.
+--]]
+function fw.zone_rows()
+    if (ui.near_kind ~= 'home') then
+        return nil;
+    end
+    return fw.zone_list(fw.zone_name());
+end
+
+--[[
+* The widget's own list: the Home Points of the zone the player is stood in,
+* then fav_view, with a Cancel row on top of the favorites and favorites that
 * share a zone folded into one row, each when its checkbox asks for it.
 * Handed back the way fav_view hands its rows back, with the slot each sits in
-* in cfg.favs, so a drag inside it still reorders the saved list.  Cancel has
-* no slot and cannot be dragged or dropped on.  A group takes its first
-* member's slot, since that is where it is listed: a row dropped on it from
-* below lands above that member, and one dropped on it from above lands below
-* the zone, by fw.drop_slot.  It carries every member's slot as well, in
-* 'slots', for fw.reorder to drag them by.
+* in cfg.favs, so a drag inside it still reorders the saved list.  A zone
+* homepoint and Cancel have no slot and cannot be dragged or dropped on.  A
+* group takes its first member's slot, since that is where it is listed: a
+* row dropped on it from below lands above that member, and one dropped on it
+* from above lands below the zone, by fw.drop_slot.  It carries every member's
+* slot as well, in 'slots', for fw.reorder to drag them by.
 *
+* The homepoints sit above the favorites so the highlight, which starts on
+* the first favorite -- Cancel, where that row is on -- steps into the zone
+* on Up and into the favorites on Down.  ui.fw_home is that first favorite.
 * A group is listed where its first member would have been, and only where two
 * or more share a zone -- one favorite alone in its zone reads as it always has.
 --]]
 function fw.view()
     local favs, raw = fav_view();
     local view, slot, n = T{ }, T{ }, 0;
+    -- Above the favorites, and only while stood at a Home Point.  The test's
+    -- copy of this function has no zone_rows, which is the same as a zone
+    -- with none: the list is the favorites alone, as it always was.
+    local zone_n = 0;
+    local ahead = fw.zone_rows and fw.zone_rows();
+    if (ahead ~= nil) then
+        for _, f in ipairs(ahead) do
+            n = n + 1;
+            zone_n = zone_n + 1;
+            view[n] = f;
+        end
+    end
+    -- The seam.  Past the end of a list that is only homepoints, so the
+    -- highlight starts on the first of those rather than off the list.
+    local home = n + 1;
     if (cfg.fw_cancel) then
-        n = 1;
+        n = n + 1;
         view[n] = fw.CANCEL;
     end
     local count = { };
@@ -1926,6 +2020,10 @@ function fw.view()
             g.members[#g.members + 1] = f;
             g.slots[#g.slots + 1]     = s;
         end
+    end
+    if (ui ~= nil) then
+        ui.fw_home   = (home <= n) and home or 1;
+        ui.fw_zone_n = zone_n;
     end
     return view, slot;
 end
@@ -1996,7 +2094,10 @@ function fw.group_open()
             ui.fw_sel = i;
             return f, i;
         end
-        if (plain == nil and f.members == nil and f.key == key) then
+        -- A homepoint of the zone the player is stood in shares the group's
+        -- key and is not a favorite.  Landing on it when the group collapses
+        -- would send that homepoint on the next A, which is not the row left.
+        if (plain == nil and f.members == nil and not f.here and f.key == key) then
             plain = i;
         end
     end
@@ -3048,6 +3149,13 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
         -- ground and bar, and takes no hover on top.
         local pointed = (drag ~= nil and drag.i == i) or (drag == nil and over);
         st.row(dl, id .. '.' .. i, px, ry, w, pitch, i == sel, pointed);
+        -- The seam between the zone's homepoints and the favorites.  Drawn on
+        -- the row rather than as one of its own, so the D-pad still walks one
+        -- list and a press neither lands on the line nor skips a row.
+        if (opts.split ~= nil and i == opts.split and i > 1) then
+            dl:AddLine({ px + POPUP_PAD, ry }, { px + w - POPUP_PAD, ry },
+                       st.u32(st.P.line), 1);
+        end
         local ty = ry + (pitch - m.th) / 2 - st.lift(m.th);
 
         -- Unlike a popup row, a favorite comes back off disk, so its type is
@@ -3190,15 +3298,19 @@ end
 --]]
 local function draw_fav_widget()
     -- Narrowed to the NPC in reach, so a list with nothing this NPC can send
-    -- takes the widget off screen the same way an empty one does.
+    -- takes the widget off screen the same way an empty one does.  A Home
+    -- Point is the exception: the zone's own homepoints are listed whether
+    -- or not any favorite was saved, and they are enough to hold it up.
     local n = #fav_view();
+    local zone = fw.zone_rows();
     -- Only where it can be used -- stood at a warp NPC -- since the buttons it
     -- swallows are the game's everywhere else.  The map has nothing to do with
     -- it: walking up to a crystal is what puts it on screen, and the present
     -- handler polls the world on the frames the map is shut for exactly that.
     -- near_kind is a warp type, nil for no NPC in reach, or false before the
     -- first poll: both of the last two are falsy, so one test covers them.
-    local on = cfg.widget and n > 0 and not ui.fw_hide and ui.near_kind;
+    local on = cfg.widget and (n > 0 or zone ~= nil)
+               and not ui.fw_hide and ui.near_kind;
     if (not on) then
         ui.fw_on, ui.fw_shown = false, false;
         -- A menu left open by a widget going off screen is gone with it, so
@@ -3218,22 +3330,26 @@ local function draw_fav_widget()
         return;
     end
     ui.fw_on  = true;
-    -- Ticking either checkbox reshapes the list under a highlight that is only
-    -- a row number: Cancel inserts one at the top, grouping collapses several
-    -- into one.  Reset the way the widget's first frame does, or the next A
-    -- lands on a different zone.  Remembered here rather than shifted, since
-    -- grouping does not move every row by one.
+    -- The list as the widget lists it: the zone's homepoints, then Cancel
+    -- where the config panel asks for it, then zones folded into a row apiece.
+    -- fw.view records where the favorites start, which the reset below lands on.
+    local rows, slots = fw.view();
+    local home = ui.fw_home or 1;
+    -- Ticking either checkbox, or a zone line that changes how many homepoints
+    -- sit above the favorites, reshapes the list under a highlight that is
+    -- only a row number.  Reset the way the widget's first frame does, or the
+    -- next A lands on a different zone.  Remembered here rather than shifted,
+    -- since grouping does not move every row by one.
     if (ui.fw_shown
         and (ui.fw_opt_cancel ~= cfg.fw_cancel
-             or ui.fw_opt_group ~= cfg.fw_group)) then
-        ui.fw_sel = 1;
+             or ui.fw_opt_group ~= cfg.fw_group
+             or ui.fw_at_zone ~= ui.fw_zone_n)) then
+        ui.fw_sel = home;
         ui.fw_grp = nil;
     end
     ui.fw_opt_cancel = cfg.fw_cancel;
     ui.fw_opt_group  = cfg.fw_group;
-    -- The list as the widget lists it: Cancel on top and zones folded into a
-    -- row apiece, where the config panel asks for either.
-    local rows, slots = fw.view();
+    ui.fw_at_zone    = ui.fw_zone_n;
 
     -- Asked for once, on the frame it comes up, and never again.  Ashita gives
     -- every addon the one ImGui context, and focusing a window closes every
@@ -3245,12 +3361,14 @@ local function draw_fav_widget()
     -- this on a click; the map carries NoBringToFrontOnFocus now, so a click
     -- down there leaves the stack alone and one ask on the way up holds.
     --
-    -- The selection starts on the top row, which is Cancel where there is one,
-    -- and with no group opened out: a press made out of habit on the way up to
-    -- the NPC then shuts the widget rather than warping anywhere.
+    -- The selection starts where the favorites do, which is Cancel where there
+    -- is one, and with no group opened out.  The zone's homepoints are the
+    -- rows above that, so the first Up walks them and the first Down walks the
+    -- favorites.  A press made out of habit on the way up to the NPC then
+    -- shuts the widget, where Cancel is on, rather than warping anywhere.
     if (not ui.fw_shown) then
         ui.fw_shown = true;
-        ui.fw_sel   = 1;
+        ui.fw_sel   = home;
         ui.fw_grp   = nil;
         imgui.SetNextWindowFocus();
     end
@@ -3287,9 +3405,10 @@ local function draw_fav_widget()
     * It hangs off the InvisibleButton the list just drawn left behind, so it
     * is asked for straight after each list, and acts on f -- the row the
     * right-click just moved that list's selection to.  Neither Cancel, a
-    * zone group, nor a maw offers it: the first two are not favorites, and
-    * a maw's row is MAW_FAV, made for the visit rather than saved, so the
-    * menu would put it onto the list.
+    * zone group, a maw, nor a homepoint of the zone the player is stood in
+    * offers it: the first two are not favorites, a maw's row is MAW_FAV,
+    * made for the visit rather than saved, and a zone homepoint is listed
+    * whether or not it was saved, so the menu would put it onto the list.
     *
     * Placed under that row rather than at the cursor, the same as the map's
     * menu and for the same reason: a menu lying over the row it came from
@@ -3303,8 +3422,11 @@ local function draw_fav_widget()
     * window Begins next in the frame.
     --]]
     local function menu(pid, f, x, y)
+        -- A zone homepoint is not a favorite.  The menu only removes, so
+        -- offering it here would either take a saved copy off the list below
+        -- or, where none is saved, add one under a label that says remove.
         if (shift or f == nil or f.cancel or f.members ~= nil
-            or f.type == 'maw') then
+            or f.type == 'maw' or f.here) then
             return;
         end
         imgui.SetNextWindowPos({ x, y });
@@ -3358,6 +3480,9 @@ local function draw_fav_widget()
                                       veto  = veto,
                                       rows  = rows,
                                       slot  = slots,
+                                      -- The line over the first favorite, once
+                                      -- the zone has homepoints above it.
+                                      split = ((ui.fw_zone_n or 0) > 0) and home or nil,
                                       clipped = true,
                                       id    = '##ubermap_fw_list',
                                       click = function (i) fw.pick(false, i); end });

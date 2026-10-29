@@ -362,7 +362,10 @@ function M.press(ui, act, down, h)
                 -- arrows would walk that instead of the list F lit.
                 if (h.fw_cancel()) then
                     ui.fw_grp = nil;
-                    ui.fw_sel = 1;
+                    -- Cancel heads the favorites, which is row 1 until the
+                    -- zone's homepoints are listed above it.  fw_home is that
+                    -- row; without one the old landing, the top, still holds.
+                    ui.fw_sel = ui.fw_home or 1;
                     n = h.fw_count();
                 end
                 -- n is whichever list the arrows will walk.  With a group open

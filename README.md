@@ -138,20 +138,24 @@ A small window listing the same favorites, built for a controller. It comes up o
 
 | Button | Effect |
 | --- | --- |
-| D-pad up / down | Move the selection, wrapping at both ends |
+| D-pad up / down | Move the selection, wrapping at both ends. At a Home Point the zone's homepoints are the rows above the favorites, and the selection starts on the first favorite, so the first **Up** walks those and the first **Down** walks the favorites |
 | A | Warp to the selected row |
 | B | Put the widget away until you walk off the NPC. With a zone's panel open (see [Group by zone](#group-by-zone)), shut that panel instead |
 | Y | Swap the widget for the full map |
 
 **Left** and **right** are left to the game while the widget is up: the list is a single column, so taking them would leave no way to work the NPC's own menu behind it.
 
-The widget and the map's panel are one list drawn twice, so the mouse works the same in either: click a row to warp, drag it up or down to reorder, right-click for *Remove point from favorites list*. Turning the widget on hides the heart and its panel, so the list is on screen in one place, not two.
+The widget and the map's panel list the same favorites, so the mouse works the same on those rows in either: click a row to warp, drag it up or down to reorder, right-click for *Remove point from favorites list*. Turning the widget on hides the heart and its panel, so the list is on screen in one place, not two.
 
-The list is narrowed the same way the panel's is, so every row on it is one the NPC holding it up can send; a destination you have not registered still reads red, and A refuses it. With nothing saved for that kind of NPC the widget stays down. The window has no title bar and sizes itself to the list; like the map, hold shift to drag it somewhere else. On by default -- untick **Favorites Widget** on the `/um config` panel to turn it off -- and saved per character with the rest of the settings. A character who already turned it off keeps it off: the setting is written to their file, and the **Favorites Widget** switch is the only way back on.
+The list is narrowed the same way the panel's is, so every favorite on it is one the NPC holding it up can send; a destination you have not registered still reads red, and A refuses it. With nothing saved for that kind of NPC the widget stays down, unless you are stood at a Home Point in a zone that has its own — those are listed anyway. The window has no title bar and sizes itself to the list; like the map, hold shift to drag it somewhere else. On by default -- untick **Favorites Widget** on the `/um config` panel to turn it off -- and saved per character with the rest of the settings. A character who already turned it off keeps it off: the setting is written to their file, and the **Favorites Widget** switch is the only way back on.
+
+### This zone
+
+Stand at a Home Point and that zone's homepoints are listed above the favorites, every one of them, saved or not. A line divides the two. The selection starts on the first favorite, so **Up** moves into the zone's homepoints and **Down** moves through the favorites; either way it still wraps at the ends of the whole list. A zone homepoint reads as its own name — **Home Point #2**, not the zone again — with its grid reference beside it. One you have not registered still reads red, and **A** refuses it. These rows are not favorites: a click warps, and they cannot be dragged or removed. One you also saved is listed again below, in the favorites, where it still drags and removes. Anywhere else — a Survival Guide, a Unity Concord, a conflux, a Runic Portal, a maw — the widget is the favorites alone, the way it was.
 
 ### Cancel button
 
-Tick **Widget Cancel Button** on the `/um config` panel and the widget grows a **Cancel** row at the top. The selection starts on it every time the widget comes up, and **F** on the keyboard lands on it too, so an **A** or **Enter** pressed out of habit as you run up to a warp just closes the widget instead of warping you somewhere. Selecting it does exactly what **B** does. Off by default.
+Tick **Widget Cancel Button** on the `/um config` panel and the widget grows a **Cancel** row at the top of the favorites, under the zone's homepoints where those are listed. The selection starts on it every time the widget comes up, and **F** on the keyboard lands on it too, so an **A** or **Enter** pressed out of habit as you run up to a warp just closes the widget instead of warping you somewhere. **Up** from it still walks the zone's homepoints, and **Down** still walks the favorites. Selecting it does exactly what **B** does. Off by default.
 
 ### Group by zone
 

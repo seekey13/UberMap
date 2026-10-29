@@ -514,6 +514,16 @@ check(ui.fw_key, 'F should hand the widget the arrows');
 check(ui.fw_sel == 1, ('F should land on the Cancel row, is %d'):format(ui.fw_sel));
 check(ui.fw_grp == nil, 'F should shut an open zone group');
 
+-- Cancel sits under the zone's homepoints, so F lands on that row rather
+-- than on the first homepoint.
+reset();
+ui.fw_on, favs_n, sub_n, cancel_on = true, 6, 2, true;
+ui.fw_home, ui.fw_sel, ui.fw_grp = 4, 6, 'Lower Jeuno';
+key(DIK.f, true); key(DIK.f, false);
+check(ui.fw_sel == 4,
+      ('F should land on Cancel under the zone rows, is %d'):format(ui.fw_sel));
+check(ui.fw_grp == nil, 'F should still shut an open zone group');
+
 -- Without one, F keeps the row it had.
 reset();
 ui.fw_on, favs_n, ui.fw_sel = true, 4, 3;
