@@ -12,7 +12,7 @@ Drop the `UberMap` folder into `Ashita/addons/`, then `/addon load ubermap`.
 | --- | --- |
 | `/ubermap`, `/um` | Toggle the map |
 | `/ubermap edit` | Toggle the point editor |
-| `/ubermap config` | Toggle the config panel (also the cog, top right of the map): map font, bold and size, the four scales, text, outline and background colours, and seven switches |
+| `/ubermap config` | Toggle the config panel (also the cog, top right of the map): map font, bold and size, the four scales, text, outline and background colours, and eight switches |
 
 ## The map
 
@@ -91,7 +91,7 @@ A character who has never saved one starts with 36, so the widget has something 
 
 ## Config panel
 
-The cog in the map's top-right corner, or `/um config`, opens **UberMap Settings** under it: a font pulldown, a **Bold** switch, a **Size** slider, four scale sliders, three colour swatches and seven switches, one to a row, under a **Look** and an **Options** heading. The **×** on its title bar closes it too. Everything on it changes the map as you drag, and writes to your settings once you let go of the mouse or press Enter on a typed number — one write per edit rather than one per frame of it.
+The cog in the map's top-right corner, or `/um config`, opens **UberMap Settings** under it: a font pulldown, a **Bold** switch, a **Size** slider, four scale sliders, three colour swatches and eight switches, one to a row, under a **Look** and an **Options** heading. The **×** on its title bar closes it too. Everything on it changes the map as you drag, and writes to your settings once you let go of the mouse or press Enter on a typed number — one write per edit rather than one per frame of it.
 
 | Row | Edits |
 | --- | --- |
@@ -112,6 +112,7 @@ The cog in the map's top-right corner, or `/um config`, opens **UberMap Settings
 | EXP Guide Pickup | Take an Instant Warp scroll off a guide you walk past, see below. On by default |
 | Search Focus On Open | The search box takes the keyboard the frame the map opens, so you can type straight away. Off by default: while it holds the caret the map takes no clicks to pan or zoom |
 | Hide Uberwarp Chat | Drop Uberwarp's `[Uberwarp:<module>]` lines from the log, errors included. On by default; untick it when a warp misbehaves and you want the reason |
+| Full Size Zone Maps | Load zone maps at the size their art ships at. Off loads each at half that (1024 px for the Remapster maps), a quarter of the memory, for a machine that stutters on the full ones. The files themselves are never changed. On by default |
 
 The switches save the moment they are clicked, rather than on the mouse coming up like the sliders and pickers.
 

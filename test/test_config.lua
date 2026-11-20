@@ -22,8 +22,8 @@ local rows = {};
 for label, box, key in checks:gmatch("{%s*'([^']-)',%s*\n?%s*{ cfg%.([%w_]+) }%s*,%s*'([%w_]+)'%s*}") do
     rows[#rows + 1] = { label = label, box = box, key = key };
 end
-assert(#rows == 7,
-       ('the panel lists %d checkbox rows, not the 7 it offers'):format(#rows));
+assert(#rows == 8,
+       ('the panel lists %d checkbox rows, not the 8 it offers'):format(#rows));
 
 local seen = {};
 for _, row in ipairs(rows) do
@@ -36,7 +36,7 @@ end
 -- Every setting that has no other way in now that the panel is the only
 -- place these are toggled from: the commands they replaced are gone.
 for _, key in ipairs({ 'autoopen', 'widget', 'fw_cancel', 'fw_group',
-                        'guide', 'focus', 'quiet' }) do
+                        'guide', 'focus', 'quiet', 'zone_full' }) do
     assert(seen[key], ('the %s row is gone from the config panel'):format(key));
     assert(not src:find(("sub == '%s'"):format(key), 1, true),
            ('/um %s is back, so the checkbox is no longer the only way in')
@@ -91,4 +91,4 @@ assert(src:match('for _, chk in ipairs%(checks%) do%s*\n%s*label_w = math%.max')
 assert(src:match("if %(chk%[3%] == 'widget'%) then%s*\n%s*ui%.fw_hide = false;"),
        'the widget switch no longer clears ui.fw_hide');
 
-print('ok: 7 switch rows, all live off cfg, panel sized to fit them');
+print('ok: 8 switch rows, all live off cfg, panel sized to fit them');

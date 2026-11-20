@@ -55,9 +55,20 @@ enough.
   A one-map zone is `_0`. A multi-map zone uses the game's map indices
   (Caedarva Mire is `79_1`..`79_4`; Windurst Waters is `238_1` for north and
   `238_2` for south).
-- Each image is 2048×2048 RGBA and about 7 MB. That is too heavy for a D3D8
-  texture cache, so step 9 converts them to 1024×1024 and records that in
-  NOTICE.md.
+- Each image is 2048×2048 RGBA and about 7 MB on disk.
+- **The files ship unmodified, and the player chooses the size.** The config
+  panel's **Full Size Zone Maps** switch (`cfg.zone_full`, on by default)
+  loads them at full size. Off, it loads them at 1024 on a side
+  (`ZONES.HALF`), which is a quarter of the texture memory: 4 MB instead of
+  16 MB each once decoded. The scaling is D3DX's own, done as the texture is
+  created from the file, so nothing on disk changes. Because we change nothing,
+  NOTICE.md lists no modifications. Flipping the switch drops the cached zone
+  textures (`ZONES.tex`), so the next zone loads at the new size.
+- **Repo size.** At about 7 MB a file, the pilot's 10 files are about 70 MB,
+  and the full pack is several hundred files. Before step 9 goes past the
+  pilot, decide whether the full set lives in the repo, in Git LFS, or in a
+  separate download the player drops into `assets/zones/`. The loader already
+  handles a missing file by falling back to the warp list.
 - The 15×15 grid sits inside a border half a cell wide: grid origin at 1/32 of
   the image, cells 1/16 wide. This matches the 512 px in-game maps (16 px
   border, 32 px cells). I measured it on West Ronfaure: column A is centred at
@@ -196,13 +207,13 @@ In `lib/warps.lua`, rows gain an optional `map = <game map index>`, and later
 |---|------|-------|-------|--------|
 | 1 | Pure math: `zone_rect`, u/v↔world, `rect_fit`, `zone_hold`, `glide`, `ease`, `fade`, `pan_for`/`centre_of` | `lib/mapmath.lua` | `test/test_zonezoom.lua` | **done** |
 | 2 | Grid ref → u/v, sheets, row→sheet, layout + fan, counts, opening sheet | `lib/zonegrid.lua` | `test/test_zonegrid.lua` | **done** |
-| 3 | Data file (6 pilot points), `map` on the multi-map rows, `ZONES.load` / `ZONES.get` with the no-art fallback, NOTICE | `lib/zonemaps.lua`, `lib/warps.lua`, `ubermap.lua`, `assets/zones/NOTICE.md` | `test/test_zonegrid.lua` data checks | **done** |
-| 4 | `ui.zone` state, texture LRU, preload on hover | `ubermap.lua` | — | |
+| 3 | Data file (6 pilot points), `map` on the multi-map rows, `ZONES.load` / `ZONES.get` with the no-art fallback, NOTICE, Full Size Zone Maps switch | `lib/zonemaps.lua`, `lib/warps.lua`, `ubermap.lua`, `assets/zones/NOTICE.md` | `test/test_zonegrid.lua` data checks, `test/test_config.lua` | **done** |
+| 4 | `ui.zone` state, texture LRU (created at `ZONES.size()`), preload on hover | `ubermap.lua` | — | |
 | 5 | Glide + crossfade render path in `draw_map`, per-tier max zoom | `ubermap.lua` | — (in game) | |
 | 6 | Markers, tabs, click to warp, linked panel | `ubermap.lua` | `test_warps.lua` additions | |
 | 7 | Gamepad tier + LB/RB | `lib/gpnav.lua`, `nav` | `test_gpnav.lua` | |
 | 8 | Editor: exact `xy` + `map`, `span` slider | `ubermap.lua` | `test_points.lua` | |
-| 9 | Pilot art, converted to 1024: `102_0 108_0 117_0 15_0 132_0 45_0 79_1 79_2 238_1 238_2`; then the rest, auditing `map` on every multi-map zone | `assets/zones/` | the data test fails any multi-map row with no `map` | |
+| 9 | Pilot art, unmodified: `102_0 108_0 117_0 15_0 132_0 45_0 79_1 79_2 238_1 238_2`; then the rest, auditing `map` on every multi-map zone | `assets/zones/` | the data test fails any multi-map row with no `map` | |
 | 10 | README section + credits, decision record | `README.md`, this file | — | |
 
 ## Still open

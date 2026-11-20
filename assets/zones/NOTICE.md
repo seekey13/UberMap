@@ -8,8 +8,10 @@ They are licensed under the
 (CC BY-SA 4.0). That license covers these images only; UberMap's code stays
 under its own MIT license.
 
-**Changes:** the files keep Remapster's `<zone>_<map>.png` names. Any resizing
-or re-encoding done for UberMap is listed here, file by file, when it happens.
+**Changes:** none. The files are shipped exactly as Remapster publishes them,
+under their own `<zone>_<map>.png` names. UberMap's **Full Size Zone Maps**
+switch can draw them at half size, but that scaling happens in memory as the
+texture loads, and the files on disk are never altered.
 
 UberMap is not affiliated with or endorsed by Remapster.
 

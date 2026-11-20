@@ -507,6 +507,12 @@ local default_settings = T{
     -- by default: that is what the map has always done, and the reason it
     -- exists.  Off leaves '/um' and Y at the favorites widget as the ways in.
     autoopen = true,
+    -- Zone maps drawn at the size their art ships at.  Off loads each one at
+    -- half that, which is a quarter of the memory and a lighter decode, for a
+    -- machine that hitches on the full ones.  Nothing on disk changes either
+    -- way: the scaling is done as the texture is created, so the player picks
+    -- and the art is shipped as its makers published it.
+    zone_full = true,
 };
 -- Loaded from a copy of the defaults, because the library hands its own default
 -- table back for a key the file has no entry for: without the copy the first
@@ -1679,7 +1685,16 @@ load_warps();
 * world map.  One table rather than a handful of locals, for the reason SCALE
 * is one: the chunk is near Lua's 200-local ceiling.
 --]]
-local ZONES = { data = nil, cache = { } };
+local ZONES = { data = nil, cache = { }, tex = { }, HALF = 1024 };
+
+--[[
+* The size a zone texture is created at, for D3DX: the file's own when Full
+* Size Zone Maps is on, else HALF on a side.  The art on disk is never
+* touched; the switch only decides how much of it is kept in memory.
+--]]
+function ZONES.size()
+    return cfg.zone_full and C.D3DX_DEFAULT or ZONES.HALF;
+end
 
 function ZONES.load()
     local file = ('%s/lib/zonemaps.lua'):fmt(addon.path);
@@ -4189,7 +4204,9 @@ local function draw_map(view_w, view_h)
                              { 'Search Focus On Open',
                                { cfg.focus }, 'focus' },
                              { 'Hide Uberwarp Chat',
-                               { cfg.quiet }, 'quiet' } };
+                               { cfg.quiet }, 'quiet' },
+                             { 'Full Size Zone Maps',
+                               { cfg.zone_full }, 'zone_full' } };
             -- Every slider: the name it is drawn under, the box it edits, the
             -- cfg key it writes, its bounds, the step a drag lands on, and the
             -- unit after its value.  Size is one of them rather than a case of
@@ -4415,6 +4432,11 @@ local function draw_map(view_w, view_h)
                     -- walking off the NPC.
                     if (chk[3] == 'widget') then
                         ui.fw_hide = false;
+                    end
+                    -- Zone textures were created at the other size; dropped
+                    -- so the next look at a zone loads it at this one.
+                    if (chk[3] == 'zone_full') then
+                        ZONES.tex = { };
                     end
                     settings.save();
                 end
