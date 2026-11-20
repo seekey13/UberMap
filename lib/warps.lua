@@ -9,7 +9,9 @@
 * Abyssea.png, 'conflux' is Conflux.png, 'runic' is Runic.png.  'pos' is the
 * grid reference, kept out of
 * the label so the popup draws it in a column of its own and every row's lines
-* up; a row with none simply leaves it out.
+* up; a row with none simply leaves it out.  'map' is the game's map index the
+* grid reference is on, for a zone drawn as more than one map; a row of a
+* one-map zone leaves it out.
 *
 * Clicking a row sends '/uw <hp|sg|uc|aw|ab|rp> <zone><number>', with the zone taken
 * from the key.  A row whose key is not the game's own name for the zone - a
@@ -42,11 +44,13 @@
 
 -- Windurst Waters is one zone in game, but points.lua draws its north and south
 -- halves as separate markers.  Held aside so both can point at the same rows.
+-- 'map' is the game's map index the row is on: 1 is the north half, 2 the
+-- south, which is how zonemaps.lua tells the two sheets apart.
 local windurst_waters = {
-    { type = 'home', label = 'Home Point #1 (E)', pos = '(G-7)',  zone = 'Windurst Waters' },
-    { type = 'home', label = 'Home Point #2 (M)', pos = '(K-11)', zone = 'Windurst Waters' },
-    { type = 'home', label = 'Home Point #3',     pos = '(J-8)',  zone = 'Windurst Waters' },
-    { type = 'home', label = 'Home Point #4',     pos = '(E-9)',  zone = 'Windurst Waters' },
+    { type = 'home', label = 'Home Point #1 (E)', pos = '(G-7)',  zone = 'Windurst Waters', map = 1 },
+    { type = 'home', label = 'Home Point #2 (M)', pos = '(K-11)', zone = 'Windurst Waters', map = 1 },
+    { type = 'home', label = 'Home Point #3',     pos = '(J-8)',  zone = 'Windurst Waters', map = 2 },
+    { type = 'home', label = 'Home Point #4',     pos = '(E-9)',  zone = 'Windurst Waters', map = 1 },
 };
 
 return {
@@ -127,12 +131,13 @@ return {
         { type = 'unity', label = 'Unity Concord',  pos = '(F-6)' },
     },
     ["Caedarva Mire"] = {
-        { type = 'home',  label = 'Home Point #1',             pos = '(E-9)' },
-        { type = 'guide', label = 'Survival Guide',            pos = '(G-6)' },
-        -- The mire is two maps: Azouph Isle's portal is on the first, Dvucca
-        -- Isle's on the second.
-        { type = 'runic', label = 'Azouph Isle Staging Point', pos = '(K-9)', zone = 'Azouph Isle' },
-        { type = 'runic', label = 'Dvucca Isle Staging Point', pos = '(I-9)', zone = 'Dvucca Isle' },
+        -- The mire is two maps for the warps it holds: the Home Point and
+        -- Azouph Isle's portal are on the first, the Survival Guide and Dvucca
+        -- Isle's portal on the second.
+        { type = 'home',  label = 'Home Point #1',             pos = '(E-9)', map = 1 },
+        { type = 'guide', label = 'Survival Guide',            pos = '(G-6)', map = 2 },
+        { type = 'runic', label = 'Azouph Isle Staging Point', pos = '(K-9)', zone = 'Azouph Isle', map = 1 },
+        { type = 'runic', label = 'Dvucca Isle Staging Point', pos = '(I-9)', zone = 'Dvucca Isle', map = 2 },
     },
     ["Cape Teriggan"] = {
         { type = 'home',  label = 'Home Point #1',  pos = '(F-5)' },

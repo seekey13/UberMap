@@ -31,6 +31,7 @@ local ffi   = require('ffi');
 local d3d   = require('d3d8');
 local mm    = require('lib.mapmath');
 local gpn   = require('lib.gpnav');
+local zg    = require('lib.zonegrid');
 local fz    = require('lib.fuzzy');
 local unlocks = require('lib.unlocks');
 local guide   = require('lib.guide');
@@ -1670,6 +1671,61 @@ local function load_warps()
     WARPS = T(data);
 end
 load_warps();
+
+--[[
+* Zone maps, from lib/zonemaps.lua: which points open into a map of their own,
+* and on which sheets.  An overlay like the warps, so a missing or broken file
+* only costs the zone maps, and every point falls back to its warp list on the
+* world map.  One table rather than a handful of locals, for the reason SCALE
+* is one: the chunk is near Lua's 200-local ceiling.
+--]]
+local ZONES = { data = nil, cache = { } };
+
+function ZONES.load()
+    local file = ('%s/lib/zonemaps.lua'):fmt(addon.path);
+    local chunk, err = loadfile(file);
+    local ok, data = false, err;
+    if (chunk ~= nil) then
+        ok, data = pcall(chunk);
+    end
+    if (not ok or type(data) ~= 'table' or type(data.zones) ~= 'table') then
+        notify(('%s failed to load: %s'):fmt(file, tostring(data)));
+        return;
+    end
+    ZONES.data  = data;
+    ZONES.cache = { };
+end
+ZONES.load();
+
+--[[
+* A point's zone map as { entry, sheets }, keeping only the sheets whose art is
+* on disk, or nil when it has none: the point then opens its warp list on the
+* world map, as it always has.  Asked once per label and remembered, since it
+* touches the disk and the draw asks every frame.
+--]]
+function ZONES.get(label)
+    local data = ZONES.data;
+    if (data == nil or data.zones[label] == nil) then
+        return nil;
+    end
+    local hit = ZONES.cache[label];
+    if (hit == nil) then
+        local entry  = data.zones[label];
+        local sheets = T{};
+        for _, s in ipairs(zg.sheets(entry, data.grid)) do
+            s.path = ('%s/assets/%s/%s'):fmt(addon.path, data.dir or 'zones', s.file);
+            local f = io.open(s.path, 'rb');
+            if (f ~= nil) then
+                f:close();
+                table.insert(sheets, s);
+            end
+        end
+        hit = (#sheets > 0) and { entry = entry, sheets = sheets,
+                                  span = entry.span or data.span or 120 } or false;
+        ZONES.cache[label] = hit;
+    end
+    return hit or nil;
+end
 
 -- Uberwarp's own destination data, which is where the unlock bits come from.
 -- Read out of the install rather than shipped alongside the map: it is the
