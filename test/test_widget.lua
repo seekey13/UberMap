@@ -382,8 +382,8 @@ check(src:find('opts.header', 1, true) ~= nil,
       'the zone section no longer draws its name as a header');
 check(src:find('section_gap', 1, true) ~= nil,
       'the zone section and the favorites no longer have a break between them');
-check(src:find('show_favs', 1, true) ~= nil,
-      'a zone with no favorites still draws a second plate');
+check(src:find('drag.fixed and hot_i ~= drag.i', 1, true) ~= nil,
+      'a row that cannot move sends again when let go off itself');
 check(src:find('gm.pitch', 1, true) ~= nil,
       'the open zone group menu reads a pitch the list no longer has');
 
@@ -527,6 +527,14 @@ check(fw.zone_list('Bastok Markets [S]', warps) ~= nil
       'a [S] zone should not pick up the present zone\'s homepoints');
 check(fw.zone_list(nil, warps) == nil and fw.zone_list('', warps) == nil,
       'no zone name should list nothing');
+-- The game spells two Riverne sites with a '#' the list files them without.
+for _, site in ipairs({ 'A01', 'B01' }) do
+    local rv = fw.zone_list('Riverne - Site #' .. site, warps);
+    check(rv ~= nil and #rv == 1 and rv[1].key == 'Riverne - Site ' .. site
+          and rv[1].label == 'Home Point #1',
+          ('Riverne - Site #%s should list its homepoint, lists %s'):format(
+              site, labels(rv)));
+end
 
 --[[
 * Only a Home Point lists the zone's homepoints.  The real fw.zone_rows, with

@@ -3285,12 +3285,17 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
         elseif (imgui.IsMouseReleased(0)) then
             -- Let go: one that moved is a reorder to write out, one that never
             -- left its row is a plain click, so it travels -- or does what
-            -- the caller says a click does.
+            -- the caller says a click does.  A row that cannot move -- Cancel,
+            -- a maw, a homepoint of the zone the player is stood in -- has no
+            -- drag to make, so one pulled off its row and let go elsewhere is
+            -- a change of mind, the way a button let go of off itself is, and
+            -- nothing is sent.
+            local off = drag.fixed and hot_i ~= drag.i;
             if (drag.moved) then
                 settings.save();
-            elseif (opts.click ~= nil) then
+            elseif (opts.click ~= nil and not off) then
                 opts.click(drag.i);
-            elseif (drag.live) then
+            elseif (drag.live and not off) then
                 -- The saved entry carries every field warp_cmd reads, so it
                 -- travels as the row it was taken from.
                 local f   = favs[drag.i];
@@ -3503,19 +3508,15 @@ local function draw_fav_widget()
         end
         -- slice hands back the rows and their slots.  An and/or keeps only
         -- the first, so each pair is taken on its own line.  A nil slot is a
-        -- row that does not move: the zone's homepoints, and Cancel.
+        -- row that does not move: the zone's homepoints, and Cancel.  There
+        -- is always a favorite under the zone rows, since none would have
+        -- taken the widget down above.
         local zrows, zslots;
+        local frows, fslots = rows, slots;
         if (title) then
             zrows, zslots = slice(1, zone_n);
-        end
-        -- Nothing under the zone rows: the headed plate is the whole widget.
-        -- An empty second plate, and the gap under it, would be a blank list.
-        local fremain = title and (zone_n < #rows);
-        local frows, fslots = rows, slots;
-        if (fremain) then
             frows, fslots = slice(zone_n + 1, #rows);
         end
-        local show_favs = (title == nil) or fremain;
         local mouse_x, mouse_y = imgui.GetMousePos();
         local px, py = imgui.GetCursorScreenPos();
         -- A cursor moving over the widget hands it to the mouse, whose own
@@ -3528,12 +3529,12 @@ local function draw_fav_widget()
         local veto = ui.fw_ctx;
         ui.fw_ctx = false;
         local zm = title and fav_metrics(zrows, pitch, title) or nil;
-        local fm = show_favs and fav_metrics(frows, pitch) or nil;
+        local fm = fav_metrics(frows, pitch);
         -- One column: the grid references line up across both plates, and
         -- the narrower plate takes the wider one's width, so the gap between
         -- them reads as a break in a single list.  A plate with no grid
         -- reference has no column to line up.
-        if (zm ~= nil and fm ~= nil) then
+        if (zm ~= nil) then
             if (zm.posw > 0 and fm.posw > 0) then
                 local pos_x = math.max(zm.pos_x, fm.pos_x);
                 zm.w = math.max(zm.w, pos_x + zm.posw + POPUP_PAD);
@@ -3569,40 +3570,35 @@ local function draw_fav_widget()
             note('##ubermap_fw_zone', zhot, 0);
         end
         -- The break.  Two plates, and the window's own ground is clear, so
-        -- the gap between them is the separation.  No favorites under the
-        -- zone rows, and there is no second plate to separate.
+        -- the gap between them is the separation.
         local section_gap = POPUP_GAP * 2;
-        local fav_y = (zm ~= nil and fm ~= nil) and (py + zm.h + section_gap) or py;
+        local fav_y = (zm ~= nil) and (py + zm.h + section_gap) or py;
         local fbase = (zm ~= nil) and zone_n or 0;
-        if (fm ~= nil) then
-            local fsel = ui.gp_active and (ui.fw_sel - fbase) or nil;
-            if (fsel ~= nil and (fsel < 1 or fsel > #frows)) then
-                fsel = nil;
-            end
-            local hot_i = draw_fav_list(px, fav_y, fm, mouse_x, mouse_y,
-                                        { sel   = fsel,
-                                          grab  = not shift,
-                                          veto  = veto,
-                                          rows  = frows,
-                                          slot  = fslots,
-                                          clipped = true,
-                                          id    = '##ubermap_fw_list',
-                                          click = function (i) fw.pick(false, i + fbase); end });
-            -- Mouse and D-pad share the one selection: a press of either
-            -- button on a row moves it there, and a row dragged up or down
-            -- the list carries the selection along with it.  A click puts
-            -- the pad's highlight out, so the A after one lights the row it
-            -- left and the A after that is what sends it.
-            note('##ubermap_fw_list', hot_i, fbase);
+        local fsel = ui.gp_active and (ui.fw_sel - fbase) or nil;
+        if (fsel ~= nil and (fsel < 1 or fsel > #frows)) then
+            fsel = nil;
         end
+        local hot_i = draw_fav_list(px, fav_y, fm, mouse_x, mouse_y,
+                                    { sel   = fsel,
+                                      grab  = not shift,
+                                      veto  = veto,
+                                      rows  = frows,
+                                      slot  = fslots,
+                                      clipped = true,
+                                      id    = '##ubermap_fw_list',
+                                      click = function (i) fw.pick(false, i + fbase); end });
+        -- Mouse and D-pad share the one selection: a press of either button
+        -- on a row moves it there, and a row dragged up or down the list
+        -- carries the selection along with it.  A click puts the pad's
+        -- highlight out, so the A after one lights the row it left and the A
+        -- after that is what sends it.
+        note('##ubermap_fw_list', hot_i, fbase);
         -- The right-click menu in the same palette.  Header* is what MenuItem
         -- lights with.  Hung under the row in whichever plate it sits in.
         local pop_c, pop_v = ui.style.push_popup();
-        local menu_y = py + POPUP_GAP;
+        local menu_y = fav_y + fm.pitch * (ui.fw_sel - fbase) + POPUP_GAP;
         if (zm ~= nil and ui.fw_sel <= zone_n) then
             menu_y = py + (zm.head or 0) + zm.pitch * ui.fw_sel + POPUP_GAP;
-        elseif (fm ~= nil) then
-            menu_y = fav_y + fm.pitch * (ui.fw_sel - fbase) + POPUP_GAP;
         end
         menu('##ubermap_fw_ctx', rows[ui.fw_sel], px, menu_y);
 
@@ -3610,7 +3606,7 @@ local function draw_fav_widget()
         -- favorites with its top row level with the zone's own.  Asked for
         -- after the click above, so a group opened by it is drawn the same frame.
         local grp, gi = fw.group_open();
-        if (grp ~= nil and fm ~= nil) then
+        if (grp ~= nil) then
             ui.fw_sub = mm.clamp(ui.fw_sub, 1, #grp.members);
             local gm = fav_metrics(grp.members, pitch);
             local gx = px + fm.w + POPUP_GAP;
