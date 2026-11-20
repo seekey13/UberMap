@@ -378,6 +378,196 @@ check(saved[1] == LJ1 and saved[2] == PJ and saved[3] == PB and saved[4] == LJ2,
 -- hold is still there.
 check(src:find('held.anchor_y', 1, true) ~= nil,
       'a group drag no longer holds the panel where it started');
+check(src:find('opts.header', 1, true) ~= nil,
+      'the zone section no longer draws its name as a header');
+check(src:find('section_gap', 1, true) ~= nil,
+      'the zone section and the favorites no longer have a break between them');
+check(src:find('drag.fixed and hot_i ~= drag.i', 1, true) ~= nil,
+      'a row that cannot move sends again when let go off itself');
+check(src:find('gm.pitch', 1, true) ~= nil,
+      'the open zone group menu reads a pitch the list no longer has');
+
+--[[
+* The zone's homepoints, listed above the favorites.  fw.zone_rows is what the
+* real widget asks the world for; stood in for here, the way fav_view is.
+* The highlight starts where the favorites do, so Up from there is the zone
+* and Down from there is the rest of the list.
+--]]
+local function step_up(sel, n)   return (sel - 2) % n + 1; end
+local function step_down(sel, n) return sel % n + 1; end
+
+fw.zone_rows = function ()
+    return {
+        { key = 'Bastok Markets', type = 'home', label = 'Home Point #1', here = true },
+        { key = 'Bastok Markets', type = 'home', label = 'Home Point #2', here = true },
+    };
+end
+refill({ LJ1, PJ });
+cfg.fw_cancel, cfg.fw_group = false, false;
+v, slot = fw.view();
+check(#v == 4, ('two zone rows and two favorites should be four, lists %d'):format(#v));
+check(v[1].here and v[1].label == 'Home Point #1'
+      and v[2].here and v[2].label == 'Home Point #2',
+      'the zone\'s homepoints should head the list, in their order');
+check(slot[1] == nil and slot[2] == nil,
+      'a zone homepoint should have no slot to drag by');
+check(v[3] == LJ1 and slot[3] == 1 and v[4] == PJ and slot[4] == 2,
+      'the favorites should follow, in their own slots');
+check(ui.fw_home == 3 and ui.fw_zone_n == 2,
+      ('the favorites should start at row 3, home %s zone %s'):format(
+          tostring(ui.fw_home), tostring(ui.fw_zone_n)));
+check(step_up(ui.fw_home, #v) == 2 and v[2].here,
+      'Up from the first favorite should land on the last zone homepoint');
+check(step_down(ui.fw_home, #v) == 4 and v[4] == PJ,
+      'Down from the first favorite should walk the favorites');
+
+-- Cancel sits on that same seam, under the zone and over the favorites, and
+-- the highlight starts on it: Up is still the zone, Down is still the list.
+cfg.fw_cancel = true;
+v, slot = fw.view();
+check(v[3] == fw.CANCEL and slot[3] == nil,
+      'Cancel should sit under the zone rows');
+check(ui.fw_home == 3 and v[ui.fw_home] == fw.CANCEL,
+      'the highlight should start on Cancel');
+check(step_up(ui.fw_home, #v) == 2 and v[2].here,
+      'Up from Cancel should land on the last zone homepoint');
+check(step_down(ui.fw_home, #v) == 4 and v[4] == LJ1,
+      'Down from Cancel should land on the first favorite');
+
+-- Grouping folds favorites, not the zone rows above them, even when a zone
+-- row shares a favorite's name.
+cfg.fw_cancel, cfg.fw_group = false, true;
+refill({ LJ1, LJ2, PJ });
+fw.zone_rows = function ()
+    return {
+        { key = 'Lower Jeuno', type = 'home', label = 'Home Point #1', here = true },
+        { key = 'Lower Jeuno', type = 'home', label = 'Home Point #2', here = true },
+    };
+end
+v = fw.view();
+check(v[1].here and v[2].here and v[1].members == nil,
+      'zone rows should stay plain rows, not a group');
+check(v[3].members ~= nil and v[3].key == 'Lower Jeuno' and v[4] == PJ,
+      'the favorites should still fold under the zone rows');
+check(ui.fw_home == 3, 'the favorites should still start under the zone rows');
+
+-- A group that collapses must not land on a zone row that shares its name:
+-- that row is not the favorite that was left.
+fw.zone_rows = function ()
+    return {
+        { key = 'Lower Jeuno', type = 'home', label = 'Home Point #2', here = true },
+    };
+end
+refill({ LJ1 });
+cfg.fw_group = false;
+ui.fw_grp, ui.fw_sel = 'Lower Jeuno', 1;
+open = fw.group_open();
+check(open == nil and ui.fw_grp == nil, 'a zone row is not a group to keep open');
+check(ui.fw_sel == 2 and fw.view()[ui.fw_sel] == LJ1,
+      ('a collapsed group should land on the favorite, is %s'):format(
+          tostring(ui.fw_sel)));
+
+-- Nothing but the zone: the highlight starts on the first homepoint rather
+-- than one past the end of the list.
+fw.zone_rows = function ()
+    return {
+        { key = 'Bastok Markets', type = 'home', label = 'Home Point #1', here = true },
+    };
+end
+refill({});
+cfg.fw_cancel = false;
+v = fw.view();
+check(#v == 1 and v[1].here and ui.fw_home == 1,
+      'a list of only homepoints should start on the first');
+
+--[[
+* Which rows of the warp list count as this zone's homepoints.  The real
+* lib/warps.lua, so a marker that is not the game's name for the zone -- and
+* a list shared by two markers -- is checked against the file, not a copy.
+--]]
+local zbody = src:match('\n(function fw%.zone_list%(.-\nend)\n');
+check(zbody ~= nil, 'fw.zone_list is no longer written as one function');
+local zchunk;
+if (setfenv ~= nil) then
+    zchunk = assert(loadstring(zbody or ''));
+    setfenv(zchunk, env);
+else
+    zchunk = assert(load(zbody or '', 'fw.zone_list', 't', env));
+end
+zchunk();
+local warps = assert(loadfile('lib/warps.lua'))();
+
+local function labels(list)
+    local out = { };
+    for i, f in ipairs(list or { }) do
+        out[i] = f.label;
+    end
+    return table.concat(out, ', ');
+end
+local mines = fw.zone_list('Bastok Mines', warps);
+check(mines ~= nil and #mines == 3,
+      ('Bastok Mines should list its three homepoints, lists %s'):format(labels(mines)));
+check(mines ~= nil and mines[1].here and mines[1].key == 'Bastok Mines'
+      and mines[1].type == 'home' and mines[3].label == 'Home Point #3',
+      'a zone homepoint should carry the zone, the kind and the here flag');
+local waters = fw.zone_list('Windurst Waters', warps);
+check(waters ~= nil and #waters == 4,
+      ('Windurst Waters should list four, not the copies on its markers, lists %d'):format(
+          waters and #waters or 0));
+local upper = fw.zone_list("Upper Delkfutt's Tower", warps);
+check(upper ~= nil and #upper == 1 and upper[1].key == "Upper Delkfutt's Tower"
+      and upper[1].label == 'Home Point #1',
+      'Upper Delkfutt should list its own homepoint');
+check(fw.zone_list("Lower Delkfutt's Tower", warps) == nil,
+      'Lower Delkfutt has a guide and no homepoint');
+check(fw.zone_list('Batallia Downs', warps) == nil,
+      'a zone with no homepoint should list none');
+check(fw.zone_list('Bastok Markets [S]', warps) ~= nil
+      and #fw.zone_list('Bastok Markets [S]', warps) == 1,
+      'a [S] zone should not pick up the present zone\'s homepoints');
+check(fw.zone_list(nil, warps) == nil and fw.zone_list('', warps) == nil,
+      'no zone name should list nothing');
+-- The game spells two Riverne sites with a '#' the list files them without.
+for _, site in ipairs({ 'A01', 'B01' }) do
+    local rv = fw.zone_list('Riverne - Site #' .. site, warps);
+    check(rv ~= nil and #rv == 1 and rv[1].key == 'Riverne - Site ' .. site
+          and rv[1].label == 'Home Point #1',
+          ('Riverne - Site #%s should list its homepoint, lists %s'):format(
+              site, labels(rv)));
+end
+
+--[[
+* Only a Home Point lists the zone's homepoints.  The real fw.zone_rows, with
+* the game's name for the zone stood in for: the same zone with a Survival
+* Guide or any other NPC in reach, or none, is the favorites alone.
+--]]
+local rbody = src:match('\n(function fw%.zone_rows%(%).-\nend)\n');
+check(rbody ~= nil, 'fw.zone_rows is no longer written as one function');
+local rchunk;
+if (setfenv ~= nil) then
+    rchunk = assert(loadstring(rbody or ''));
+    setfenv(rchunk, env);
+else
+    rchunk = assert(load(rbody or '', 'fw.zone_rows', 't', env));
+end
+rchunk();
+env.WARPS = warps;
+fw.zone_name = function () return 'Bastok Mines'; end
+refill({ LJ1 });
+cfg.fw_cancel, cfg.fw_group = false, false;
+ui.near_kind = 'home';
+local at_hp = fw.zone_rows();
+check(at_hp ~= nil and #at_hp == 3 and #fw.view() == 4,
+      ('a Home Point should list the zone\'s three, lists %s'):format(labels(at_hp)));
+for _, kind in ipairs({ 'guide', 'unity', 'abyssea', 'conflux', 'runic', 'maw' }) do
+    ui.near_kind = kind;
+    check(fw.zone_rows() == nil and #fw.view() == 1,
+          ('near_kind %s in a zone with homepoints should list the favorites alone'):format(kind));
+end
+ui.near_kind = false;
+check(fw.zone_rows() == nil, 'no NPC polled yet should list no homepoints');
+ui.near_kind = nil;
+check(fw.zone_rows() == nil, 'no NPC in reach should list no homepoints');
 
 if (fails == 0) then
     print(('ok: the D-pad wrap, the A-button gate and the widget\'s list all hold'));

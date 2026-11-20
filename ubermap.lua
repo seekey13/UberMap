@@ -19,7 +19,7 @@
 
 addon.name    = 'UberMap';
 addon.author  = 'Seekey';
-addon.version = '1.4';
+addon.version = '1.5';
 addon.desc    = 'Displays the server map, automatically on Home Point interaction.';
 
 require('common');
@@ -459,9 +459,10 @@ local default_settings = T{
     -- a file that already has it gets them once under this marker instead.
     seeded_rp = false,
     widget = true,   -- the gamepad favorites widget is on
-    -- A Cancel row at the top of the widget, where the selection starts.  Off
-    -- by default.  For the player who walks up to a warp NPC and presses A out
-    -- of habit: with it on, that press shuts the widget instead of warping.
+    -- A Cancel row at the top of the favorites, where the selection starts.
+    -- The current zone's homepoints, when there are any, are listed above it.
+    -- Off by default.  For the player who walks up to a warp NPC and presses A
+    -- out of habit: with it on, that press shuts the widget instead of warping.
     fw_cancel = false,
     -- Two or more favorites in one zone listed on the widget as a single row
     -- named for the zone, which opens them out in a panel beside it.  Off by
@@ -801,6 +802,13 @@ local ui = T{
     fw_on       = false,
     fw_shown    = false,     -- it was up last frame, i.e. this is not its first
     fw_sel      = 1,         -- the row the D-pad has landed on, 1-based
+    -- Where the favorites start, and how many homepoint rows sit above them.
+    -- The highlight starts on that row, so Up walks the zone and Down walks
+    -- the favorites.  fw_at_zone is the count last drawn: a zone line that
+    -- changes it puts the highlight back on the seam, not onto a new row.
+    fw_home     = 1,
+    fw_zone_n   = 0,
+    fw_at_zone  = nil,
     fw_hide     = false,     -- B put it away until the player walks off the NPC
     -- The two widget checkboxes as of the last frame the widget was drawn.
     -- A change reshapes the list under fw_sel, which is only a row number, so
@@ -1871,7 +1879,9 @@ local fw = {
 
 -- What a favorite reads as: the zone the row hung off, then the row itself,
 -- e.g. 'Windurst Woods - Home Point #2'.  A zone group reads as the zone
--- alone, and Cancel as itself.
+-- alone, and Cancel as itself.  A homepoint of the zone the player is stood
+-- in reads as the point alone: the section it sits in is that zone, and the
+-- grid reference already says which one.
 local function fav_text(f)
     if (f.cancel) then
         return fw.CANCEL_TXT;
@@ -1879,28 +1889,117 @@ local function fav_text(f)
     if (f.members ~= nil) then
         return f.key;
     end
+    if (f.here) then
+        return f.label;
+    end
     return ('%s - %s'):fmt(f.key, f.label);
 end
 
 --[[
-* The widget's own list: fav_view, with a Cancel row on top and favorites that
+* The Home Points of the zone named 'name', as rows the widget can send.
+* Nil when that zone has none.  'warps' defaults to the loaded list; the test
+* hands in its own.  The name is the game's, which is the key the rows are
+* filed under -- all but the two Riverne sites, which the game spells
+* 'Riverne - Site #A01' and the list files without the hash, the way the /uw
+* for them is sent.  A row filed under that key but traveling to some other
+* zone is left out, so one marker's list cannot answer for a floor it does
+* not stand in.
+--]]
+function fw.zone_list(name, warps)
+    if (name == nil or name == '') then
+        return nil;
+    end
+    warps = warps or WARPS;
+    if (warps[name] == nil) then
+        name = (name:gsub('#', ''));
+    end
+    local list = warps[name];
+    if (list == nil) then
+        return nil;
+    end
+    local out;
+    for _, w in ipairs(list) do
+        if (w.type == 'home' and (w.zone or name) == name) then
+            out = out or T{ };
+            out[#out + 1] = { key = name, type = 'home', label = w.label,
+                              zone = w.zone, here = true };
+        end
+    end
+    return out;
+end
+
+--[[
+* The game's name for the zone the player is stood in, or nil before the
+* party list has been read.  Cached on the zone id: the resource lookup is
+* the same string until a zone line, and the widget asks every frame.
+--]]
+function fw.zone_name()
+    local zid = ui.near_zid;
+    if (zid == nil or zid == 0) then
+        return nil;
+    end
+    if (fw._zid ~= zid) then
+        fw._zid = zid;
+        local ok, name = pcall(function ()
+            return AshitaCore:GetResourceManager():GetString('zones.names', zid);
+        end);
+        fw._zname = (ok and type(name) == 'string' and name ~= '') and name or nil;
+    end
+    return fw._zname;
+end
+
+--[[
+* Home Points in the zone the player is stood in, while they are stood at a
+* Home Point.  Nil everywhere else, and nil for a zone that has none: a
+* Survival Guide cannot send one, so listing them there would be rows that
+* look like choices and are not.  Not saved, and not a copy of a favorite --
+* the zone's points are listed whether or not anyone saved them.
+--]]
+function fw.zone_rows()
+    if (ui.near_kind ~= 'home') then
+        return nil;
+    end
+    return fw.zone_list(fw.zone_name());
+end
+
+--[[
+* The widget's own list: the Home Points of the zone the player is stood in,
+* then fav_view, with a Cancel row on top of the favorites and favorites that
 * share a zone folded into one row, each when its checkbox asks for it.
 * Handed back the way fav_view hands its rows back, with the slot each sits in
-* in cfg.favs, so a drag inside it still reorders the saved list.  Cancel has
-* no slot and cannot be dragged or dropped on.  A group takes its first
-* member's slot, since that is where it is listed: a row dropped on it from
-* below lands above that member, and one dropped on it from above lands below
-* the zone, by fw.drop_slot.  It carries every member's slot as well, in
-* 'slots', for fw.reorder to drag them by.
+* in cfg.favs, so a drag inside it still reorders the saved list.  A zone
+* homepoint and Cancel have no slot and cannot be dragged or dropped on.  A
+* group takes its first member's slot, since that is where it is listed: a
+* row dropped on it from below lands above that member, and one dropped on it
+* from above lands below the zone, by fw.drop_slot.  It carries every member's
+* slot as well, in 'slots', for fw.reorder to drag them by.
 *
+* The homepoints sit above the favorites so the highlight, which starts on
+* the first favorite -- Cancel, where that row is on -- steps into the zone
+* on Up and into the favorites on Down.  ui.fw_home is that first favorite.
 * A group is listed where its first member would have been, and only where two
 * or more share a zone -- one favorite alone in its zone reads as it always has.
 --]]
 function fw.view()
     local favs, raw = fav_view();
     local view, slot, n = T{ }, T{ }, 0;
+    -- Above the favorites, and only while stood at a Home Point.  The test's
+    -- copy of this function has no zone_rows, which is the same as a zone
+    -- with none: the list is the favorites alone, as it always was.
+    local zone_n = 0;
+    local ahead = fw.zone_rows and fw.zone_rows();
+    if (ahead ~= nil) then
+        for _, f in ipairs(ahead) do
+            n = n + 1;
+            zone_n = zone_n + 1;
+            view[n] = f;
+        end
+    end
+    -- The seam.  Past the end of a list that is only homepoints, so the
+    -- highlight starts on the first of those rather than off the list.
+    local home = n + 1;
     if (cfg.fw_cancel) then
-        n = 1;
+        n = n + 1;
         view[n] = fw.CANCEL;
     end
     local count = { };
@@ -1926,6 +2025,10 @@ function fw.view()
             g.members[#g.members + 1] = f;
             g.slots[#g.slots + 1]     = s;
         end
+    end
+    if (ui ~= nil) then
+        ui.fw_home   = (home <= n) and home or 1;
+        ui.fw_zone_n = zone_n;
     end
     return view, slot;
 end
@@ -1996,7 +2099,10 @@ function fw.group_open()
             ui.fw_sel = i;
             return f, i;
         end
-        if (plain == nil and f.members == nil and f.key == key) then
+        -- A homepoint of the zone the player is stood in shares the group's
+        -- key and is not a favorite.  Landing on it when the group collapses
+        -- would send that homepoint on the next A, which is not the row left.
+        if (plain == nil and f.members == nil and not f.here and f.key == key) then
             plain = i;
         end
     end
@@ -2894,7 +3000,7 @@ nav.h = {
         local g = fw.group_open();
         return g and #g.members or #fw.view();
     end,
-    -- Whether the widget's top row is Cancel, which F lands the arrows on.
+    -- Whether the favorites are headed by Cancel, which F lands the arrows on.
     fw_cancel  = function ()
         return cfg.fw_cancel == true;
     end,
@@ -2918,9 +3024,12 @@ nav.h = {
 * off screen before it measures anything.
 *
 * Measures fav_view unless handed a list of its own: the widget's, or the
-* members of the zone group it has opened out.
+* members of the zone group it has opened out.  'header', when given, is a
+* title band above the rows: it widens the plate to the title and adds its
+* height in 'head', and it is not a row.  'posw' is the grid-reference
+* column's width, 0 for a list with none, for a caller lining two lists up.
 --]]
-local function fav_metrics(favs, pitch)
+local function fav_metrics(favs, pitch, header)
     favs        = favs or fav_view();
     pitch       = pitch or POPUP_ROW;
     local n     = #favs;
@@ -2945,13 +3054,24 @@ local function fav_metrics(favs, pitch)
         end
     end
     local pos_x = lab_x + textw + POPUP_PAD;
+    local w     = ((posw > 0) and (pos_x + posw) or (lab_x + textw)) + POPUP_PAD;
+    -- The title has a band of its own, so it widens the plate and leaves the
+    -- columns where the rows put them.  It sits in the icon's column, so its
+    -- width is measured from the plate's edge.
+    local head = 0;
+    if (header ~= nil and header ~= '') then
+        w    = math.max(w, POPUP_PAD + (imgui.CalcTextSize(header)) + POPUP_PAD);
+        head = th + ui.style.S(8);
+    end
     return { n     = n,
              th    = th,
              lab_x = lab_x,
              pos_x = pos_x,
+             posw  = posw,
+             head  = head,
              pitch = pitch,
-             w     = ((posw > 0) and (pos_x + posw) or (lab_x + textw)) + POPUP_PAD,
-             h     = pitch * math.max(n, 1) };
+             w     = w,
+             h     = head + pitch * math.max(n, 1) };
 end
 
 --[[
@@ -2973,6 +3093,8 @@ end
 *          zone group's panel beside its own list in the one window.
 *   click- what a click that did not drag does, handed the row's number;
 *          unset, the row travels if it can.
+*   header - a title drawn in the band m.head reserves above the rows.  Not a
+*          row: the D-pad does not land on it, and a click there sends nothing.
 *   clipped - the window drawn into is the list's own size, so the plate's
 *          shadow goes on the background list instead of being clipped off.
 *
@@ -2994,6 +3116,16 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
     st.shadow(px, py, w, h, (not opts.clipped) and dl or nil);
     st.fill(dl, px, py, w, h, st.P.bg, st.S(5), 1);
     st.outline(dl, px, py, w, h, st.P.border, st.S(5), 1);
+
+    -- The title band.  The rows start under it, so every y below is 'top'
+    -- rather than the plate's own top.  A click on the title falls between
+    -- the rows and hits none of them.
+    local head = m.head or 0;
+    local top  = py + head;
+    if (head > 0 and opts.header ~= nil) then
+        dl:AddText({ px + POPUP_PAD, py + (head - m.th) / 2 - st.lift(m.th) },
+                   st.u32(st.P.text), opts.header);
+    end
 
     -- Which row the cursor is on, read while drawing and acted on after: a
     -- drag reorders the list the loop is walking.
@@ -3017,7 +3149,7 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
         return raw[k];
     end
     for i, f in ipairs(favs) do
-        local ry = py + pitch * (i - 1);
+        local ry = top + pitch * (i - 1);
         -- The same two tests the popup rows use: a favorite travels only from
         -- the kind of NPC it was saved off, and only to somewhere the player
         -- has registered.  A favorite can outlive neither, so both are asked
@@ -3080,8 +3212,13 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
                        (known and live) and st.u32(st.P.text2) or col, pos);
         end
     end
+    -- Under the title, after the rows, so a lit first row does not paint
+    -- over the line.
+    if (head > 0 and opts.header ~= nil) then
+        dl:AddLine({ px, top }, { px + w, top }, st.u32(st.P.line), 1);
+    end
     if (n == 0) then
-        dl:AddText({ px + m.lab_x, py + (pitch - m.th) / 2 - st.lift(m.th) },
+        dl:AddText({ px + m.lab_x, top + (pitch - m.th) / 2 - st.lift(m.th) },
                    st.u32(st.P.faint), ui.near_kind and FAV_NONE or FAV_EMPTY);
     end
 
@@ -3128,7 +3265,7 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
             -- since the cursor is free to leave it.  A row that cannot move,
             -- or a slot it cannot land on, leaves the list as it is.
             local j = mm.clamp(
-                math.floor((mouse_y - py) / pitch) + 1, 1, n);
+                math.floor((mouse_y - top) / pitch) + 1, 1, n);
             if (j ~= drag.i and not drag.fixed and slot(j) ~= nil) then
                 -- Down onto a zone group lands below the whole zone; up onto
                 -- one lands above its first member, which is above all of it.
@@ -3148,12 +3285,17 @@ local function draw_fav_list(px, py, m, mouse_x, mouse_y, opts)
         elseif (imgui.IsMouseReleased(0)) then
             -- Let go: one that moved is a reorder to write out, one that never
             -- left its row is a plain click, so it travels -- or does what
-            -- the caller says a click does.
+            -- the caller says a click does.  A row that cannot move -- Cancel,
+            -- a maw, a homepoint of the zone the player is stood in -- has no
+            -- drag to make, so one pulled off its row and let go elsewhere is
+            -- a change of mind, the way a button let go of off itself is, and
+            -- nothing is sent.
+            local off = drag.fixed and hot_i ~= drag.i;
             if (drag.moved) then
                 settings.save();
-            elseif (opts.click ~= nil) then
+            elseif (opts.click ~= nil and not off) then
                 opts.click(drag.i);
-            elseif (drag.live) then
+            elseif (drag.live and not off) then
                 -- The saved entry carries every field warp_cmd reads, so it
                 -- travels as the row it was taken from.
                 local f   = favs[drag.i];
@@ -3190,7 +3332,10 @@ end
 --]]
 local function draw_fav_widget()
     -- Narrowed to the NPC in reach, so a list with nothing this NPC can send
-    -- takes the widget off screen the same way an empty one does.
+    -- takes the widget off screen the same way an empty one does.  The zone's
+    -- own homepoints are not enough to hold it up: a player who never saved a
+    -- Home Point never asked for the widget there, and it would take the A
+    -- they press to open the crystal's own menu and warp them with it.
     local n = #fav_view();
     -- Only where it can be used -- stood at a warp NPC -- since the buttons it
     -- swallows are the game's everywhere else.  The map has nothing to do with
@@ -3218,22 +3363,26 @@ local function draw_fav_widget()
         return;
     end
     ui.fw_on  = true;
-    -- Ticking either checkbox reshapes the list under a highlight that is only
-    -- a row number: Cancel inserts one at the top, grouping collapses several
-    -- into one.  Reset the way the widget's first frame does, or the next A
-    -- lands on a different zone.  Remembered here rather than shifted, since
-    -- grouping does not move every row by one.
+    -- The list as the widget lists it: the zone's homepoints, then Cancel
+    -- where the config panel asks for it, then zones folded into a row apiece.
+    -- fw.view records where the favorites start, which the reset below lands on.
+    local rows, slots = fw.view();
+    local home = ui.fw_home or 1;
+    -- Ticking either checkbox, or a zone line that changes how many homepoints
+    -- sit above the favorites, reshapes the list under a highlight that is
+    -- only a row number.  Reset the way the widget's first frame does, or the
+    -- next A lands on a different zone.  Remembered here rather than shifted,
+    -- since grouping does not move every row by one.
     if (ui.fw_shown
         and (ui.fw_opt_cancel ~= cfg.fw_cancel
-             or ui.fw_opt_group ~= cfg.fw_group)) then
-        ui.fw_sel = 1;
+             or ui.fw_opt_group ~= cfg.fw_group
+             or ui.fw_at_zone ~= ui.fw_zone_n)) then
+        ui.fw_sel = home;
         ui.fw_grp = nil;
     end
     ui.fw_opt_cancel = cfg.fw_cancel;
     ui.fw_opt_group  = cfg.fw_group;
-    -- The list as the widget lists it: Cancel on top and zones folded into a
-    -- row apiece, where the config panel asks for either.
-    local rows, slots = fw.view();
+    ui.fw_at_zone    = ui.fw_zone_n;
 
     -- Asked for once, on the frame it comes up, and never again.  Ashita gives
     -- every addon the one ImGui context, and focusing a window closes every
@@ -3245,12 +3394,14 @@ local function draw_fav_widget()
     -- this on a click; the map carries NoBringToFrontOnFocus now, so a click
     -- down there leaves the stack alone and one ask on the way up holds.
     --
-    -- The selection starts on the top row, which is Cancel where there is one,
-    -- and with no group opened out: a press made out of habit on the way up to
-    -- the NPC then shuts the widget rather than warping anywhere.
+    -- The selection starts where the favorites do, which is Cancel where there
+    -- is one, and with no group opened out.  The zone's homepoints are the
+    -- rows above that, so the first Up walks them and the first Down walks the
+    -- favorites.  A press made out of habit on the way up to the NPC then
+    -- shuts the widget, where Cancel is on, rather than warping anywhere.
     if (not ui.fw_shown) then
         ui.fw_shown = true;
-        ui.fw_sel   = 1;
+        ui.fw_sel   = home;
         ui.fw_grp   = nil;
         imgui.SetNextWindowFocus();
     end
@@ -3287,9 +3438,10 @@ local function draw_fav_widget()
     * It hangs off the InvisibleButton the list just drawn left behind, so it
     * is asked for straight after each list, and acts on f -- the row the
     * right-click just moved that list's selection to.  Neither Cancel, a
-    * zone group, nor a maw offers it: the first two are not favorites, and
-    * a maw's row is MAW_FAV, made for the visit rather than saved, so the
-    * menu would put it onto the list.
+    * zone group, a maw, nor a homepoint of the zone the player is stood in
+    * offers it: the first two are not favorites, a maw's row is MAW_FAV,
+    * made for the visit rather than saved, and a zone homepoint is listed
+    * whether or not it was saved, so the menu would put it onto the list.
     *
     * Placed under that row rather than at the cursor, the same as the map's
     * menu and for the same reason: a menu lying over the row it came from
@@ -3303,8 +3455,11 @@ local function draw_fav_widget()
     * window Begins next in the frame.
     --]]
     local function menu(pid, f, x, y)
+        -- A zone homepoint is not a favorite.  The menu only removes, so
+        -- offering it here would either take a saved copy off the list below
+        -- or, where none is saved, add one under a label that says remove.
         if (shift or f == nil or f.cancel or f.members ~= nil
-            or f.type == 'maw') then
+            or f.type == 'maw' or f.here) then
             return;
         end
         imgui.SetNextWindowPos({ x, y });
@@ -3337,8 +3492,31 @@ local function draw_fav_widget()
     -- back the title bar and the resize grip this is meant to be without.
     if (imgui.Begin('UberMap Favorites##ubermap_fw', true, flags)) then
         -- The same rows as the heart's list.  No empty text, since a list
-        -- with nothing in it took the widget down above.
-        local m = fav_metrics(rows, pitch);
+        -- with nothing in it took the widget down above.  At a Home Point the
+        -- zone's homepoints are a plate of their own, headed by the zone's
+        -- name, with a gap under it before the favorites.
+        local zone_n = ui.fw_zone_n or 0;
+        local title = (zone_n > 0 and rows[1] ~= nil and rows[1].here)
+                      and rows[1].key or nil;
+        local function slice(a, b)
+            local r, s = T{ }, T{ };
+            for i = a, b do
+                local k = i - a + 1;
+                r[k], s[k] = rows[i], slots[i];
+            end
+            return r, s;
+        end
+        -- slice hands back the rows and their slots.  An and/or keeps only
+        -- the first, so each pair is taken on its own line.  A nil slot is a
+        -- row that does not move: the zone's homepoints, and Cancel.  There
+        -- is always a favorite under the zone rows, since none would have
+        -- taken the widget down above.
+        local zrows, zslots;
+        local frows, fslots = rows, slots;
+        if (title) then
+            zrows, zslots = slice(1, zone_n);
+            frows, fslots = slice(zone_n + 1, #rows);
+        end
         local mouse_x, mouse_y = imgui.GetMousePos();
         local px, py = imgui.GetCursorScreenPos();
         -- A cursor moving over the widget hands it to the mouse, whose own
@@ -3350,44 +3528,89 @@ local function draw_fav_widget()
         -- they hang off, so the rows underneath learn one is up a frame late.
         local veto = ui.fw_ctx;
         ui.fw_ctx = false;
+        local zm = title and fav_metrics(zrows, pitch, title) or nil;
+        local fm = fav_metrics(frows, pitch);
+        -- One column: the grid references line up across both plates, and
+        -- the narrower plate takes the wider one's width, so the gap between
+        -- them reads as a break in a single list.  A plate with no grid
+        -- reference has no column to line up.
+        if (zm ~= nil) then
+            if (zm.posw > 0 and fm.posw > 0) then
+                local pos_x = math.max(zm.pos_x, fm.pos_x);
+                zm.w = math.max(zm.w, pos_x + zm.posw + POPUP_PAD);
+                fm.w = math.max(fm.w, pos_x + fm.posw + POPUP_PAD);
+                zm.pos_x, fm.pos_x = pos_x, pos_x;
+            end
+            local wide = math.max(zm.w, fm.w);
+            zm.w, fm.w = wide, wide;
+        end
+        local function note(id, hot, base)
+            local drag = ui.fav_drag;
+            if (drag ~= nil and drag.id == id) then
+                ui.fw_sel = drag.i + base;
+            elseif (hot ~= nil
+                    and (imgui.IsMouseClicked(0) or imgui.IsMouseClicked(1))) then
+                ui.fw_sel = hot + base;
+            end
+        end
         -- A click does what A does, so Cancel shuts the widget and a zone
         -- group opens its panel whichever hand chose it.
-        local hot_i = draw_fav_list(px, py, m, mouse_x, mouse_y,
-                                    { sel   = ui.gp_active and ui.fw_sel or nil,
+        if (zm ~= nil) then
+            local zsel = (ui.gp_active and ui.fw_sel <= zone_n) and ui.fw_sel or nil;
+            local zhot = draw_fav_list(px, py, zm, mouse_x, mouse_y,
+                                       { sel    = zsel,
+                                         grab   = not shift,
+                                         veto   = veto,
+                                         rows   = zrows,
+                                         slot   = zslots,
+                                         header = title,
+                                         clipped = true,
+                                         id     = '##ubermap_fw_zone',
+                                         click  = function (i) fw.pick(false, i); end });
+            note('##ubermap_fw_zone', zhot, 0);
+        end
+        -- The break.  Two plates, and the window's own ground is clear, so
+        -- the gap between them is the separation.
+        local section_gap = POPUP_GAP * 2;
+        local fav_y = (zm ~= nil) and (py + zm.h + section_gap) or py;
+        local fbase = (zm ~= nil) and zone_n or 0;
+        local fsel = ui.gp_active and (ui.fw_sel - fbase) or nil;
+        if (fsel ~= nil and (fsel < 1 or fsel > #frows)) then
+            fsel = nil;
+        end
+        local hot_i = draw_fav_list(px, fav_y, fm, mouse_x, mouse_y,
+                                    { sel   = fsel,
                                       grab  = not shift,
                                       veto  = veto,
-                                      rows  = rows,
-                                      slot  = slots,
+                                      rows  = frows,
+                                      slot  = fslots,
                                       clipped = true,
                                       id    = '##ubermap_fw_list',
-                                      click = function (i) fw.pick(false, i); end });
+                                      click = function (i) fw.pick(false, i + fbase); end });
         -- Mouse and D-pad share the one selection: a press of either button
         -- on a row moves it there, and a row dragged up or down the list
         -- carries the selection along with it.  A click puts the pad's
         -- highlight out, so the A after one lights the row it left and the A
         -- after that is what sends it.
-        local drag = ui.fav_drag;
-        if (drag ~= nil and drag.id == '##ubermap_fw_list') then
-            ui.fw_sel = drag.i;
-        elseif (hot_i ~= nil
-                and (imgui.IsMouseClicked(0) or imgui.IsMouseClicked(1))) then
-            ui.fw_sel = hot_i;
-        end
+        note('##ubermap_fw_list', hot_i, fbase);
         -- The right-click menu in the same palette.  Header* is what MenuItem
-        -- lights with.
+        -- lights with.  Hung under the row in whichever plate it sits in.
         local pop_c, pop_v = ui.style.push_popup();
-        menu('##ubermap_fw_ctx', rows[ui.fw_sel],
-             px, py + m.pitch * ui.fw_sel + POPUP_GAP);
+        local menu_y = fav_y + fm.pitch * (ui.fw_sel - fbase) + POPUP_GAP;
+        if (zm ~= nil and ui.fw_sel <= zone_n) then
+            menu_y = py + (zm.head or 0) + zm.pitch * ui.fw_sel + POPUP_GAP;
+        end
+        menu('##ubermap_fw_ctx', rows[ui.fw_sel], px, menu_y);
 
         -- The zone group opened out, as a second list to the right of the
-        -- first with its top row level with the zone's own.  Asked for after
-        -- the click above, so a group opened by it is drawn the same frame.
+        -- favorites with its top row level with the zone's own.  Asked for
+        -- after the click above, so a group opened by it is drawn the same frame.
         local grp, gi = fw.group_open();
         if (grp ~= nil) then
             ui.fw_sub = mm.clamp(ui.fw_sub, 1, #grp.members);
             local gm = fav_metrics(grp.members, pitch);
-            local gx = px + m.w + POPUP_GAP;
-            local gy = py + m.pitch * (gi - 1);
+            local gx = px + fm.w + POPUP_GAP;
+            local gy = fav_y + fm.pitch * (gi - fbase - 1);
             -- The panel is anchored on the group's first member, so a drag
             -- that moves that member past another zone moves gi, and the panel
             -- with it, under a cursor that has not.  The next frame then
@@ -3409,7 +3632,7 @@ local function draw_fav_widget()
                                           clipped = true,
                                           id    = '##ubermap_fw_grp',
                                           click = function (i) fw.pick(true, i); end });
-            drag = ui.fav_drag;
+            local drag = ui.fav_drag;
             if (drag ~= nil and drag.id == '##ubermap_fw_grp') then
                 ui.fw_sub = drag.i;
             elseif (sub_i ~= nil
@@ -3417,7 +3640,7 @@ local function draw_fav_widget()
                 ui.fw_sub = sub_i;
             end
             menu('##ubermap_fw_grp_ctx', grp.members[ui.fw_sub],
-                 gx, gy + m.pitch * ui.fw_sub + POPUP_GAP);
+                 gx, gy + gm.pitch * ui.fw_sub + POPUP_GAP);
         end
         ui.style.pop_popup(pop_c, pop_v);
     end
