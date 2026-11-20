@@ -1899,15 +1899,20 @@ end
 * The Home Points of the zone named 'name', as rows the widget can send.
 * Nil when that zone has none.  'warps' defaults to the loaded list; the test
 * hands in its own.  The name is the game's, which is the key the rows are
-* filed under.  A row filed under that key but traveling to some other zone
-* is left out, so one marker's list cannot answer for a floor it does not
-* stand in.
+* filed under -- all but the two Riverne sites, which the game spells
+* 'Riverne - Site #A01' and the list files without the hash, the way the /uw
+* for them is sent.  A row filed under that key but traveling to some other
+* zone is left out, so one marker's list cannot answer for a floor it does
+* not stand in.
 --]]
 function fw.zone_list(name, warps)
     if (name == nil or name == '') then
         return nil;
     end
     warps = warps or WARPS;
+    if (warps[name] == nil) then
+        name = (name:gsub('#', ''));
+    end
     local list = warps[name];
     if (list == nil) then
         return nil;
@@ -2995,7 +3000,7 @@ nav.h = {
         local g = fw.group_open();
         return g and #g.members or #fw.view();
     end,
-    -- Whether the widget's top row is Cancel, which F lands the arrows on.
+    -- Whether the favorites are headed by Cancel, which F lands the arrows on.
     fw_cancel  = function ()
         return cfg.fw_cancel == true;
     end,
@@ -3021,7 +3026,8 @@ nav.h = {
 * Measures fav_view unless handed a list of its own: the widget's, or the
 * members of the zone group it has opened out.  'header', when given, is a
 * title band above the rows: it widens the plate to the title and adds its
-* height in 'head', and it is not a row.
+* height in 'head', and it is not a row.  'posw' is the grid-reference
+* column's width, 0 for a list with none, for a caller lining two lists up.
 --]]
 local function fav_metrics(favs, pitch, header)
     favs        = favs or fav_view();
@@ -3047,21 +3053,24 @@ local function fav_metrics(favs, pitch, header)
             posw = math.max(posw, (imgui.CalcTextSize(p)));
         end
     end
-    -- The title sits in the icon's column, so its width is measured from the
-    -- plate's edge rather than from the text column the rows start at.
+    local pos_x = lab_x + textw + POPUP_PAD;
+    local w     = ((posw > 0) and (pos_x + posw) or (lab_x + textw)) + POPUP_PAD;
+    -- The title has a band of its own, so it widens the plate and leaves the
+    -- columns where the rows put them.  It sits in the icon's column, so its
+    -- width is measured from the plate's edge.
     local head = 0;
     if (header ~= nil and header ~= '') then
-        textw = math.max(textw, (imgui.CalcTextSize(header)) - (lab_x - POPUP_PAD));
-        head  = th + ui.style.S(8);
+        w    = math.max(w, POPUP_PAD + (imgui.CalcTextSize(header)) + POPUP_PAD);
+        head = th + ui.style.S(8);
     end
-    local pos_x = lab_x + textw + POPUP_PAD;
     return { n     = n,
              th    = th,
              lab_x = lab_x,
              pos_x = pos_x,
+             posw  = posw,
              head  = head,
              pitch = pitch,
-             w     = ((posw > 0) and (pos_x + posw) or (lab_x + textw)) + POPUP_PAD,
+             w     = w,
              h     = head + pitch * math.max(n, 1) };
 end
 
@@ -3318,19 +3327,18 @@ end
 --]]
 local function draw_fav_widget()
     -- Narrowed to the NPC in reach, so a list with nothing this NPC can send
-    -- takes the widget off screen the same way an empty one does.  A Home
-    -- Point is the exception: the zone's own homepoints are listed whether
-    -- or not any favorite was saved, and they are enough to hold it up.
+    -- takes the widget off screen the same way an empty one does.  The zone's
+    -- own homepoints are not enough to hold it up: a player who never saved a
+    -- Home Point never asked for the widget there, and it would take the A
+    -- they press to open the crystal's own menu and warp them with it.
     local n = #fav_view();
-    local zone = fw.zone_rows();
     -- Only where it can be used -- stood at a warp NPC -- since the buttons it
     -- swallows are the game's everywhere else.  The map has nothing to do with
     -- it: walking up to a crystal is what puts it on screen, and the present
     -- handler polls the world on the frames the map is shut for exactly that.
     -- near_kind is a warp type, nil for no NPC in reach, or false before the
     -- first poll: both of the last two are falsy, so one test covers them.
-    local on = cfg.widget and (n > 0 or zone ~= nil)
-               and not ui.fw_hide and ui.near_kind;
+    local on = cfg.widget and n > 0 and not ui.fw_hide and ui.near_kind;
     if (not on) then
         ui.fw_on, ui.fw_shown = false, false;
         -- A menu left open by a widget going off screen is gone with it, so
@@ -3521,9 +3529,17 @@ local function draw_fav_widget()
         ui.fw_ctx = false;
         local zm = title and fav_metrics(zrows, pitch, title) or nil;
         local fm = show_favs and fav_metrics(frows, pitch) or nil;
-        -- One column: the narrower plate takes the wider one's width, so the
-        -- gap between them reads as a break in a single list.
-        if (zm ~= nil and fm ~= nil and zm.w ~= fm.w) then
+        -- One column: the grid references line up across both plates, and
+        -- the narrower plate takes the wider one's width, so the gap between
+        -- them reads as a break in a single list.  A plate with no grid
+        -- reference has no column to line up.
+        if (zm ~= nil and fm ~= nil) then
+            if (zm.posw > 0 and fm.posw > 0) then
+                local pos_x = math.max(zm.pos_x, fm.pos_x);
+                zm.w = math.max(zm.w, pos_x + zm.posw + POPUP_PAD);
+                fm.w = math.max(fm.w, pos_x + fm.posw + POPUP_PAD);
+                zm.pos_x, fm.pos_x = pos_x, pos_x;
+            end
             local wide = math.max(zm.w, fm.w);
             zm.w, fm.w = wide, wide;
         end
