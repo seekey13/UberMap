@@ -107,7 +107,7 @@ The cog in the map's top-right corner, or `/um config`, opens **UberMap Settings
 | Background | A plate drawn under it. Fully transparent by default, i.e. off -- raise its alpha for a solid label instead of an outlined one |
 | Warp NPC Opens Map | Walking up to a Home Point, Survival Guide, Unity Concord, Abyssea teleporter or Whitegate's Runic Portal puts the map on screen by itself. A Cavernous Maw never does, since it has no rows on the map. On by default; off leaves `/um` and **Y** at the favorites widget as the ways in |
 | Favorites Widget | The controller window below. On by default; ticking it back on also undoes a **B** press that put it away for this visit |
-| Widget Cancel Button | Puts a **Cancel** row at the top of the widget, where the selection starts, see below. Off by default |
+| Widget Cancel Button | Puts a **Cancel** row at the top of the favorites, where the selection starts, see below. Off by default |
 | Widget Group By Zone | Folds two or more favorites in one zone into a single row on the widget, see below. Off by default |
 | EXP Guide Pickup | Take an Instant Warp scroll off a guide you walk past, see below. On by default |
 | Search Focus On Open | The search box takes the keyboard the frame the map opens, so you can type straight away. Off by default: while it holds the caret the map takes no clicks to pan or zoom |
@@ -138,7 +138,7 @@ A small window listing the same favorites, built for a controller. It comes up o
 
 | Button | Effect |
 | --- | --- |
-| D-pad up / down | Move the selection, wrapping at both ends. At a Home Point the zone's homepoints are the rows above the favorites, and the selection starts on the first favorite, so the first **Up** walks those and the first **Down** walks the favorites |
+| D-pad up / down | Move the selection, wrapping at both ends. At a Home Point the zone's homepoints are the rows above the favorites, and the selection starts on the first favorite, so **Up** from there walks those and **Down** walks the favorites |
 | A | Warp to the selected row |
 | B | Put the widget away until you walk off the NPC. With a zone's panel open (see [Group by zone](#group-by-zone)), shut that panel instead |
 | Y | Swap the widget for the full map |
@@ -159,7 +159,7 @@ Tick **Widget Cancel Button** on the `/um config` panel and the widget grows a *
 
 ### Group by zone
 
-Tick **Widget Group By Zone** and any zone with two or more favorites on the widget is listed as a single row named for the zone — **Lower Jeuno**, rather than one row per Home Point. The row sits where the first of them was, with a `>` in the grid-reference column. Select it (**A**, **Enter** or a click) and a second panel opens to its right listing that zone's favorites, with the selection on its top row; the D-pad and the arrows walk that panel until you press **B** (or **Esc** after **F**), which shuts it and puts you back on the zone's row. Clicking the zone's row again shuts it too. A zone with just one favorite is listed as it always was. Rows still drag to reorder, in either panel; dragging a zone's row moves all of its favorites with it. Right-click still removes one from the list. Off by default.
+Tick **Widget Group By Zone** and any zone with two or more favorites on the widget is listed as a single row named for the zone — **Lower Jeuno**, rather than one row per Home Point. The row sits where the first of them was, with a `>` in the grid-reference column. Select it (**A**, **Enter** or a click) and a second panel opens to its right listing that zone's favorites, with the selection on its top row; the D-pad and the arrows walk that panel until you press **B** (or **Esc** after **F**), which shuts it and puts you back on the zone's row. Clicking the zone's row again shuts it too. A zone with just one favorite is listed as it always was. Favorites still drag to reorder, in either panel; dragging a zone's row moves all of its favorites with it. Right-click still removes one from the list. Off by default.
 
 XInput only: an Xbox pad, or anything Windows presents as one. A DirectInput controller (DualShock, DualSense) still works by mouse.
 

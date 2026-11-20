@@ -528,6 +528,39 @@ check(fw.zone_list('Bastok Markets [S]', warps) ~= nil
 check(fw.zone_list(nil, warps) == nil and fw.zone_list('', warps) == nil,
       'no zone name should list nothing');
 
+--[[
+* Only a Home Point lists the zone's homepoints.  The real fw.zone_rows, with
+* the game's name for the zone stood in for: the same zone with a Survival
+* Guide or any other NPC in reach, or none, is the favorites alone.
+--]]
+local rbody = src:match('\n(function fw%.zone_rows%(%).-\nend)\n');
+check(rbody ~= nil, 'fw.zone_rows is no longer written as one function');
+local rchunk;
+if (setfenv ~= nil) then
+    rchunk = assert(loadstring(rbody or ''));
+    setfenv(rchunk, env);
+else
+    rchunk = assert(load(rbody or '', 'fw.zone_rows', 't', env));
+end
+rchunk();
+env.WARPS = warps;
+fw.zone_name = function () return 'Bastok Mines'; end
+refill({ LJ1 });
+cfg.fw_cancel, cfg.fw_group = false, false;
+ui.near_kind = 'home';
+local at_hp = fw.zone_rows();
+check(at_hp ~= nil and #at_hp == 3 and #fw.view() == 4,
+      ('a Home Point should list the zone\'s three, lists %s'):format(labels(at_hp)));
+for _, kind in ipairs({ 'guide', 'unity', 'abyssea', 'conflux', 'runic', 'maw' }) do
+    ui.near_kind = kind;
+    check(fw.zone_rows() == nil and #fw.view() == 1,
+          ('near_kind %s in a zone with homepoints should list the favorites alone'):format(kind));
+end
+ui.near_kind = false;
+check(fw.zone_rows() == nil, 'no NPC polled yet should list no homepoints');
+ui.near_kind = nil;
+check(fw.zone_rows() == nil, 'no NPC in reach should list no homepoints');
+
 if (fails == 0) then
     print(('ok: the D-pad wrap, the A-button gate and the widget\'s list all hold'));
 else
